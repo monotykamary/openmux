@@ -17,7 +17,7 @@ import { readFromClipboard } from '../utils/clipboard';
 
 interface TerminalContextValue {
   /** Create a new PTY session for a pane */
-  createPTY: (paneId: string, cols: number, rows: number) => string;
+  createPTY: (paneId: string, cols: number, rows: number, cwd?: string) => string;
   /** Destroy a PTY session */
   destroyPTY: (ptyId: string) => void;
   /** Write input to the focused pane's PTY */
@@ -28,6 +28,8 @@ interface TerminalContextValue {
   pasteToFocused: () => Promise<boolean>;
   /** Resize a PTY session */
   resizePTY: (ptyId: string, cols: number, rows: number) => void;
+  /** Get the current working directory of the focused pane */
+  getFocusedCwd: () => Promise<string | null>;
   /** Check if ghostty is initialized */
   isInitialized: boolean;
 }
@@ -66,13 +68,13 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   const ptyToPaneMap = useRef<Map<string, string>>(new Map());
 
   // Create a PTY session
-  const createPTY = useCallback((paneId: string, cols: number, rows: number): string => {
+  const createPTY = useCallback((paneId: string, cols: number, rows: number, cwd?: string): string => {
     if (!isGhosttyInitialized()) {
       throw new Error('Ghostty not initialized');
     }
 
     const ptyId = generatePtyId();
-    ptyManager.createSession(ptyId, { cols, rows });
+    ptyManager.createSession(ptyId, { cols, rows, cwd });
 
     // Track the mapping
     ptyToPaneMap.current.set(ptyId, paneId);
@@ -127,6 +129,25 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     ptyManager.write(ptyId, data);
   }, []);
 
+  // Get the current working directory of the focused pane
+  const getFocusedCwd = useCallback(async (): Promise<string | null> => {
+    const focusedPaneId = activeWorkspace.focusedPaneId;
+    if (!focusedPaneId) return null;
+
+    // Find the focused pane's PTY ID
+    let focusedPtyId: string | undefined;
+    if (activeWorkspace.mainPane?.id === focusedPaneId) {
+      focusedPtyId = activeWorkspace.mainPane.ptyId;
+    } else {
+      const stackPane = activeWorkspace.stackPanes.find(p => p.id === focusedPaneId);
+      focusedPtyId = stackPane?.ptyId;
+    }
+
+    if (!focusedPtyId) return null;
+
+    return ptyManager.getSessionCwd(focusedPtyId);
+  }, [activeWorkspace]);
+
   // Paste from clipboard to the focused PTY
   const pasteToFocused = useCallback(async (): Promise<boolean> => {
     const focusedPaneId = activeWorkspace.focusedPaneId;
@@ -167,6 +188,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     writeToPTY,
     pasteToFocused,
     resizePTY,
+    getFocusedCwd,
     isInitialized,
   };
 

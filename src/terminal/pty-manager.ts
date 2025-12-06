@@ -7,6 +7,54 @@ import type { PTYSession, TerminalState } from '../core/types';
 import { DEFAULT_CONFIG } from '../core/config';
 import { GhosttyEmulator } from './ghostty-emulator';
 
+/**
+ * Get the current working directory of a process by PID
+ * Uses platform-specific methods (lsof on macOS, /proc on Linux)
+ */
+async function getProcessCwd(pid: number): Promise<string | null> {
+  try {
+    const platform = process.platform;
+
+    if (platform === 'darwin') {
+      // macOS: use lsof to get cwd
+      const proc = Bun.spawn(['lsof', '-a', '-d', 'cwd', '-p', String(pid), '-Fn'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const output = await new Response(proc.stdout).text();
+      await proc.exited;
+
+      // Parse lsof output - look for 'n' prefix lines (name field)
+      const lines = output.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('n') && !line.startsWith('n/')) {
+          continue;
+        }
+        if (line.startsWith('n/')) {
+          return line.slice(1); // Remove 'n' prefix
+        }
+      }
+    } else if (platform === 'linux') {
+      // Linux: read /proc/<pid>/cwd symlink
+      const file = Bun.file(`/proc/${pid}/cwd`);
+      if (await file.exists()) {
+        // readlink equivalent using realpath
+        const proc = Bun.spawn(['readlink', `-f`, `/proc/${pid}/cwd`], {
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        const output = await new Response(proc.stdout).text();
+        await proc.exited;
+        return output.trim() || null;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 interface PTYManagerConfig {
   defaultShell?: string;
   defaultCols?: number;
@@ -213,6 +261,18 @@ class PTYManagerImpl {
    */
   getTerminalState(sessionId: string): TerminalState | undefined {
     return this.sessions.get(sessionId)?.emulator.getTerminalState();
+  }
+
+  /**
+   * Get the current working directory of a session's shell process
+   */
+  async getSessionCwd(sessionId: string): Promise<string | null> {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.pid === undefined) return null;
+
+    // Try to get the actual CWD from the process
+    const cwd = await getProcessCwd(session.pid);
+    return cwd ?? session.cwd;
   }
 
   /**

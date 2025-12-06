@@ -20,8 +20,19 @@ import { inputHandler } from './terminal';
 function AppContent() {
   const { width, height } = useTerminalDimensions();
   const { dispatch, activeWorkspace, panes } = useLayout();
-  const { createPTY, resizePTY, writeToFocused, writeToPTY, pasteToFocused, isInitialized } = useTerminal();
+  const { createPTY, resizePTY, writeToFocused, writeToPTY, pasteToFocused, getFocusedCwd, isInitialized } = useTerminal();
   const renderer = useRenderer();
+
+  // Track pending CWD for new panes (captured before NEW_PANE dispatch)
+  const pendingCwdRef = useRef<string | null>(null);
+
+  // Create new pane handler that captures CWD first
+  const handleNewPane = useCallback(async () => {
+    // Capture the focused pane's CWD before creating the new pane
+    const cwd = await getFocusedCwd();
+    pendingCwdRef.current = cwd;
+    dispatch({ type: 'NEW_PANE' });
+  }, [dispatch, getFocusedCwd]);
 
   // Create paste handler for manual paste (Ctrl+V, prefix+p/])
   const handlePaste = useCallback(() => {
@@ -55,7 +66,7 @@ function AppContent() {
     };
   }, [renderer, activeWorkspace, writeToPTY]);
 
-  const { handleKeyDown, mode } = useKeyboardHandler({ onPaste: handlePaste });
+  const { handleKeyDown, mode } = useKeyboardHandler({ onPaste: handlePaste, onNewPane: handleNewPane });
 
   // Track which panes have PTYs created
   const panesPtyCreated = useRef<Set<string>>(new Set());
@@ -92,8 +103,12 @@ function AppContent() {
         const cols = Math.max(1, rect.width - 2);
         const rows = Math.max(1, rect.height - 2);
 
+        // Use the pending CWD if available (from a previous pane)
+        const cwd = pendingCwdRef.current ?? undefined;
+        pendingCwdRef.current = null; // Clear after use
+
         try {
-          createPTY(pane.id, cols, rows);
+          createPTY(pane.id, cols, rows, cwd);
         } catch (err) {
           console.error(`Failed to create PTY for pane ${pane.id}:`, err);
         }

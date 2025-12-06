@@ -113,6 +113,7 @@ const LAYOUT_MODES: Array<'vertical' | 'horizontal' | 'stacked'> = ['vertical', 
 
 interface KeyboardHandlerOptions {
   onPaste?: () => void;
+  onNewPane?: () => void;
 }
 
 /**
@@ -121,7 +122,7 @@ interface KeyboardHandlerOptions {
 export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
   const { state: kbState, dispatch: kbDispatch } = useKeyboardState();
   const { dispatch: layoutDispatch, activeWorkspace } = useLayout();
-  const { onPaste } = options;
+  const { onPaste, onNewPane } = options;
 
   const handleKeyDown = useCallback((event: {
     key: string;
@@ -140,7 +141,7 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
 
     // Handle Alt keybindings (prefix-less actions) in normal mode
     if (kbState.mode === 'normal' && alt) {
-      return handleAltKey(key, layoutDispatch, activeWorkspace.layoutMode);
+      return handleAltKey(key, layoutDispatch, activeWorkspace.layoutMode, onNewPane);
     }
 
     // Handle Ctrl+B to enter prefix mode (only in normal mode)
@@ -163,7 +164,7 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
 
     // Prefix mode commands
     if (kbState.mode === 'prefix') {
-      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste);
+      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste, onNewPane);
     }
 
     // Resize mode commands
@@ -173,7 +174,7 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
 
     // Normal mode - pass through to terminal
     return false;
-  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste]);
+  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste, onNewPane]);
 
   return { handleKeyDown, mode: kbState.mode };
 }
@@ -184,7 +185,8 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
 function handleAltKey(
   key: string,
   layoutDispatch: ReturnType<typeof useLayout>['dispatch'],
-  currentLayoutMode: 'vertical' | 'horizontal' | 'stacked'
+  currentLayoutMode: 'vertical' | 'horizontal' | 'stacked',
+  onNewPane?: () => void
 ): boolean {
   // Alt+hjkl for navigation
   const direction = keyToDirection(key);
@@ -204,7 +206,11 @@ function handleAltKey(
     // Alt+n or Alt+Enter for new pane
     case 'n':
     case 'Enter':
-      layoutDispatch({ type: 'NEW_PANE' });
+      if (onNewPane) {
+        onNewPane();
+      } else {
+        layoutDispatch({ type: 'NEW_PANE' });
+      }
       return true;
 
     // Alt+[ to cycle layout mode backward
@@ -239,7 +245,8 @@ function handlePrefixModeKey(
   key: string,
   kbDispatch: Dispatch<KeyboardAction>,
   layoutDispatch: ReturnType<typeof useLayout>['dispatch'],
-  onPaste?: () => void
+  onPaste?: () => void,
+  onNewPane?: () => void
 ): boolean {
   const exitPrefix = () => kbDispatch({ type: 'EXIT_PREFIX_MODE' });
 
@@ -263,7 +270,11 @@ function handlePrefixModeKey(
     // New pane (single key instead of | and -)
     case 'n':
     case 'Enter':
-      layoutDispatch({ type: 'NEW_PANE' });
+      if (onNewPane) {
+        onNewPane();
+      } else {
+        layoutDispatch({ type: 'NEW_PANE' });
+      }
       exitPrefix();
       return true;
 
