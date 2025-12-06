@@ -1,25 +1,17 @@
 /**
- * PaneContainer - recursively renders the BSP tree as nested panes
+ * PaneContainer - renders master-stack layout panes
  */
 
-import type { BSPNode } from '../core/types';
-import { isPane } from '../core/bsp-tree';
+import type { PaneData, LayoutMode } from '../core/types';
 import { useLayout } from '../contexts/LayoutContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Pane } from './Pane';
 
-interface PaneContainerProps {
-  /** Optional: render a subtree instead of root */
-  node?: BSPNode;
-}
-
-export function PaneContainer({ node }: PaneContainerProps) {
-  const { state } = useLayout();
+export function PaneContainer() {
+  const { activeWorkspace, panes } = useLayout();
   const theme = useTheme();
 
-  const rootNode = node ?? state.root;
-
-  if (!rootNode) {
+  if (!activeWorkspace.mainPane) {
     return (
       <box
         style={{
@@ -29,7 +21,7 @@ export function PaneContainer({ node }: PaneContainerProps) {
         }}
       >
         <text fg="#666666">
-          No panes. Press Ctrl+b then | or - to create a pane.
+          No panes. Press Ctrl+b then n to create a pane.
         </text>
       </box>
     );
@@ -40,41 +32,112 @@ export function PaneContainer({ node }: PaneContainerProps) {
       style={{
         position: 'relative',
         flexGrow: 1,
-        padding: theme.pane.outerGap,
       }}
     >
-      <BSPNodeRenderer node={rootNode} focusedId={state.focusedPaneId} />
+      {/* Render main pane */}
+      <PaneRenderer
+        pane={activeWorkspace.mainPane}
+        isFocused={activeWorkspace.focusedPaneId === activeWorkspace.mainPane.id}
+        isMain={true}
+      />
+
+      {/* Render stack panes */}
+      {activeWorkspace.layoutMode === 'stacked' ? (
+        // Stacked mode: render tab headers and only the active pane
+        <StackedPanesRenderer
+          stackPanes={activeWorkspace.stackPanes}
+          activeStackIndex={activeWorkspace.activeStackIndex}
+          focusedPaneId={activeWorkspace.focusedPaneId}
+        />
+      ) : (
+        // Vertical/Horizontal mode: render all stack panes
+        activeWorkspace.stackPanes.map((pane) => (
+          <PaneRenderer
+            key={pane.id}
+            pane={pane}
+            isFocused={activeWorkspace.focusedPaneId === pane.id}
+            isMain={false}
+          />
+        ))
+      )}
     </box>
   );
 }
 
-interface BSPNodeRendererProps {
-  node: BSPNode;
-  focusedId: string | null;
+interface PaneRendererProps {
+  pane: PaneData;
+  isFocused: boolean;
+  isMain: boolean;
 }
 
-function BSPNodeRenderer({ node, focusedId }: BSPNodeRendererProps) {
-  if (isPane(node)) {
-    const rect = node.rectangle ?? { x: 0, y: 0, width: 40, height: 12 };
+function PaneRenderer({ pane, isFocused, isMain }: PaneRendererProps) {
+  const rect = pane.rectangle ?? { x: 0, y: 0, width: 40, height: 12 };
 
-    return (
-      <Pane
-        id={node.id}
-        title={node.title}
-        isFocused={node.id === focusedId}
-        x={rect.x}
-        y={rect.y}
-        width={rect.width}
-        height={rect.height}
-      />
-    );
-  }
+  return (
+    <Pane
+      id={pane.id}
+      title={pane.title}
+      isFocused={isFocused}
+      x={rect.x}
+      y={rect.y}
+      width={rect.width}
+      height={rect.height}
+    />
+  );
+}
 
-  // Split node - render children
+interface StackedPanesRendererProps {
+  stackPanes: PaneData[];
+  activeStackIndex: number;
+  focusedPaneId: string | null;
+}
+
+function StackedPanesRenderer({
+  stackPanes,
+  activeStackIndex,
+  focusedPaneId,
+}: StackedPanesRendererProps) {
+  if (stackPanes.length === 0) return null;
+
+  const activePane = stackPanes[activeStackIndex];
+  if (!activePane) return null;
+
+  const rect = activePane.rectangle ?? { x: 0, y: 0, width: 40, height: 12 };
+
   return (
     <>
-      <BSPNodeRenderer node={node.first} focusedId={focusedId} />
-      <BSPNodeRenderer node={node.second} focusedId={focusedId} />
+      {/* Tab headers for stacked panes */}
+      <box
+        style={{
+          position: 'absolute',
+          left: rect.x,
+          top: rect.y,
+          width: rect.width,
+          height: 1,
+          flexDirection: 'row',
+        }}
+        backgroundColor="#1a1a1a"
+      >
+        {stackPanes.map((pane, index) => (
+          <text
+            key={pane.id}
+            fg={index === activeStackIndex ? '#00AAFF' : '#666666'}
+          >
+            {index === activeStackIndex ? `[${pane.title ?? 'pane'}]` : ` ${pane.title ?? 'pane'} `}
+          </text>
+        ))}
+      </box>
+
+      {/* Active pane (offset by 1 for tab header) */}
+      <Pane
+        id={activePane.id}
+        title={activePane.title}
+        isFocused={focusedPaneId === activePane.id}
+        x={rect.x}
+        y={rect.y + 1}
+        width={rect.width}
+        height={Math.max(1, rect.height - 1)}
+      />
     </>
   );
 }

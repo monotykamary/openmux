@@ -1,12 +1,11 @@
 /**
- * StatusBar - bottom status bar like tmux
+ * StatusBar - bottom status bar showing workspaces and mode
  */
 
 import { useTheme } from '../contexts/ThemeContext';
 import { useLayout } from '../contexts/LayoutContext';
 import { useKeyboardState } from '../contexts/KeyboardContext';
-import { getPaneIndex } from '../core/bsp-tree';
-import type { KeyMode } from '../core/types';
+import type { KeyMode, WorkspaceId, LayoutMode } from '../core/types';
 
 interface StatusBarProps {
   width: number;
@@ -14,12 +13,8 @@ interface StatusBarProps {
 
 export function StatusBar({ width }: StatusBarProps) {
   const theme = useTheme();
-  const { state, paneCount } = useLayout();
+  const { state, activeWorkspace, populatedWorkspaces, paneCount } = useLayout();
   const { state: kbState } = useKeyboardState();
-
-  const focusedIndex = state.focusedPaneId
-    ? getPaneIndex(state.root, state.focusedPaneId) + 1
-    : 0;
 
   return (
     <box
@@ -31,19 +26,21 @@ export function StatusBar({ width }: StatusBarProps) {
       }}
       backgroundColor={theme.statusBar.backgroundColor}
     >
-      {/* Left section: Mode indicator */}
+      {/* Left section: Mode indicator and app name */}
       <box style={{ flexDirection: 'row', gap: 1 }}>
         <ModeIndicator mode={kbState.mode} />
         <text fg={theme.statusBar.foregroundColor}>
           [openmux]
         </text>
+        <LayoutModeIndicator mode={activeWorkspace.layoutMode} />
       </box>
 
-      {/* Center section: Pane tabs */}
+      {/* Center section: Workspace tabs */}
       <box style={{ flexDirection: 'row', gap: 1 }}>
-        <PaneTabs
+        <WorkspaceTabs
+          populatedWorkspaces={populatedWorkspaces}
+          activeWorkspaceId={state.activeWorkspaceId}
           paneCount={paneCount}
-          focusedIndex={focusedIndex}
         />
       </box>
 
@@ -91,32 +88,50 @@ function ModeIndicator({ mode }: ModeIndicatorProps) {
   );
 }
 
-interface PaneTabsProps {
-  paneCount: number;
-  focusedIndex: number;
+interface LayoutModeIndicatorProps {
+  mode: LayoutMode;
 }
 
-function PaneTabs({ paneCount, focusedIndex }: PaneTabsProps) {
+function LayoutModeIndicator({ mode }: LayoutModeIndicatorProps) {
+  const modeSymbols: Record<LayoutMode, string> = {
+    vertical: '│',
+    horizontal: '─',
+    stacked: '▣',
+  };
+
+  return (
+    <text fg="#666666">
+      {modeSymbols[mode]}
+    </text>
+  );
+}
+
+interface WorkspaceTabsProps {
+  populatedWorkspaces: WorkspaceId[];
+  activeWorkspaceId: WorkspaceId;
+  paneCount: number;
+}
+
+function WorkspaceTabs({ populatedWorkspaces, activeWorkspaceId, paneCount }: WorkspaceTabsProps) {
   const theme = useTheme();
 
-  if (paneCount === 0) {
-    return <text fg="#666666">No panes</text>;
+  if (populatedWorkspaces.length === 0) {
+    return <text fg="#666666">No workspaces</text>;
   }
 
   return (
     <>
-      {Array.from({ length: paneCount }, (_, i) => {
-        const idx = i + 1;
-        const isFocused = idx === focusedIndex;
+      {populatedWorkspaces.map((id) => {
+        const isActive = id === activeWorkspaceId;
 
         return (
           <text
-            key={i}
-            fg={isFocused
+            key={id}
+            fg={isActive
               ? theme.statusBar.activeTabColor
               : theme.statusBar.inactiveTabColor}
           >
-            {isFocused ? `[${idx}]` : ` ${idx} `}
+            {isActive ? `[${id}:${paneCount}]` : ` ${id} `}
           </text>
         );
       })}

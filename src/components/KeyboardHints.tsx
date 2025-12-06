@@ -15,9 +15,10 @@ const NORMAL_MODE_HINTS: KeyHint[] = [
 ];
 
 const PREFIX_MODE_HINTS: KeyHint[] = [
+  { key: 'n/Enter', description: 'New pane' },
   { key: 'h/j/k/l', description: 'Navigate panes' },
-  { key: '|', description: 'Split vertical' },
-  { key: '-', description: 'Split horizontal' },
+  { key: '1-9', description: 'Switch workspace' },
+  { key: 'v/s/t', description: 'Layout: vert/horiz/stack' },
   { key: 'x', description: 'Close pane' },
   { key: 'r', description: 'Enter resize mode' },
   { key: '?', description: 'Toggle hints' },

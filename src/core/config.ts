@@ -2,7 +2,7 @@
  * Configuration for openmux layout and styling
  */
 
-import type { AutomaticScheme, Padding, Theme } from './types';
+import type { LayoutMode, Padding, Theme } from './types';
 
 export interface BSPConfig {
   /** Gap between panes in terminal cells */
@@ -14,8 +14,8 @@ export interface BSPConfig {
   /** Border width (typically 1) */
   borderWidth: number;
 
-  /** Split behavior */
-  automaticScheme: AutomaticScheme;
+  /** Default layout mode for new workspaces */
+  defaultLayoutMode: LayoutMode;
   defaultSplitRatio: number;
 
   /** Minimum pane sizes */
@@ -33,7 +33,7 @@ export const DEFAULT_CONFIG: BSPConfig = {
   windowGap: 0,
   outerPadding: { top: 0, right: 0, bottom: 0, left: 0 },
   borderWidth: 1,
-  automaticScheme: 'spiral',
+  defaultLayoutMode: 'vertical',
   defaultSplitRatio: 0.5,
   minPaneWidth: 10,
   minPaneHeight: 5,

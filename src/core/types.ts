@@ -11,6 +11,42 @@ export type Direction = 'north' | 'south' | 'east' | 'west';
 /** Automatic split scheme when inserting new panes */
 export type AutomaticScheme = 'longest_side' | 'alternate' | 'spiral';
 
+/**
+ * Layout mode - how panes are arranged in a workspace (Zellij-style)
+ * - vertical: main pane left, stack panes split vertically on right
+ * - horizontal: main pane top, stack panes split horizontally on bottom
+ * - stacked: main pane left, stack panes tabbed on right
+ */
+export type LayoutMode = 'vertical' | 'horizontal' | 'stacked';
+
+/** Workspace ID (1-9) */
+export type WorkspaceId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+
+/**
+ * Pane data (simplified - no BSP tree needed for master-stack)
+ */
+export interface PaneData {
+  id: NodeId;
+  ptyId?: string;
+  title?: string;
+  rectangle?: Rectangle;
+}
+
+/**
+ * Workspace using master-stack layout (like Zellij)
+ * - mainPane: the primary pane (left for vertical, top for horizontal)
+ * - stackPanes: secondary panes arranged based on layout mode
+ */
+export interface Workspace {
+  id: WorkspaceId;
+  mainPane: PaneData | null;
+  stackPanes: PaneData[];
+  focusedPaneId: NodeId | null;
+  /** For stacked mode: which stack pane is visible */
+  activeStackIndex: number;
+  layoutMode: LayoutMode;
+}
+
 /** Rectangle representing a region in terminal coordinates */
 export interface Rectangle {
   x: number;      // Column position (0-indexed)

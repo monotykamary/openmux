@@ -11,7 +11,7 @@ import {
   type ReactNode,
   type Dispatch,
 } from 'react';
-import type { KeyMode, KeyboardState } from '../core/types';
+import type { KeyMode, KeyboardState, WorkspaceId } from '../core/types';
 import { PREFIX_KEY, DEFAULT_CONFIG, RESIZE_STEP } from '../core/config';
 import { useLayout } from './LayoutContext';
 import { keyToDirection } from '../core/bsp-tree';
@@ -122,7 +122,7 @@ export function useKeyboardHandler() {
     shift?: boolean;
     meta?: boolean;
   }) => {
-    const { key, ctrl, alt, shift, meta } = event;
+    const { key, ctrl } = event;
 
     // Handle Ctrl+B to enter prefix mode (only in normal mode)
     if (kbState.mode === 'normal' && ctrl && key.toLowerCase() === PREFIX_KEY) {
@@ -174,18 +174,19 @@ function handlePrefixModeKey(
     return true;
   }
 
-  switch (key) {
-    // Vertical split
-    case '|':
-    case '\\':
-      layoutDispatch({ type: 'SPLIT_PANE', direction: 'horizontal' });
-      exitPrefix();
-      return true;
+  // Workspace switching (1-9)
+  if (/^[1-9]$/.test(key)) {
+    const workspaceId = parseInt(key, 10) as WorkspaceId;
+    layoutDispatch({ type: 'SWITCH_WORKSPACE', workspaceId });
+    exitPrefix();
+    return true;
+  }
 
-    // Horizontal split
-    case '-':
-    case '_':
-      layoutDispatch({ type: 'SPLIT_PANE', direction: 'vertical' });
+  switch (key) {
+    // New pane (single key instead of | and -)
+    case 'n':
+    case 'Enter':
+      layoutDispatch({ type: 'NEW_PANE' });
       exitPrefix();
       return true;
 
@@ -198,6 +199,24 @@ function handlePrefixModeKey(
     // Enter resize mode
     case 'r':
       kbDispatch({ type: 'ENTER_RESIZE_MODE' });
+      return true;
+
+    // Layout mode: vertical (panes side by side)
+    case 'v':
+      layoutDispatch({ type: 'SET_LAYOUT_MODE', mode: 'vertical' });
+      exitPrefix();
+      return true;
+
+    // Layout mode: horizontal (panes stacked top/bottom)
+    case 's':
+      layoutDispatch({ type: 'SET_LAYOUT_MODE', mode: 'horizontal' });
+      exitPrefix();
+      return true;
+
+    // Layout mode: stacked (tabs)
+    case 't':
+      layoutDispatch({ type: 'SET_LAYOUT_MODE', mode: 'stacked' });
+      exitPrefix();
       return true;
 
     // Toggle hints

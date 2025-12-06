@@ -39,9 +39,12 @@ bun dev
 - `Ctrl+b` - Enter prefix mode
 
 ### Prefix Mode (2s timeout)
+- `n` or `Enter` - New pane (splits based on layout mode)
 - `h/j/k/l` - Navigate panes (left/down/up/right)
-- `|` - Split vertical (pane on right)
-- `-` - Split horizontal (pane below)
+- `1-9` - Switch to workspace 1-9
+- `v` - Set layout mode: vertical (side by side)
+- `s` - Set layout mode: horizontal (stacked)
+- `t` - Set layout mode: tabbed/stacked
 - `x` - Close current pane
 - `r` - Enter resize mode
 - `?` - Toggle keyboard hints
@@ -51,6 +54,17 @@ bun dev
 - `h/l` - Shrink/grow width
 - `j/k` - Grow/shrink height
 - `Enter/Esc` - Exit resize mode
+
+## Concepts
+
+### Workspaces
+Like i3/sway, openmux supports multiple workspaces (1-9). Each workspace has its own BSP tree of panes. The status bar shows populated workspaces dynamically - empty workspaces don't appear unless active.
+
+### Layout Modes (Zellij-style)
+Each workspace has a layout mode that determines how panes are arranged:
+- **Vertical** (`│`): Main pane on left, new panes stack vertically on right (equal height)
+- **Horizontal** (`─`): Main pane on top, new panes stack horizontally on bottom (equal width)
+- **Stacked** (`▣`): Main pane on left, new panes tabbed on right (only active visible)
 
 ## Project Structure
 

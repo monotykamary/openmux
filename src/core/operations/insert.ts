@@ -2,35 +2,20 @@
  * Insert pane operation - splits an existing pane to add a new one
  */
 
-import type { BSPNode, SplitNode, PaneNode, SplitDirection, NodeId, Direction, AutomaticScheme, Rectangle } from '../types';
-import { isPane, isSplit, createPane, createSplit, generatePaneId, directionToSplitType } from '../bsp-tree';
+import type { BSPNode, SplitDirection, NodeId, LayoutMode } from '../types';
+import { isPane, createPane, createSplit, generatePaneId } from '../bsp-tree';
 
 /**
- * Determine split direction based on automatic scheme
+ * Convert layout mode to split direction
+ * - 'vertical' layout means panes are side by side (horizontal split)
+ * - 'horizontal' layout means panes are stacked top/bottom (vertical split)
+ * - 'stacked' layout means overlapping (no split, handled separately)
  */
-function determineSplitDirection(
-  pane: PaneNode,
-  scheme: AutomaticScheme,
-  parentSplit?: SplitNode
-): SplitDirection {
-  const rect = pane.rectangle ?? { width: 80, height: 24 };
-
-  switch (scheme) {
-    case 'longest_side':
-      // Split along the longest dimension
-      return rect.width >= rect.height ? 'horizontal' : 'vertical';
-
-    case 'alternate':
-    case 'spiral':
-      // Alternate from parent's split direction
-      if (parentSplit) {
-        return parentSplit.direction === 'horizontal' ? 'vertical' : 'horizontal';
-      }
-      return 'horizontal';
-
-    default:
-      return 'horizontal';
-  }
+function layoutModeToSplitDirection(mode: LayoutMode): SplitDirection {
+  // Note: The naming is a bit confusing:
+  // - 'vertical' layout = panes arranged vertically (side by side) = horizontal split
+  // - 'horizontal' layout = panes arranged horizontally (top/bottom) = vertical split
+  return mode === 'vertical' ? 'horizontal' : 'vertical';
 }
 
 /**
@@ -38,29 +23,26 @@ function determineSplitDirection(
  *
  * @param root - Current tree root
  * @param targetPaneId - ID of the pane to split
- * @param direction - Optional explicit split direction
+ * @param layoutMode - Layout mode determines split direction
  * @param newPaneId - Optional ID for the new pane
  * @param ratio - Split ratio (0-1, default 0.5)
- * @param scheme - Automatic split scheme if direction not specified
  * @returns Object with new root and new pane ID
  */
 export function insertPane(
   root: BSPNode | null,
   targetPaneId: NodeId,
   options: {
-    direction?: SplitDirection | Direction;
+    layoutMode: LayoutMode;
     newPaneId?: NodeId;
     ratio?: number;
-    scheme?: AutomaticScheme;
     ptyId?: string;
     title?: string;
-  } = {}
+  }
 ): { root: BSPNode; newPaneId: NodeId } {
   const {
-    direction,
+    layoutMode,
     newPaneId = generatePaneId(),
     ratio = 0.5,
-    scheme = 'spiral',
     ptyId,
     title,
   } = options;
@@ -71,39 +53,24 @@ export function insertPane(
     return { root: newPane, newPaneId };
   }
 
+  // For stacked mode, we don't split - handled separately
+  if (layoutMode === 'stacked') {
+    // In stacked mode, panes overlap - just create and return
+    // The rendering layer will handle showing only the focused pane
+    const newPane = createPane(newPaneId, { ptyId, title });
+    return { root: newPane, newPaneId };
+  }
+
+  const splitDir = layoutModeToSplitDirection(layoutMode);
+
   // Helper to recursively find and split the target
-  function splitNode(
-    node: BSPNode,
-    parentSplit?: SplitNode
-  ): BSPNode {
+  function splitNode(node: BSPNode): BSPNode {
     if (isPane(node)) {
       if (node.id === targetPaneId) {
         // Found the target pane - create a split
         const newPane = createPane(newPaneId, { ptyId, title });
-
-        // Determine split direction
-        let splitDir: SplitDirection;
-        if (direction) {
-          // If direction is hjkl style, convert it
-          if (direction === 'north' || direction === 'south' ||
-              direction === 'east' || direction === 'west') {
-            splitDir = directionToSplitType(direction as Direction);
-          } else {
-            splitDir = direction as SplitDirection;
-          }
-        } else {
-          splitDir = determineSplitDirection(node, scheme, parentSplit);
-        }
-
-        // Determine order (new pane first or second)
-        // For north/west, new pane comes first; for south/east, second
-        const newFirst = direction === 'north' || direction === 'west';
-
-        if (newFirst) {
-          return createSplit(newPane, node, splitDir, ratio);
-        } else {
-          return createSplit(node, newPane, splitDir, ratio);
-        }
+        // New pane always goes second (right/bottom)
+        return createSplit(node, newPane, splitDir, ratio);
       }
       return node;
     }
@@ -111,8 +78,8 @@ export function insertPane(
     // Recurse into children
     return {
       ...node,
-      first: splitNode(node.first, node),
-      second: splitNode(node.second, node),
+      first: splitNode(node.first),
+      second: splitNode(node.second),
     };
   }
 

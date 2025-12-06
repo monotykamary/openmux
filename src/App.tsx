@@ -26,7 +26,7 @@ function AppContent() {
   // Create first pane on mount
   useEffect(() => {
     dispatch({
-      type: 'CREATE_FIRST_PANE',
+      type: 'NEW_PANE',
       title: 'shell',
     });
   }, [dispatch]);
