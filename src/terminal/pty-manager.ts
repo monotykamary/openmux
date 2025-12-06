@@ -1,10 +1,11 @@
 /**
- * PTY Manager - manages PTY sessions using bun-pty
+ * PTY Manager - manages PTY sessions using bun-pty with ghostty-web VT parsing
  */
 
 import { spawn, type IPty } from 'bun-pty';
-import type { PTYSession, TerminalState, TerminalCell } from '../core/types';
+import type { PTYSession, TerminalState } from '../core/types';
 import { DEFAULT_CONFIG } from '../core/config';
+import { GhosttyEmulator } from './ghostty-emulator';
 
 interface PTYManagerConfig {
   defaultShell?: string;
@@ -15,8 +16,9 @@ interface PTYManagerConfig {
 
 interface PTYSessionInternal extends PTYSession {
   pty: IPty;
+  emulator: GhosttyEmulator;
   subscribers: Set<(state: TerminalState) => void>;
-  terminalState: TerminalState;
+  exitCallbacks: Set<(exitCode: number) => void>;
 }
 
 class PTYManagerImpl {
@@ -50,6 +52,9 @@ class PTYManagerImpl {
     const shell = options.shell ?? this.config.defaultShell!;
     const cwd = options.cwd ?? process.cwd();
 
+    // Create ghostty emulator for VT parsing
+    const emulator = new GhosttyEmulator(cols, rows);
+
     // Spawn PTY
     const pty = spawn(shell, [], {
       name: 'xterm-256color',
@@ -61,11 +66,9 @@ class PTYManagerImpl {
         ...this.config.env,
         ...options.env,
         TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
       } as Record<string, string>,
     });
-
-    // Create initial terminal state
-    const terminalState = this.createEmptyState(cols, rows);
 
     const session: PTYSessionInternal = {
       id,
@@ -75,13 +78,21 @@ class PTYManagerImpl {
       cwd,
       shell,
       pty,
+      emulator,
       subscribers: new Set(),
-      terminalState,
+      exitCallbacks: new Set(),
     };
 
-    // Wire up PTY data handler
+    // Wire up PTY data handler to ghostty emulator
     pty.onData((data: string) => {
       this.handlePTYData(session, data);
+    });
+
+    // Wire up PTY exit handler
+    pty.onExit(({ exitCode }) => {
+      for (const callback of session.exitCallbacks) {
+        callback(exitCode);
+      }
     });
 
     this.sessions.set(id, session);
@@ -97,67 +108,17 @@ class PTYManagerImpl {
   }
 
   /**
-   * Handle data from PTY
+   * Handle data from PTY - feed to ghostty emulator
    */
   private handlePTYData(session: PTYSessionInternal, data: string): void {
-    // For now, just update a simple terminal state
-    // This will be replaced with libghostty-vt parsing
-    session.terminalState = this.basicParse(session.terminalState, data);
+    // Feed data to ghostty emulator for VT parsing
+    session.emulator.write(data);
 
-    // Notify subscribers
+    // Notify subscribers with updated state
+    const state = session.emulator.getTerminalState();
     for (const callback of session.subscribers) {
-      callback(session.terminalState);
+      callback(state);
     }
-  }
-
-  /**
-   * Basic ANSI parsing (fallback until libghostty-vt is integrated)
-   */
-  private basicParse(state: TerminalState, data: string): TerminalState {
-    // Very basic parsing - just append characters
-    // This is a placeholder for the full libghostty-vt integration
-    const newState = { ...state, cells: state.cells.map(row => [...row]) };
-
-    for (const char of data) {
-      if (char === '\r') {
-        newState.cursor.x = 0;
-      } else if (char === '\n') {
-        newState.cursor.y++;
-        if (newState.cursor.y >= newState.rows) {
-          // Scroll up
-          newState.cells.shift();
-          newState.cells.push(this.createEmptyRow(newState.cols));
-          newState.cursor.y = newState.rows - 1;
-        }
-      } else if (char === '\b') {
-        if (newState.cursor.x > 0) {
-          newState.cursor.x--;
-        }
-      } else if (char === '\x1b') {
-        // Skip escape sequences for now
-        continue;
-      } else if (char >= ' ') {
-        // Regular character
-        if (newState.cursor.x < newState.cols && newState.cursor.y < newState.rows) {
-          newState.cells[newState.cursor.y][newState.cursor.x] = {
-            ...newState.cells[newState.cursor.y][newState.cursor.x],
-            char,
-          };
-          newState.cursor.x++;
-          if (newState.cursor.x >= newState.cols) {
-            newState.cursor.x = 0;
-            newState.cursor.y++;
-            if (newState.cursor.y >= newState.rows) {
-              newState.cells.shift();
-              newState.cells.push(this.createEmptyRow(newState.cols));
-              newState.cursor.y = newState.rows - 1;
-            }
-          }
-        }
-      }
-    }
-
-    return newState;
   }
 
   /**
@@ -180,12 +141,13 @@ class PTYManagerImpl {
       session.cols = cols;
       session.rows = rows;
 
-      // Resize terminal state
-      session.terminalState = this.resizeState(session.terminalState, cols, rows);
+      // Resize ghostty emulator
+      session.emulator.resize(cols, rows);
 
       // Notify subscribers
+      const state = session.emulator.getTerminalState();
       for (const callback of session.subscribers) {
-        callback(session.terminalState);
+        callback(state);
       }
     }
   }
@@ -205,11 +167,27 @@ class PTYManagerImpl {
     session.subscribers.add(callback);
 
     // Immediately call with current state
-    callback(session.terminalState);
+    callback(session.emulator.getTerminalState());
 
     // Return unsubscribe function
     return () => {
       session.subscribers.delete(callback);
+    };
+  }
+
+  /**
+   * Subscribe to PTY exit events
+   */
+  onExit(sessionId: string, callback: (exitCode: number) => void): () => void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    session.exitCallbacks.add(callback);
+
+    return () => {
+      session.exitCallbacks.delete(callback);
     };
   }
 
@@ -234,7 +212,7 @@ class PTYManagerImpl {
    * Get terminal state for a session
    */
   getTerminalState(sessionId: string): TerminalState | undefined {
-    return this.sessions.get(sessionId)?.terminalState;
+    return this.sessions.get(sessionId)?.emulator.getTerminalState();
   }
 
   /**
@@ -244,6 +222,7 @@ class PTYManagerImpl {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.pty.kill();
+      session.emulator.dispose();
       session.subscribers.clear();
       this.sessions.delete(sessionId);
     }
@@ -256,75 +235,6 @@ class PTYManagerImpl {
     for (const [id] of this.sessions) {
       this.destroySession(id);
     }
-  }
-
-  private createEmptyState(cols: number, rows: number): TerminalState {
-    const cells: TerminalCell[][] = [];
-    for (let y = 0; y < rows; y++) {
-      cells.push(this.createEmptyRow(cols));
-    }
-
-    return {
-      cols,
-      rows,
-      cells,
-      cursor: { x: 0, y: 0, visible: true },
-      alternateScreen: false,
-      mouseTracking: false,
-    };
-  }
-
-  private createEmptyRow(cols: number): TerminalCell[] {
-    const row: TerminalCell[] = [];
-    for (let x = 0; x < cols; x++) {
-      row.push({
-        char: ' ',
-        fg: { r: 255, g: 255, b: 255 },
-        bg: { r: 0, g: 0, b: 0 },
-        bold: false,
-        italic: false,
-        underline: false,
-        strikethrough: false,
-        inverse: false,
-        blink: false,
-        dim: false,
-        width: 1,
-      });
-    }
-    return row;
-  }
-
-  private resizeState(state: TerminalState, cols: number, rows: number): TerminalState {
-    const newCells: TerminalCell[][] = [];
-
-    for (let y = 0; y < rows; y++) {
-      if (y < state.cells.length) {
-        // Copy existing row, adjusting width
-        const row: TerminalCell[] = [];
-        for (let x = 0; x < cols; x++) {
-          if (x < state.cells[y].length) {
-            row.push(state.cells[y][x]);
-          } else {
-            row.push(this.createEmptyRow(1)[0]);
-          }
-        }
-        newCells.push(row);
-      } else {
-        newCells.push(this.createEmptyRow(cols));
-      }
-    }
-
-    return {
-      ...state,
-      cols,
-      rows,
-      cells: newCells,
-      cursor: {
-        ...state.cursor,
-        x: Math.min(state.cursor.x, cols - 1),
-        y: Math.min(state.cursor.y, rows - 1),
-      },
-    };
   }
 }
 

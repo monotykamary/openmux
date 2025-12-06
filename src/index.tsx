@@ -10,22 +10,14 @@ import { App } from './App';
 
 async function main() {
   try {
-    // Create OpenTUI renderer
-    const renderer = await createCliRenderer();
+    // Create OpenTUI renderer - exclude SIGINT so Ctrl+C goes to PTY
+    const renderer = await createCliRenderer({
+      exitOnCtrlC: false,
+      exitSignals: ['SIGTERM', 'SIGQUIT', 'SIGABRT'], // No SIGINT
+    });
 
     // Render the app
     createRoot(renderer).render(<App />);
-
-    // Handle clean shutdown
-    process.on('SIGINT', () => {
-      renderer.stop();
-      process.exit(0);
-    });
-
-    process.on('SIGTERM', () => {
-      renderer.stop();
-      process.exit(0);
-    });
   } catch (error) {
     console.error('Failed to start openmux:', error);
     process.exit(1);

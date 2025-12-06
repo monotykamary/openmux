@@ -21,6 +21,7 @@
     "@opentui/core": "^0.1.57",
     "@opentui/react": "^0.1.57",
     "bun-pty": "^0.4.2",
+    "ghostty-web": "^0.3.0",
     "react": "19"
   }
 }

@@ -111,12 +111,17 @@ export function useKeyboardState(): KeyboardContextValue {
 /** Layout modes for cycling */
 const LAYOUT_MODES: Array<'vertical' | 'horizontal' | 'stacked'> = ['vertical', 'horizontal', 'stacked'];
 
+interface KeyboardHandlerOptions {
+  onPaste?: () => void;
+}
+
 /**
  * Hook for handling keyboard input across all modes
  */
-export function useKeyboardHandler() {
+export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
   const { state: kbState, dispatch: kbDispatch } = useKeyboardState();
   const { dispatch: layoutDispatch, activeWorkspace } = useLayout();
+  const { onPaste } = options;
 
   const handleKeyDown = useCallback((event: {
     key: string;
@@ -125,7 +130,13 @@ export function useKeyboardHandler() {
     shift?: boolean;
     meta?: boolean;
   }) => {
-    const { key, ctrl, alt } = event;
+    const { key, ctrl, alt, shift, meta } = event;
+
+    // Handle Ctrl+V or Cmd+V for paste in normal mode
+    if (kbState.mode === 'normal' && (ctrl || meta) && !shift && key.toLowerCase() === 'v') {
+      onPaste?.();
+      return true;
+    }
 
     // Handle Alt keybindings (prefix-less actions) in normal mode
     if (kbState.mode === 'normal' && alt) {
@@ -152,7 +163,7 @@ export function useKeyboardHandler() {
 
     // Prefix mode commands
     if (kbState.mode === 'prefix') {
-      return handlePrefixModeKey(key, kbDispatch, layoutDispatch);
+      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste);
     }
 
     // Resize mode commands
@@ -162,7 +173,7 @@ export function useKeyboardHandler() {
 
     // Normal mode - pass through to terminal
     return false;
-  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode]);
+  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste]);
 
   return { handleKeyDown, mode: kbState.mode };
 }
@@ -227,7 +238,8 @@ function handleAltKey(
 function handlePrefixModeKey(
   key: string,
   kbDispatch: Dispatch<KeyboardAction>,
-  layoutDispatch: ReturnType<typeof useLayout>['dispatch']
+  layoutDispatch: ReturnType<typeof useLayout>['dispatch'],
+  onPaste?: () => void
 ): boolean {
   const exitPrefix = () => kbDispatch({ type: 'EXIT_PREFIX_MODE' });
 
@@ -281,6 +293,13 @@ function handlePrefixModeKey(
     // Layout mode: stacked (tabs)
     case 't':
       layoutDispatch({ type: 'SET_LAYOUT_MODE', mode: 'stacked' });
+      exitPrefix();
+      return true;
+
+    // Paste from clipboard (like tmux prefix + ])
+    case ']':
+    case 'p':
+      onPaste?.();
       exitPrefix();
       return true;
 

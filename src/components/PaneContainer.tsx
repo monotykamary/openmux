@@ -95,6 +95,7 @@ function PaneRenderer({ pane, isFocused, isMain, onFocus }: PaneRendererProps) {
       y={rect.y}
       width={rect.width}
       height={rect.height}
+      ptyId={pane.ptyId}
       onClick={handleClick}
     />
   );
@@ -162,6 +163,7 @@ function StackedPanesRenderer({
         y={rect.y + 1}
         width={rect.width}
         height={Math.max(1, rect.height - 1)}
+        ptyId={activePane.ptyId}
         onClick={handleClick}
       />
     </>

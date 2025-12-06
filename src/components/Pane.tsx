@@ -4,6 +4,7 @@
 
 import type { ReactNode } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
+import { TerminalView } from './TerminalView';
 
 interface PaneProps {
   id: string;
@@ -13,6 +14,7 @@ interface PaneProps {
   y: number;
   width: number;
   height: number;
+  ptyId?: string;
   children?: ReactNode;
   onClick?: () => void;
 }
@@ -25,6 +27,7 @@ export function Pane({
   y,
   width,
   height,
+  ptyId,
   children,
   onClick,
 }: PaneProps) {
@@ -50,6 +53,10 @@ export function Pane({
     bold: 'single', // fallback
   };
 
+  // Calculate inner dimensions (account for border)
+  const innerWidth = Math.max(1, width - 2);
+  const innerHeight = Math.max(1, height - 2);
+
   return (
     <box
       style={{
@@ -66,7 +73,14 @@ export function Pane({
       titleAlignment="left"
       onMouseDown={onClick}
     >
-      {children ?? (
+      {ptyId ? (
+        <TerminalView
+          ptyId={ptyId}
+          width={innerWidth}
+          height={innerHeight}
+          isFocused={isFocused}
+        />
+      ) : children ?? (
         <box
           style={{
             flexGrow: 1,

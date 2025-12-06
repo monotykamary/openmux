@@ -16,6 +16,7 @@ const NORMAL_MODE_HINTS: KeyHint[] = [
   { key: 'Alt+1-9', description: 'Switch workspace' },
   { key: 'Alt+[/]', description: 'Cycle layout mode' },
   { key: 'Alt+x', description: 'Close pane' },
+  { key: 'Ctrl/Cmd+V', description: 'Paste' },
   { key: 'Click', description: 'Focus pane' },
   { key: 'Ctrl+b', description: 'Enter prefix mode' },
 ];
@@ -26,6 +27,7 @@ const PREFIX_MODE_HINTS: KeyHint[] = [
   { key: '1-9', description: 'Switch workspace' },
   { key: 'v/s/t', description: 'Layout: vert/horiz/stack' },
   { key: 'x', description: 'Close pane' },
+  { key: '] or p', description: 'Paste' },
   { key: 'r', description: 'Enter resize mode' },
   { key: '?', description: 'Toggle hints' },
   { key: 'Esc', description: 'Exit prefix mode' },

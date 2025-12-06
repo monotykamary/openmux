@@ -49,6 +49,7 @@ type LayoutAction =
   | { type: 'NAVIGATE'; direction: Direction }
   | { type: 'NEW_PANE'; ptyId?: string; title?: string }
   | { type: 'CLOSE_PANE' }
+  | { type: 'CLOSE_PANE_BY_ID'; paneId: NodeId }
   | { type: 'RESIZE'; direction: Direction; delta: number }
   | { type: 'SET_VIEWPORT'; viewport: Rectangle }
   | { type: 'SWITCH_WORKSPACE'; workspaceId: WorkspaceId }
@@ -233,6 +234,76 @@ function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
             // Focus adjacent stack pane or main
             newActiveIndex = Math.min(closeIndex, newStack.length - 1);
             newFocusId = newStack[newActiveIndex]?.id ?? workspace.mainPane?.id ?? null;
+          }
+
+          updated = {
+            ...workspace,
+            stackPanes: newStack,
+            focusedPaneId: newFocusId,
+            activeStackIndex: newActiveIndex,
+          };
+        } else {
+          return state;
+        }
+      }
+
+      if (updated.mainPane) {
+        updated = recalculateLayout(updated, state.viewport, state.config);
+        return { ...state, workspaces: updateWorkspace(state, updated) };
+      }
+
+      // Workspace is now empty - remove it
+      const newWorkspaces = new Map(state.workspaces);
+      newWorkspaces.delete(workspace.id);
+      return { ...state, workspaces: newWorkspaces };
+    }
+
+    case 'CLOSE_PANE_BY_ID': {
+      const workspace = getActiveWorkspace(state);
+      const { paneId } = action;
+
+      let updated: Workspace;
+
+      if (workspace.mainPane?.id === paneId) {
+        // Closing main pane
+        if (workspace.stackPanes.length > 0) {
+          // Promote first stack pane to main
+          const [newMain, ...remainingStack] = workspace.stackPanes;
+          updated = {
+            ...workspace,
+            mainPane: newMain!,
+            stackPanes: remainingStack,
+            focusedPaneId: newMain!.id,
+            activeStackIndex: Math.min(workspace.activeStackIndex, Math.max(0, remainingStack.length - 1)),
+          };
+        } else {
+          // No more panes
+          updated = {
+            ...workspace,
+            mainPane: null,
+            focusedPaneId: null,
+          };
+        }
+      } else {
+        // Closing a stack pane
+        const closeIndex = workspace.stackPanes.findIndex(p => p.id === paneId);
+        if (closeIndex >= 0) {
+          const newStack = workspace.stackPanes.filter((_, i) => i !== closeIndex);
+          let newFocusId: string | null = workspace.focusedPaneId;
+          let newActiveIndex = workspace.activeStackIndex;
+
+          // If closing the focused pane, update focus
+          if (workspace.focusedPaneId === paneId) {
+            if (newStack.length > 0) {
+              newActiveIndex = Math.min(closeIndex, newStack.length - 1);
+              newFocusId = newStack[newActiveIndex]?.id ?? workspace.mainPane?.id ?? null;
+            } else {
+              newFocusId = workspace.mainPane?.id ?? null;
+              newActiveIndex = 0;
+            }
+          } else if (closeIndex <= workspace.activeStackIndex) {
+            // Adjust activeStackIndex if closing pane before it
+            newActiveIndex = Math.max(0, workspace.activeStackIndex - 1);
           }
 
           updated = {
