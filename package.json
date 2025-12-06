@@ -1,0 +1,26 @@
+{
+  "name": "openmux",
+  "version": "0.1.0",
+  "description": "Terminal multiplexer with BSP layout using OpenTUI",
+  "module": "src/index.tsx",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/index.tsx",
+    "dev": "bun run --watch src/index.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "19"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.1.57",
+    "@opentui/react": "^0.1.57",
+    "bun-pty": "^0.4.2",
+    "react": "19"
+  }
+}
