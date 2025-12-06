@@ -114,6 +114,7 @@ const LAYOUT_MODES: Array<'vertical' | 'horizontal' | 'stacked'> = ['vertical', 
 interface KeyboardHandlerOptions {
   onPaste?: () => void;
   onNewPane?: () => void;
+  onQuit?: () => void;
 }
 
 /**
@@ -122,7 +123,7 @@ interface KeyboardHandlerOptions {
 export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
   const { state: kbState, dispatch: kbDispatch } = useKeyboardState();
   const { dispatch: layoutDispatch, activeWorkspace } = useLayout();
-  const { onPaste, onNewPane } = options;
+  const { onPaste, onNewPane, onQuit } = options;
 
   const handleKeyDown = useCallback((event: {
     key: string;
@@ -164,7 +165,7 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
 
     // Prefix mode commands
     if (kbState.mode === 'prefix') {
-      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste, onNewPane);
+      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste, onNewPane, onQuit);
     }
 
     // Resize mode commands
@@ -174,7 +175,7 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
 
     // Normal mode - pass through to terminal
     return false;
-  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste, onNewPane]);
+  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste, onNewPane, onQuit]);
 
   return { handleKeyDown, mode: kbState.mode };
 }
@@ -246,7 +247,8 @@ function handlePrefixModeKey(
   kbDispatch: Dispatch<KeyboardAction>,
   layoutDispatch: ReturnType<typeof useLayout>['dispatch'],
   onPaste?: () => void,
-  onNewPane?: () => void
+  onNewPane?: () => void,
+  onQuit?: () => void
 ): boolean {
   const exitPrefix = () => kbDispatch({ type: 'EXIT_PREFIX_MODE' });
 
@@ -317,6 +319,11 @@ function handlePrefixModeKey(
     // Toggle hints
     case '?':
       kbDispatch({ type: 'TOGGLE_HINTS' });
+      return true;
+
+    // Quit openmux
+    case 'q':
+      onQuit?.();
       return true;
 
     default:

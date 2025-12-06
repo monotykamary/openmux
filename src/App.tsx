@@ -39,6 +39,12 @@ function AppContent() {
     pasteToFocused();
   }, [pasteToFocused]);
 
+  // Quit handler - properly cleanup terminal before exiting
+  const handleQuit = useCallback(() => {
+    renderer.destroy();
+    process.exit(0);
+  }, [renderer]);
+
   // Handle bracketed paste from host terminal (Cmd+V sends this)
   useEffect(() => {
     const handleBracketedPaste = (event: PasteEvent) => {
@@ -66,7 +72,7 @@ function AppContent() {
     };
   }, [renderer, activeWorkspace, writeToPTY]);
 
-  const { handleKeyDown, mode } = useKeyboardHandler({ onPaste: handlePaste, onNewPane: handleNewPane });
+  const { handleKeyDown, mode } = useKeyboardHandler({ onPaste: handlePaste, onNewPane: handleNewPane, onQuit: handleQuit });
 
   // Track which panes have PTYs created
   const panesPtyCreated = useRef<Set<string>>(new Set());
