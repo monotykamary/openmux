@@ -135,6 +135,8 @@ export interface TerminalState {
   cols: number;
   rows: number;
   cells: TerminalCell[][];
+  /** Version numbers for each row (for efficient React change detection) */
+  rowVersions?: number[];
   cursor: TerminalCursor;
   alternateScreen: boolean;
   mouseTracking: boolean;

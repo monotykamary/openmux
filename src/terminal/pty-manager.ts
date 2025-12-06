@@ -6,6 +6,8 @@ import { spawn, type IPty } from 'bun-pty';
 import type { PTYSession, TerminalState } from '../core/types';
 import { DEFAULT_CONFIG } from '../core/config';
 import { GhosttyEmulator } from './ghostty-emulator';
+import { GraphicsPassthrough } from './graphics-passthrough';
+import { getCapabilityEnvironment } from './capabilities';
 
 /**
  * Get the current working directory of a process by PID
@@ -65,8 +67,10 @@ interface PTYManagerConfig {
 interface PTYSessionInternal extends PTYSession {
   pty: IPty;
   emulator: GhosttyEmulator;
+  graphicsPassthrough: GraphicsPassthrough;
   subscribers: Set<(state: TerminalState) => void>;
   exitCallbacks: Set<(exitCode: number) => void>;
+  pendingNotify: boolean; // For render batching
 }
 
 class PTYManagerImpl {
@@ -103,6 +107,12 @@ class PTYManagerImpl {
     // Create ghostty emulator for VT parsing
     const emulator = new GhosttyEmulator(cols, rows);
 
+    // Create graphics passthrough for Kitty/Sixel support
+    const graphicsPassthrough = new GraphicsPassthrough();
+
+    // Get capability environment for graphics protocol support
+    const capabilityEnv = getCapabilityEnvironment();
+
     // Spawn PTY
     const pty = spawn(shell, [], {
       name: 'xterm-256color',
@@ -112,6 +122,7 @@ class PTYManagerImpl {
       env: {
         ...process.env,
         ...this.config.env,
+        ...capabilityEnv, // Forward host terminal capabilities
         ...options.env,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
@@ -127,8 +138,10 @@ class PTYManagerImpl {
       shell,
       pty,
       emulator,
+      graphicsPassthrough,
       subscribers: new Set(),
       exitCallbacks: new Set(),
+      pendingNotify: false,
     };
 
     // Wire up PTY data handler to ghostty emulator
@@ -157,12 +170,34 @@ class PTYManagerImpl {
 
   /**
    * Handle data from PTY - feed to ghostty emulator
+   * Uses microtask batching to coalesce rapid updates
+   * Graphics sequences (Kitty/Sixel) are passed through to host terminal
    */
   private handlePTYData(session: PTYSessionInternal, data: string): void {
-    // Feed data to ghostty emulator for VT parsing
-    session.emulator.write(data);
+    // Process through graphics passthrough - extracts Kitty/Sixel sequences
+    // and writes them directly to stdout, returning non-graphics data
+    const textData = session.graphicsPassthrough.process(data);
 
-    // Notify subscribers with updated state
+    // Feed non-graphics data to ghostty emulator for VT parsing
+    if (textData.length > 0) {
+      session.emulator.write(textData);
+    }
+
+    // Batch notifications using setImmediate for best performance
+    // This coalesces rapid PTY data events within the same event loop tick
+    if (!session.pendingNotify) {
+      session.pendingNotify = true;
+      setImmediate(() => {
+        this.notifySubscribers(session);
+        session.pendingNotify = false;
+      });
+    }
+  }
+
+  /**
+   * Notify all subscribers of a session with current state
+   */
+  private notifySubscribers(session: PTYSessionInternal): void {
     const state = session.emulator.getTerminalState();
     for (const callback of session.subscribers) {
       callback(state);
@@ -192,11 +227,19 @@ class PTYManagerImpl {
       // Resize ghostty emulator
       session.emulator.resize(cols, rows);
 
-      // Notify subscribers
-      const state = session.emulator.getTerminalState();
-      for (const callback of session.subscribers) {
-        callback(state);
-      }
+      // Notify subscribers immediately (resize is user-initiated, no batching)
+      this.notifySubscribers(session);
+    }
+  }
+
+  /**
+   * Update pane position for graphics passthrough
+   * Graphics sequences need to know where the pane is on screen
+   */
+  setPanePosition(sessionId: string, x: number, y: number): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.graphicsPassthrough.setPanePosition(x, y);
     }
   }
 

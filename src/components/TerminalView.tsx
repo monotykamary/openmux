@@ -1,8 +1,9 @@
 /**
- * TerminalView - renders terminal state using OpenTUI
+ * TerminalView - renders terminal state using direct buffer access for performance
  */
 
-import { useState, useEffect, memo, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
+import { RGBA, type OptimizedBuffer } from '@opentui/core';
 import type { TerminalState, TerminalCell } from '../core/types';
 import { ptyManager } from '../terminal';
 
@@ -11,24 +12,22 @@ interface TerminalViewProps {
   width: number;
   height: number;
   isFocused: boolean;
+  /** X offset in the parent buffer (for direct buffer rendering) */
+  offsetX?: number;
+  /** Y offset in the parent buffer (for direct buffer rendering) */
+  offsetY?: number;
 }
 
-/**
- * Convert RGB to hex color string
- */
-function rgbToHex(r: number, g: number, b: number): string {
-  const toHex = (n: number) => n.toString(16).padStart(2, '0');
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-}
+// Pre-allocate common colors for performance
+const TRANSPARENT_BG = RGBA.fromValues(0, 0, 0, 0);
+const WHITE = RGBA.fromInts(255, 255, 255);
+const BLACK = RGBA.fromInts(0, 0, 0);
 
 /**
  * Check if color is default/transparent background
- * Includes pure black and ghostty's default background #1D1F21
  */
 function isDefaultBackground(r: number, g: number, b: number): boolean {
-  // Pure black
   if (r === 0 && g === 0 && b === 0) return true;
-  // Ghostty default background #1D1F21 (29, 31, 33)
   if (r === 29 && g === 31 && b === 33) return true;
   return false;
 }
@@ -44,30 +43,105 @@ function dimColor(r: number, g: number, b: number): { r: number; g: number; b: n
   };
 }
 
+// Text attributes for buffer API
+const ATTR_BOLD = 1;
+const ATTR_ITALIC = 2;
+const ATTR_UNDERLINE = 4;
+const ATTR_STRIKETHROUGH = 8;
+
 /**
- * TerminalView component
+ * TerminalView component - uses direct buffer rendering for maximum performance
  */
 export const TerminalView = memo(function TerminalView({
   ptyId,
   width,
   height,
   isFocused,
+  offsetX = 0,
+  offsetY = 0,
 }: TerminalViewProps) {
-  // Initialize with current state to avoid flicker during layout changes
-  const [terminalState, setTerminalState] = useState<TerminalState | null>(
-    () => ptyManager.getTerminalState(ptyId) ?? null
+  // Store terminal state in a ref to avoid React re-renders
+  const terminalStateRef = useRef<TerminalState | null>(
+    ptyManager.getTerminalState(ptyId) ?? null
   );
+  // Version counter to trigger re-renders when state changes
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
-    // Subscribe to terminal state updates
     const unsubscribe = ptyManager.subscribe(ptyId, (state) => {
-      setTerminalState(state);
+      terminalStateRef.current = state;
+      // Increment version to trigger re-render
+      setVersion(v => v + 1);
     });
 
     return () => {
       unsubscribe();
     };
   }, [ptyId]);
+
+  // Render callback that directly writes to buffer
+  const renderTerminal = useCallback((buffer: OptimizedBuffer) => {
+    const state = terminalStateRef.current;
+    if (!state) return;
+
+    const rows = Math.min(state.rows, height);
+    const cols = Math.min(state.cols, width);
+
+    for (let y = 0; y < rows; y++) {
+      const row = state.cells[y];
+      if (!row) continue;
+
+      for (let x = 0; x < cols; x++) {
+        const cell = row[x];
+        if (!cell) continue;
+
+        // Check if this is the cursor position
+        const isCursor = isFocused && state.cursor.visible &&
+                         state.cursor.y === y && state.cursor.x === x;
+
+        // Determine cell colors
+        let fgR = cell.fg.r, fgG = cell.fg.g, fgB = cell.fg.b;
+        let bgR = cell.bg.r, bgG = cell.bg.g, bgB = cell.bg.b;
+
+        // Apply dim effect
+        if (cell.dim) {
+          fgR = Math.floor(fgR * 0.5);
+          fgG = Math.floor(fgG * 0.5);
+          fgB = Math.floor(fgB * 0.5);
+        }
+
+        // Apply inverse
+        if (cell.inverse) {
+          [fgR, bgR] = [bgR, fgR];
+          [fgG, bgG] = [bgG, fgG];
+          [fgB, bgB] = [bgB, fgB];
+        }
+
+        let fg = RGBA.fromInts(fgR, fgG, fgB);
+        let bg = isDefaultBackground(bgR, bgG, bgB)
+          ? TRANSPARENT_BG
+          : RGBA.fromInts(bgR, bgG, bgB);
+
+        // Apply cursor styling
+        if (isCursor) {
+          fg = bg !== TRANSPARENT_BG ? bg : BLACK;
+          bg = WHITE;
+        }
+
+        // Calculate attributes
+        let attributes = 0;
+        if (cell.bold) attributes |= ATTR_BOLD;
+        if (cell.italic) attributes |= ATTR_ITALIC;
+        if (cell.underline) attributes |= ATTR_UNDERLINE;
+        if (cell.strikethrough) attributes |= ATTR_STRIKETHROUGH;
+
+        // Write cell directly to buffer (with offset for pane position)
+        buffer.setCell(x + offsetX, y + offsetY, cell.char, fg, bg, attributes);
+      }
+    }
+  }, [width, height, isFocused, offsetX, offsetY]);
+
+  const terminalState = terminalStateRef.current;
 
   if (!terminalState) {
     return (
@@ -84,145 +158,14 @@ export const TerminalView = memo(function TerminalView({
     );
   }
 
-  // Render terminal content
   return (
     <box
       style={{
         width,
         height,
-        flexDirection: 'column',
       }}
-    >
-      {terminalState.cells.slice(0, height).map((row, y) => (
-        <TerminalRow
-          key={y}
-          row={row}
-          y={y}
-          width={width}
-          cursor={terminalState.cursor}
-          isFocused={isFocused}
-        />
-      ))}
-    </box>
-  );
-});
-
-interface TerminalRowProps {
-  row: TerminalCell[];
-  y: number;
-  width: number;
-  cursor: TerminalState['cursor'];
-  isFocused: boolean;
-}
-
-interface SpanData {
-  text: string;
-  fg: string;
-  bg: string | undefined;
-}
-
-/**
- * Render a single terminal row
- */
-const TerminalRow = memo(function TerminalRow({
-  row,
-  y,
-  width,
-  cursor,
-  isFocused,
-}: TerminalRowProps) {
-  // Build the row content with styled spans
-  const spans: ReactNode[] = [];
-  let currentSpan: SpanData | null = null;
-
-  const flushSpan = (key: number) => {
-    if (currentSpan && currentSpan.text.length > 0) {
-      const { text, fg, bg } = currentSpan;
-
-      spans.push(
-        <text
-          key={key}
-          fg={fg}
-          bg={bg}
-        >
-          {text}
-        </text>
-      );
-    }
-    currentSpan = null;
-  };
-
-  for (let x = 0; x < Math.min(row.length, width); x++) {
-    const cell = row[x];
-    if (!cell) continue;
-
-    // Check if this is the cursor position
-    const isCursor = isFocused && cursor.visible && cursor.y === y && cursor.x === x;
-
-    // Determine cell colors
-    let fgColor = cell.fg;
-    let bgColor = cell.bg;
-
-    // Apply dim effect by reducing brightness
-    if (cell.dim) {
-      fgColor = dimColor(fgColor.r, fgColor.g, fgColor.b);
-    }
-
-    // Apply inverse (swap fg/bg)
-    if (cell.inverse) {
-      const temp = fgColor;
-      fgColor = bgColor;
-      bgColor = temp;
-    }
-
-    let fg = rgbToHex(fgColor.r, fgColor.g, fgColor.b);
-    let bg: string | undefined = undefined;
-
-    // Only set bg if it's explicitly non-default (let terminal bg be transparent)
-    if (!isDefaultBackground(bgColor.r, bgColor.g, bgColor.b)) {
-      bg = rgbToHex(bgColor.r, bgColor.g, bgColor.b);
-    }
-
-    // Apply cursor styling (invert colors)
-    if (isCursor) {
-      const tempFg = fg;
-      fg = bg ?? '#FFFFFF';
-      bg = '#FFFFFF';
-    }
-
-    // Check if we can extend the current span
-    const canExtend = currentSpan &&
-      currentSpan.fg === fg &&
-      currentSpan.bg === bg;
-
-    if (canExtend) {
-      currentSpan!.text += cell.char;
-    } else {
-      flushSpan(spans.length);
-      currentSpan = {
-        text: cell.char,
-        fg,
-        bg,
-      };
-    }
-  }
-
-  flushSpan(spans.length);
-
-  // Pad remaining width with spaces if needed
-  const renderedChars = row.slice(0, width).length;
-  if (renderedChars < width) {
-    spans.push(
-      <text key="padding" fg="#FFFFFF">
-        {' '.repeat(width - renderedChars)}
-      </text>
-    );
-  }
-
-  return (
-    <box style={{ flexDirection: 'row', height: 1 }}>
-      {spans}
-    </box>
+      renderAfter={renderTerminal}
+    />
   );
 });
 

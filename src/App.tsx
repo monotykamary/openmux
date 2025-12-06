@@ -20,7 +20,7 @@ import { inputHandler } from './terminal';
 function AppContent() {
   const { width, height } = useTerminalDimensions();
   const { dispatch, activeWorkspace, panes } = useLayout();
-  const { createPTY, resizePTY, writeToFocused, writeToPTY, pasteToFocused, getFocusedCwd, isInitialized } = useTerminal();
+  const { createPTY, resizePTY, setPanePosition, writeToFocused, writeToPTY, pasteToFocused, getFocusedCwd, isInitialized } = useTerminal();
   const renderer = useRenderer();
 
   // Track pending CWD for new panes (captured before NEW_PANE dispatch)
@@ -122,7 +122,7 @@ function AppContent() {
     }
   }, [isInitialized, panes, createPTY]);
 
-  // Resize PTYs when pane dimensions change
+  // Resize PTYs and update positions when pane dimensions change
   useEffect(() => {
     if (!isInitialized) return;
 
@@ -131,9 +131,11 @@ function AppContent() {
         const cols = Math.max(1, pane.rectangle.width - 2);
         const rows = Math.max(1, pane.rectangle.height - 2);
         resizePTY(pane.ptyId, cols, rows);
+        // Update pane position for graphics passthrough (+1 for border)
+        setPanePosition(pane.ptyId, pane.rectangle.x + 1, pane.rectangle.y + 1);
       }
     }
-  }, [isInitialized, panes, resizePTY]);
+  }, [isInitialized, panes, resizePTY, setPanePosition]);
 
   // Handle keyboard input
   useKeyboard(

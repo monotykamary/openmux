@@ -39,12 +39,20 @@ export function isGhosttyInitialized(): boolean {
 
 /**
  * GhosttyEmulator wraps GhosttyTerminal for use with our PTY manager
+ * Optimized with dirty line tracking to minimize allocations
  */
 export class GhosttyEmulator {
   private terminal: GhosttyTerminal;
   private _cols: number;
   private _rows: number;
   private subscribers: Set<(state: TerminalState) => void> = new Set();
+
+  // Cached cell state for dirty line optimization
+  private cachedCells: TerminalCell[][] = [];
+  private cellsInitialized = false;
+  // Row version tracking for efficient React change detection
+  private rowVersions: number[] = [];
+  private globalVersion = 0;
 
   constructor(cols: number = 80, rows: number = 24) {
     const ghostty = getGhostty();
@@ -56,6 +64,26 @@ export class GhosttyEmulator {
       bgColor: 0x000000,
       fgColor: 0xFFFFFF,
     });
+
+    // Initialize cached cells
+    this.initializeCachedCells();
+  }
+
+  /**
+   * Initialize the cached cells array with empty cells
+   */
+  private initializeCachedCells(): void {
+    this.cachedCells = [];
+    this.rowVersions = [];
+    for (let y = 0; y < this._rows; y++) {
+      const row: TerminalCell[] = [];
+      for (let x = 0; x < this._cols; x++) {
+        row.push(this.createEmptyCell());
+      }
+      this.cachedCells.push(row);
+      this.rowVersions.push(0);
+    }
+    this.cellsInitialized = true;
   }
 
   get cols(): number {
@@ -81,7 +109,38 @@ export class GhosttyEmulator {
     this._cols = cols;
     this._rows = rows;
     this.terminal.resize(cols, rows);
+
+    // Reinitialize cached cells for new dimensions
+    this.initializeCachedCells();
+
+    // Force full refresh after resize
+    this.updateAllCells();
     this.notifySubscribers();
+  }
+
+  /**
+   * Update all cells from terminal (used after resize or initial load)
+   */
+  private updateAllCells(): void {
+    for (let y = 0; y < this._rows; y++) {
+      const line = this.terminal.getLine(y);
+      const row = this.cachedCells[y] || [];
+
+      if (line) {
+        for (let x = 0; x < Math.min(line.length, this._cols); x++) {
+          row[x] = this.convertCell(line[x]);
+        }
+      }
+      // Fill remaining with empty cells
+      for (let x = (line?.length ?? 0); x < this._cols; x++) {
+        row[x] = this.createEmptyCell();
+      }
+
+      this.cachedCells[y] = row;
+      this.rowVersions[y]++;
+    }
+    this.globalVersion++;
+    this.terminal.clearDirty();
   }
 
   /**
@@ -135,15 +194,19 @@ export class GhosttyEmulator {
 
   /**
    * Get terminal state in our format
+   * Uses dirty line tracking for efficient updates
    */
   getTerminalState(): TerminalState {
     const cursor = this.getCursor();
-    const cells = this.convertCells();
+
+    // Update only dirty lines (major optimization)
+    this.updateDirtyCells();
 
     return {
       cols: this._cols,
       rows: this._rows,
-      cells,
+      cells: this.cachedCells,
+      rowVersions: this.rowVersions,
       cursor: {
         x: cursor.x,
         y: cursor.y,
@@ -156,38 +219,56 @@ export class GhosttyEmulator {
   }
 
   /**
-   * Convert GhosttyCell format to our TerminalCell format
+   * Update only dirty cells using ghostty's dirty tracking
+   * This is the key optimization - instead of rebuilding all cells,
+   * we only update the rows that have changed
+   *
+   * Uses in-place mutation with version tracking for efficient React updates
    */
-  private convertCells(): TerminalCell[][] {
-    const result: TerminalCell[][] = [];
-
-    for (let y = 0; y < this._rows; y++) {
-      const line = this.terminal.getLine(y);
-      const row: TerminalCell[] = [];
-
-      if (line) {
-        for (const cell of line) {
-          row.push(this.convertCell(cell));
-        }
-      } else {
-        // Empty row
-        for (let x = 0; x < this._cols; x++) {
-          row.push(this.createEmptyCell());
-        }
-      }
-
-      result.push(row);
+  private updateDirtyCells(): void {
+    // If not initialized, do a full update
+    if (!this.cellsInitialized) {
+      this.updateAllCells();
+      return;
     }
 
-    return result;
+    // Get only the dirty lines from ghostty
+    const dirtyLines = this.terminal.getDirtyLines();
+
+    // Update only the dirty rows in our cache (in-place mutation)
+    // Increment version for dirty rows so React can detect changes
+    for (const [y, line] of dirtyLines) {
+      if (y >= 0 && y < this._rows && this.cachedCells[y]) {
+        const row = this.cachedCells[y];
+        // Update cells in place
+        for (let x = 0; x < Math.min(line.length, this._cols); x++) {
+          const cell = this.convertCell(line[x]);
+          row[x] = cell;
+        }
+        // Fill remaining cells with empty if line is shorter than cols
+        for (let x = line.length; x < this._cols; x++) {
+          row[x] = this.createEmptyCell();
+        }
+        // Increment version for this row
+        this.rowVersions[y]++;
+        this.globalVersion++;
+      }
+    }
+
+    // Clear dirty flags after processing
+    this.terminal.clearDirty();
   }
 
   /**
    * Convert a single GhosttyCell to TerminalCell
    */
   private convertCell(cell: GhosttyCell): TerminalCell {
+    // Filter out null (0) and replacement character (0xFFFD) which shows as diamond question mark
+    const char = (cell.codepoint > 0 && cell.codepoint !== 0xFFFD)
+      ? String.fromCodePoint(cell.codepoint)
+      : ' ';
     return {
-      char: cell.codepoint > 0 ? String.fromCodePoint(cell.codepoint) : ' ',
+      char,
       fg: { r: cell.fg_r, g: cell.fg_g, b: cell.fg_b },
       bg: { r: cell.bg_r, g: cell.bg_g, b: cell.bg_b },
       bold: (cell.flags & CellFlags.BOLD) !== 0,

@@ -6,15 +6,21 @@ import { useCallback } from 'react';
 import type { PaneData, LayoutMode } from '../core/types';
 import { useLayout } from '../contexts/LayoutContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTerminal } from '../contexts/TerminalContext';
 import { Pane } from './Pane';
 
 export function PaneContainer() {
   const { activeWorkspace, dispatch } = useLayout();
   const theme = useTheme();
+  const { writeToPTY } = useTerminal();
 
   const handlePaneClick = useCallback((paneId: string) => {
     dispatch({ type: 'FOCUS_PANE', paneId });
   }, [dispatch]);
+
+  const handleMouseInput = useCallback((ptyId: string, data: string) => {
+    writeToPTY(ptyId, data);
+  }, [writeToPTY]);
 
   if (!activeWorkspace.mainPane) {
     return (
@@ -45,6 +51,7 @@ export function PaneContainer() {
         isFocused={activeWorkspace.focusedPaneId === activeWorkspace.mainPane.id}
         isMain={true}
         onFocus={handlePaneClick}
+        onMouseInput={handleMouseInput}
       />
 
       {/* Render stack panes */}
@@ -55,6 +62,7 @@ export function PaneContainer() {
           activeStackIndex={activeWorkspace.activeStackIndex}
           focusedPaneId={activeWorkspace.focusedPaneId}
           onFocus={handlePaneClick}
+          onMouseInput={handleMouseInput}
         />
       ) : (
         // Vertical/Horizontal mode: render all stack panes
@@ -65,6 +73,7 @@ export function PaneContainer() {
             isFocused={activeWorkspace.focusedPaneId === pane.id}
             isMain={false}
             onFocus={handlePaneClick}
+            onMouseInput={handleMouseInput}
           />
         ))
       )}
@@ -77,14 +86,21 @@ interface PaneRendererProps {
   isFocused: boolean;
   isMain: boolean;
   onFocus: (paneId: string) => void;
+  onMouseInput: (ptyId: string, data: string) => void;
 }
 
-function PaneRenderer({ pane, isFocused, isMain, onFocus }: PaneRendererProps) {
+function PaneRenderer({ pane, isFocused, isMain, onFocus, onMouseInput }: PaneRendererProps) {
   const rect = pane.rectangle ?? { x: 0, y: 0, width: 40, height: 12 };
 
   const handleClick = useCallback(() => {
     onFocus(pane.id);
   }, [onFocus, pane.id]);
+
+  const handleMouseInput = useCallback((data: string) => {
+    if (pane.ptyId) {
+      onMouseInput(pane.ptyId, data);
+    }
+  }, [pane.ptyId, onMouseInput]);
 
   return (
     <Pane
@@ -97,6 +113,7 @@ function PaneRenderer({ pane, isFocused, isMain, onFocus }: PaneRendererProps) {
       height={rect.height}
       ptyId={pane.ptyId}
       onClick={handleClick}
+      onMouseInput={handleMouseInput}
     />
   );
 }
@@ -106,6 +123,7 @@ interface StackedPanesRendererProps {
   activeStackIndex: number;
   focusedPaneId: string | null;
   onFocus: (paneId: string) => void;
+  onMouseInput: (ptyId: string, data: string) => void;
 }
 
 function StackedPanesRenderer({
@@ -113,6 +131,7 @@ function StackedPanesRenderer({
   activeStackIndex,
   focusedPaneId,
   onFocus,
+  onMouseInput,
 }: StackedPanesRendererProps) {
   if (stackPanes.length === 0) return null;
 
@@ -128,6 +147,12 @@ function StackedPanesRenderer({
   const handleTabClick = useCallback((paneId: string) => {
     onFocus(paneId);
   }, [onFocus]);
+
+  const handleMouseInput = useCallback((data: string) => {
+    if (activePane.ptyId) {
+      onMouseInput(activePane.ptyId, data);
+    }
+  }, [activePane.ptyId, onMouseInput]);
 
   return (
     <>
@@ -165,6 +190,7 @@ function StackedPanesRenderer({
         height={Math.max(1, rect.height - 1)}
         ptyId={activePane.ptyId}
         onClick={handleClick}
+        onMouseInput={handleMouseInput}
       />
     </>
   );

@@ -11,7 +11,7 @@ import React, {
   useRef,
   type ReactNode,
 } from 'react';
-import { initGhostty, isGhosttyInitialized, ptyManager, inputHandler } from '../terminal';
+import { initGhostty, isGhosttyInitialized, ptyManager, inputHandler, detectHostCapabilities } from '../terminal';
 import { useLayout } from './LayoutContext';
 import { readFromClipboard } from '../utils/clipboard';
 
@@ -28,6 +28,8 @@ interface TerminalContextValue {
   pasteToFocused: () => Promise<boolean>;
   /** Resize a PTY session */
   resizePTY: (ptyId: string, cols: number, rows: number) => void;
+  /** Update pane position for graphics passthrough */
+  setPanePosition: (ptyId: string, x: number, y: number) => void;
   /** Get the current working directory of the focused pane */
   getFocusedCwd: () => Promise<string | null>;
   /** Check if ghostty is initialized */
@@ -50,17 +52,19 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   const initializedRef = useRef(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Initialize ghostty on mount
+  // Initialize ghostty and detect host terminal capabilities on mount
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
 
-    initGhostty()
+    // Detect host capabilities first (for graphics passthrough)
+    detectHostCapabilities()
+      .then(() => initGhostty())
       .then(() => {
         setIsInitialized(true);
       })
       .catch((err) => {
-        console.error('Failed to initialize ghostty:', err);
+        console.error('Failed to initialize terminal:', err);
       });
   }, []);
 
@@ -122,6 +126,11 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   // Resize a PTY session
   const resizePTY = useCallback((ptyId: string, cols: number, rows: number) => {
     ptyManager.resize(ptyId, cols, rows);
+  }, []);
+
+  // Update pane position for graphics passthrough
+  const setPanePosition = useCallback((ptyId: string, x: number, y: number) => {
+    ptyManager.setPanePosition(ptyId, x, y);
   }, []);
 
   // Write to a specific PTY
@@ -188,6 +197,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     writeToPTY,
     pasteToFocused,
     resizePTY,
+    setPanePosition,
     getFocusedCwd,
     isInitialized,
   };
