@@ -17,16 +17,16 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/react": "19"
+    "@types/react": "^19.2.7"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@opentui/core": "^0.1.57",
     "@opentui/react": "^0.1.57",
     "bun-pty": "^0.4.2",
     "ghostty-web": "^0.3.0",
-    "react": "19"
+    "react": "^19.2.1"
   }
 }
