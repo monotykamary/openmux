@@ -24,6 +24,29 @@ function generatePaneId(): string {
 }
 
 /**
+ * Sync pane ID counter with loaded panes to avoid ID conflicts
+ * Called when loading a session with existing pane IDs
+ */
+function syncPaneIdCounter(workspaces: Map<WorkspaceId, Workspace>): void {
+  let maxId = paneIdCounter;
+  for (const workspace of workspaces.values()) {
+    if (workspace.mainPane) {
+      const match = workspace.mainPane.id.match(/^pane-(\d+)$/);
+      if (match) {
+        maxId = Math.max(maxId, parseInt(match[1]!, 10));
+      }
+    }
+    for (const pane of workspace.stackPanes) {
+      const match = pane.id.match(/^pane-(\d+)$/);
+      if (match) {
+        maxId = Math.max(maxId, parseInt(match[1]!, 10));
+      }
+    }
+  }
+  paneIdCounter = maxId;
+}
+
+/**
  * Create a new empty workspace
  */
 function createWorkspace(id: WorkspaceId, layoutMode: LayoutMode): Workspace {
@@ -447,6 +470,8 @@ function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
           newWorkspaces.set(id, workspace);
         }
       }
+      // Sync pane ID counter to avoid conflicts with existing pane IDs
+      syncPaneIdCounter(newWorkspaces);
       return {
         ...state,
         workspaces: newWorkspaces,

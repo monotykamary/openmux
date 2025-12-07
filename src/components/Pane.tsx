@@ -164,17 +164,7 @@ export function Pane({
           offsetY={y + 1}
         />
       ) : children ?? (
-        <box
-          style={{
-            flexGrow: 1,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <text fg="#666666">
-            {isFocused ? '[focused]' : `Pane ${id}`}
-          </text>
-        </box>
+        <box style={{ flexGrow: 1 }} />
       )}
     </box>
   );

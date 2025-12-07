@@ -2,7 +2,7 @@
  * Main App component for openmux
  */
 
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useKeyboard, useTerminalDimensions, useRenderer } from '@opentui/react';
 import type { PasteEvent } from '@opentui/core';
 import {
@@ -98,6 +98,9 @@ function AppContent() {
   // Track which panes have PTYs created
   const panesPtyCreated = useRef<Set<string>>(new Set());
 
+  // Retry counter to trigger effect re-run when PTY creation fails
+  const [ptyRetryCounter, setPtyRetryCounter] = useState(0);
+
   // Register a function to clear PTY tracking (called when switching sessions)
   useEffect(() => {
     (globalThis as unknown as { __clearPtyTracking?: () => void }).__clearPtyTracking = () => {
@@ -131,10 +134,10 @@ function AppContent() {
   useEffect(() => {
     if (!isInitialized) return;
 
+    let hadFailure = false;
+
     for (const pane of panes) {
       if (!pane.ptyId && !panesPtyCreated.current.has(pane.id)) {
-        panesPtyCreated.current.add(pane.id);
-
         // Calculate pane dimensions (account for border)
         const rect = pane.rectangle ?? { width: 80, height: 24 };
         const cols = Math.max(1, rect.width - 2);
@@ -150,12 +153,24 @@ function AppContent() {
 
         try {
           createPTY(pane.id, cols, rows, cwd);
+          // Only mark as created AFTER successful PTY creation
+          // This allows retry on subsequent renders if creation fails
+          panesPtyCreated.current.add(pane.id);
         } catch (err) {
           console.error(`Failed to create PTY for pane ${pane.id}:`, err);
+          hadFailure = true;
         }
       }
     }
-  }, [isInitialized, panes, createPTY]);
+
+    // Schedule a retry if any PTY creation failed
+    if (hadFailure) {
+      const timeoutId = setTimeout(() => {
+        setPtyRetryCounter(c => c + 1);
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isInitialized, panes, createPTY, ptyRetryCounter]);
 
   // Resize PTYs and update positions when pane dimensions change
   useEffect(() => {
@@ -296,14 +311,18 @@ function SessionBridge({ children }: { children: React.ReactNode }) {
     activeWorkspaceId: WorkspaceId,
     cwdMap: Map<string, string>
   ) => {
+    // Destroy any existing PTYs before loading session
+    // This prevents orphaned PTYs when initial pane is replaced by session data
+    destroyAllPTYsRef.current();
+
+    // Clear PTY tracking to allow new PTYs to be created for restored panes
+    (globalThis as unknown as { __clearPtyTracking?: () => void }).__clearPtyTracking?.();
+
     // Load workspaces into layout
     layoutDispatchRef.current({ type: 'LOAD_SESSION', workspaces, activeWorkspaceId });
 
     // Store cwdMap in globalThis for AppContent to use
     (globalThis as unknown as { __sessionCwdMap?: Map<string, string> }).__sessionCwdMap = cwdMap;
-
-    // Clear PTY tracking to allow new PTYs to be created for restored panes
-    (globalThis as unknown as { __clearPtyTracking?: () => void }).__clearPtyTracking?.();
   }, []);
 
   const onBeforeSwitch = useCallback(() => {
