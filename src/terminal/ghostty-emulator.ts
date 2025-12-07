@@ -308,13 +308,44 @@ export class GhosttyEmulator {
   }
 
   /**
+   * Check if a codepoint is valid and renderable
+   * Filters out null, replacement chars, surrogates, control chars, and invalid Unicode
+   */
+  private isValidCodepoint(codepoint: number): boolean {
+    // Null/zero codepoint
+    if (codepoint <= 0) return false;
+    // C0 control characters (0x01-0x1F) except space (0x20)
+    // These are non-printable and shouldn't be rendered as glyphs
+    if (codepoint < 0x20) return false;
+    // DEL character (0x7F)
+    if (codepoint === 0x7F) return false;
+    // C1 control characters (0x80-0x9F)
+    if (codepoint >= 0x80 && codepoint <= 0x9F) return false;
+    // Replacement character (U+FFFD) - renders as diamond question mark
+    if (codepoint === 0xFFFD) return false;
+    // Unicode surrogates (U+D800-U+DFFF) - invalid on their own
+    if (codepoint >= 0xD800 && codepoint <= 0xDFFF) return false;
+    // Non-characters (U+FFFE, U+FFFF, and U+nFFFE/U+nFFFF in each plane)
+    if ((codepoint & 0xFFFE) === 0xFFFE) return false;
+    // Out of Unicode range
+    if (codepoint > 0x10FFFF) return false;
+    return true;
+  }
+
+  /**
    * Convert a single GhosttyCell to TerminalCell
    */
   private convertCell(cell: GhosttyCell): TerminalCell {
-    // Filter out null (0) and replacement character (0xFFFD) which shows as diamond question mark
-    const char = (cell.codepoint > 0 && cell.codepoint !== 0xFFFD)
-      ? String.fromCodePoint(cell.codepoint)
-      : ' ';
+    // Filter out invalid codepoints that would render as diamonds or cause errors
+    let char = ' ';
+    if (this.isValidCodepoint(cell.codepoint)) {
+      try {
+        char = String.fromCodePoint(cell.codepoint);
+      } catch {
+        // Fallback to space if fromCodePoint fails
+        char = ' ';
+      }
+    }
     return {
       char,
       fg: { r: cell.fg_r, g: cell.fg_g, b: cell.fg_b },
