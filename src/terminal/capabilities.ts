@@ -8,6 +8,8 @@
  * that the host terminal supports Kitty graphics, Sixel, etc.
  */
 
+import { queryHostColors, type TerminalColors } from './terminal-colors';
+
 const ESC = '\x1b';
 
 // Query sequences that child apps may send
@@ -33,6 +35,8 @@ export interface TerminalCapabilities {
   sixel: boolean;
   /** Whether true color is supported */
   trueColor: boolean;
+  /** Queried terminal colors (foreground, background, palette) */
+  colors: TerminalColors | null;
 }
 
 let cachedCapabilities: TerminalCapabilities | null = null;
@@ -54,6 +58,7 @@ export async function detectHostCapabilities(): Promise<TerminalCapabilities> {
     kittyGraphics: false,
     sixel: false,
     trueColor: false,
+    colors: null,
   };
 
   // Check environment variables for terminal hints
@@ -101,6 +106,10 @@ export async function detectHostCapabilities(): Promise<TerminalCapabilities> {
   // 3. Parse the responses
   // However, this requires async stdin reading which can be complex
   // For now, we rely on environment variables which covers most cases
+
+  // Query terminal colors (foreground, background, palette)
+  // This allows openmux to inherit the user's color scheme
+  capabilities.colors = await queryHostColors(500);
 
   cachedCapabilities = capabilities;
   return capabilities;

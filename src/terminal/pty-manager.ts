@@ -8,6 +8,7 @@ import { DEFAULT_CONFIG } from '../core/config';
 import { GhosttyEmulator } from './ghostty-emulator';
 import { GraphicsPassthrough } from './graphics-passthrough';
 import { getCapabilityEnvironment } from './capabilities';
+import { getHostColors } from './terminal-colors';
 
 /**
  * Get the current working directory of a process by PID
@@ -104,8 +105,11 @@ class PTYManagerImpl {
     const shell = options.shell ?? this.config.defaultShell!;
     const cwd = options.cwd ?? process.cwd();
 
-    // Create ghostty emulator for VT parsing
-    const emulator = new GhosttyEmulator(cols, rows);
+    // Get queried host colors (may be null if not yet queried)
+    const colors = getHostColors() ?? undefined;
+
+    // Create ghostty emulator for VT parsing with host colors
+    const emulator = new GhosttyEmulator({ cols, rows, colors });
 
     // Create graphics passthrough for Kitty/Sixel support
     const graphicsPassthrough = new GraphicsPassthrough();

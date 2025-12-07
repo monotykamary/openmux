@@ -4,6 +4,16 @@
 
 import { Ghostty, GhosttyTerminal, CellFlags, type GhosttyCell, type Cursor } from 'ghostty-web';
 import type { TerminalState, TerminalCell, TerminalCursor } from '../core/types';
+import { getDefaultColors, extractRgb, type TerminalColors } from './terminal-colors';
+
+/**
+ * Options for creating a GhosttyEmulator
+ */
+export interface GhosttyEmulatorOptions {
+  cols?: number;
+  rows?: number;
+  colors?: TerminalColors;
+}
 
 let ghosttyInstance: Ghostty | null = null;
 
@@ -47,6 +57,9 @@ export class GhosttyEmulator {
   private _rows: number;
   private subscribers: Set<(state: TerminalState) => void> = new Set();
 
+  // Terminal colors (queried from host or defaults)
+  private colors: TerminalColors;
+
   // Cached cell state for dirty line optimization
   private cachedCells: TerminalCell[][] = [];
   private cellsInitialized = false;
@@ -54,15 +67,19 @@ export class GhosttyEmulator {
   private rowVersions: number[] = [];
   private globalVersion = 0;
 
-  constructor(cols: number = 80, rows: number = 24) {
+  constructor(options: GhosttyEmulatorOptions = {}) {
+    const { cols = 80, rows = 24, colors } = options;
     const ghostty = getGhostty();
     this._cols = cols;
     this._rows = rows;
+    this.colors = colors ?? getDefaultColors();
+
+    // Configure ghostty-web with queried colors
     this.terminal = ghostty.createTerminal(cols, rows, {
       scrollbackLimit: 10000,
-      // Use pure black background so we can detect it as "transparent"
-      bgColor: 0x000000,
-      fgColor: 0xFFFFFF,
+      bgColor: this.colors.background,
+      fgColor: this.colors.foreground,
+      palette: this.colors.palette,
     });
 
     // Initialize cached cells
@@ -92,6 +109,13 @@ export class GhosttyEmulator {
 
   get rows(): number {
     return this._rows;
+  }
+
+  /**
+   * Get the terminal's color scheme
+   */
+  getColors(): TerminalColors {
+    return this.colors;
   }
 
   /**
@@ -284,13 +308,16 @@ export class GhosttyEmulator {
   }
 
   /**
-   * Create an empty cell
+   * Create an empty cell using the terminal's color scheme
    */
   private createEmptyCell(): TerminalCell {
+    const fg = extractRgb(this.colors.foreground);
+    const bg = extractRgb(this.colors.background);
+
     return {
       char: ' ',
-      fg: { r: 255, g: 255, b: 255 },
-      bg: { r: 0, g: 0, b: 0 },
+      fg,
+      bg,
       bold: false,
       italic: false,
       underline: false,

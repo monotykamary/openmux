@@ -24,24 +24,11 @@ const WHITE = RGBA.fromInts(255, 255, 255);
 const BLACK = RGBA.fromInts(0, 0, 0);
 
 /**
- * Check if color is default/transparent background
+ * Check if a cell has the default background marker color (0,0,1)
+ * This is a fast inline check - the marker distinguishes default bg from explicit black
  */
-function isDefaultBackground(r: number, g: number, b: number): boolean {
-  if (r === 0 && g === 0 && b === 0) return true;
-  if (r === 29 && g === 31 && b === 33) return true;
-  return false;
-}
-
-/**
- * Adjust color for dim effect
- */
-function dimColor(r: number, g: number, b: number): { r: number; g: number; b: number } {
-  return {
-    r: Math.floor(r * 0.5),
-    g: Math.floor(g * 0.5),
-    b: Math.floor(b * 0.5),
-  };
-}
+const hasDefaultBgMarker = (cell: TerminalCell): boolean =>
+  cell.bg.r === 0 && cell.bg.g === 0 && cell.bg.b === 1;
 
 // Text attributes for buffer API
 const ATTR_BOLD = 1;
@@ -103,6 +90,10 @@ export const TerminalView = memo(function TerminalView({
         let fgR = cell.fg.r, fgG = cell.fg.g, fgB = cell.fg.b;
         let bgR = cell.bg.r, bgG = cell.bg.g, bgB = cell.bg.b;
 
+        // Check if background is the default marker (0,0,1) - make transparent
+        // This distinguishes default bg from explicit black (0,0,0) set by programs
+        const useTransparentBg = hasDefaultBgMarker(cell);
+
         // Apply dim effect
         if (cell.dim) {
           fgR = Math.floor(fgR * 0.5);
@@ -118,7 +109,7 @@ export const TerminalView = memo(function TerminalView({
         }
 
         let fg = RGBA.fromInts(fgR, fgG, fgB);
-        let bg = isDefaultBackground(bgR, bgG, bgB)
+        let bg = useTransparentBg
           ? TRANSPARENT_BG
           : RGBA.fromInts(bgR, bgG, bgB);
 
