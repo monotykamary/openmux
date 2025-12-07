@@ -1,106 +1,79 @@
+# CLAUDE.md
 
-Default to using Bun instead of Node.js.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Bun automatically loads .env, so don't use dotenv.
+## Build and Run Commands
 
-## APIs
-
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
-
-## Testing
-
-Use `bun test` to run tests.
-
-```ts#index.test.ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
+```bash
+bun install           # Install dependencies
+bun start             # Run the terminal multiplexer
+bun dev               # Run with watch mode (--watch)
+bun run typecheck     # Type check without emitting
+bun run build         # Build standalone binary (./scripts/build.sh)
+bun run install:local # Build and install locally
 ```
 
-## Frontend
+## Technology Stack
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+- **Bun** - Runtime and package manager (use instead of Node.js)
+- **OpenTUI** - Terminal UI library with React reconciler (@opentui/core, @opentui/react)
+- **bun-pty** - PTY support for shell process management
+- **ghostty-web** - WASM-based terminal emulator (VT parsing)
+- **React 19** - UI components via OpenTUI's React reconciler
 
-Server:
+## Architecture Overview
 
-```ts#index.ts
-import index from "./index.html"
+openmux is a terminal multiplexer with a master-stack tiling layout (Zellij-style). The architecture follows a React-based component model rendered to the terminal via OpenTUI.
 
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
+### Core Data Flow
+
+```
+Keyboard Input → KeyboardContext → LayoutContext (dispatch actions)
+                                          ↓
+                              Master-stack layout calculation
+                                          ↓
+PTY Data → PTYManager → GhosttyEmulator → TerminalContext → TerminalView components
 ```
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
+### Context Hierarchy (src/App.tsx)
 
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
+```tsx
+ThemeProvider           // Styling/theming
+  └── LayoutProvider    // Workspace/pane state (reducer pattern)
+        └── KeyboardProvider  // Prefix mode, key state
+              └── TerminalProvider  // PTY lifecycle, terminal state
+                    └── SessionProvider  // Session persistence
 ```
 
-With the following `frontend.tsx`:
+### Key Modules
 
-```tsx#frontend.tsx
-import React from "react";
+**Layout System (src/core/)**
+- `types.ts` - Core types: Workspace, PaneData, LayoutMode, Rectangle
+- `operations/master-stack-layout.ts` - Calculates pane positions based on layout mode (vertical/horizontal/stacked)
+- `session/` - Session serialization and persistence to `~/.config/openmux/sessions/`
 
-// import .css files directly and it works
-import './index.css';
+**Terminal Layer (src/terminal/)**
+- `pty-manager.ts` - Singleton managing PTY sessions via bun-pty, coordinates with ghostty emulator
+- `ghostty-emulator.ts` - WASM terminal emulator wrapper, handles VT parsing and scrollback
+- `input-handler.ts` - Converts keyboard events to escape sequences (handles DECCKM mode)
+- `graphics-passthrough.ts` - Kitty Graphics and Sixel protocol passthrough to host terminal
 
-import { createRoot } from "react-dom/client";
+**React Contexts (src/contexts/)**
+- `LayoutContext.tsx` - Reducer-based workspace/pane management, handles NAVIGATE, NEW_PANE, CLOSE_PANE, etc.
+- `TerminalContext.tsx` - Manages PTY creation/destruction, subscribes to terminal state updates
+- `KeyboardContext.tsx` - Handles prefix mode (Ctrl+b) with 2s timeout, resize mode
 
-const root = createRoot(document.body);
+### Layout Modes
 
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
+Each workspace has a `layoutMode` that determines pane arrangement:
+- **vertical**: Main pane left, stack panes split vertically on right
+- **horizontal**: Main pane top, stack panes split horizontally on bottom
+- **stacked**: Main pane left, stack panes tabbed on right (only active visible)
 
-root.render(<Frontend />);
-```
+### Workspaces
 
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.md`.
+9 workspaces (1-9) with isolated layouts. Each workspace has:
+- `mainPane` - Primary pane (promoted from stack when closed)
+- `stackPanes[]` - Secondary panes
+- `activeStackIndex` - For stacked mode tab selection
+- `zoomed` - Fullscreen focused pane toggle
