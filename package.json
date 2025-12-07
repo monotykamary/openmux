@@ -5,10 +5,15 @@
   "module": "src/index.tsx",
   "type": "module",
   "private": true,
+  "bin": {
+    "openmux": "./src/index.tsx"
+  },
   "scripts": {
     "start": "bun run src/index.tsx",
     "dev": "bun run --watch src/index.tsx",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "./scripts/build.sh",
+    "install:local": "./scripts/build.sh --install"
   },
   "devDependencies": {
     "@types/bun": "latest",
