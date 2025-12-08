@@ -1,5 +1,6 @@
 /**
  * Terminal context for managing PTY sessions and keyboard forwarding
+ * Uses Effect services via bridge for all PTY operations.
  */
 
 import React, {
@@ -11,14 +12,29 @@ import React, {
   useRef,
   type ReactNode,
 } from 'react';
-import { initGhostty, isGhosttyInitialized, ptyManager, inputHandler, detectHostCapabilities } from '../terminal';
-import type { TerminalScrollState } from '../core/types';
+import { initGhostty, isGhosttyInitialized, detectHostCapabilities } from '../terminal';
+import type { TerminalState, TerminalScrollState } from '../core/types';
 import { useLayout } from './LayoutContext';
-import { readFromClipboard } from '../utils/clipboard';
+import {
+  createPtySession,
+  writeToPty,
+  resizePty,
+  destroyPty,
+  destroyAllPtys,
+  getPtyCwd,
+  getTerminalState,
+  onPtyExit,
+  setPanePosition,
+  getScrollState,
+  setScrollOffset,
+  scrollToBottom,
+  subscribeToPty,
+  readFromClipboard,
+} from '../effect/bridge';
 
 interface TerminalContextValue {
   /** Create a new PTY session for a pane */
-  createPTY: (paneId: string, cols: number, rows: number, cwd?: string) => string;
+  createPTY: (paneId: string, cols: number, rows: number, cwd?: string) => Promise<string>;
   /** Destroy a PTY session */
   destroyPTY: (ptyId: string) => void;
   /** Destroy all PTY sessions */
@@ -61,15 +77,22 @@ interface TerminalProviderProps {
   children: ReactNode;
 }
 
-let ptyIdCounter = 0;
-function generatePtyId(): string {
-  return `pty-${++ptyIdCounter}`;
-}
-
 export function TerminalProvider({ children }: TerminalProviderProps) {
   const { activeWorkspace, dispatch } = useLayout();
   const initializedRef = useRef(false);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // Track ptyId -> paneId mapping for exit handling
+  const ptyToPaneMap = useRef<Map<string, string>>(new Map());
+
+  // Cache terminal states for synchronous access (updated via subscription)
+  const terminalStatesCache = useRef<Map<string, TerminalState>>(new Map());
+
+  // Cache scroll states for synchronous access
+  const scrollStatesCache = useRef<Map<string, TerminalScrollState>>(new Map());
+
+  // Track unsubscribe functions for cleanup
+  const unsubscribeFns = useRef<Map<string, () => void>>(new Map());
 
   // Initialize ghostty and detect host terminal capabilities on mount
   useEffect(() => {
@@ -87,28 +110,35 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
       });
   }, []);
 
-  // Track ptyId -> paneId mapping for exit handling
-  const ptyToPaneMap = useRef<Map<string, string>>(new Map());
-
   // Create a PTY session
-  const createPTY = useCallback((paneId: string, cols: number, rows: number, cwd?: string): string => {
+  const createPTY = useCallback(async (paneId: string, cols: number, rows: number, cwd?: string): Promise<string> => {
     if (!isGhosttyInitialized()) {
       throw new Error('Ghostty not initialized');
     }
 
-    const ptyId = generatePtyId();
-    ptyManager.createSession(ptyId, { cols, rows, cwd });
+    const ptyId = await createPtySession({ cols, rows, cwd });
 
     // Track the mapping
     ptyToPaneMap.current.set(ptyId, paneId);
 
     // Register exit callback to close pane when shell exits
-    ptyManager.onExit(ptyId, () => {
+    const unsubExit = await onPtyExit(ptyId, () => {
       const mappedPaneId = ptyToPaneMap.current.get(ptyId);
       if (mappedPaneId) {
         dispatch({ type: 'CLOSE_PANE_BY_ID', paneId: mappedPaneId });
         ptyToPaneMap.current.delete(ptyId);
       }
+    });
+
+    // Subscribe to terminal state updates for caching
+    const unsubState = await subscribeToPty(ptyId, (state) => {
+      terminalStatesCache.current.set(ptyId, state);
+    });
+
+    // Store unsubscribe functions
+    unsubscribeFns.current.set(ptyId, () => {
+      unsubExit();
+      unsubState();
     });
 
     // Update the pane with the PTY ID
@@ -118,186 +148,214 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   }, [dispatch]);
 
   // Destroy a PTY session
-  const destroyPTY = useCallback((ptyId: string) => {
-    ptyManager.destroySession(ptyId);
+  const handleDestroyPTY = useCallback((ptyId: string) => {
+    // Unsubscribe from updates
+    const unsub = unsubscribeFns.current.get(ptyId);
+    if (unsub) {
+      unsub();
+      unsubscribeFns.current.delete(ptyId);
+    }
+
+    // Clear caches
+    terminalStatesCache.current.delete(ptyId);
+    scrollStatesCache.current.delete(ptyId);
     ptyToPaneMap.current.delete(ptyId);
+
+    // Destroy the PTY (fire and forget)
+    destroyPty(ptyId);
   }, []);
 
   // Destroy all PTY sessions
-  const destroyAllPTYs = useCallback(() => {
-    ptyManager.destroyAll();
+  const handleDestroyAllPTYs = useCallback(() => {
+    // Unsubscribe all
+    for (const unsub of unsubscribeFns.current.values()) {
+      unsub();
+    }
+    unsubscribeFns.current.clear();
+    terminalStatesCache.current.clear();
+    scrollStatesCache.current.clear();
     ptyToPaneMap.current.clear();
+
+    // Destroy all PTYs (fire and forget)
+    destroyAllPtys();
   }, []);
 
   // Get CWD for a specific PTY session
   const getSessionCwd = useCallback(async (ptyId: string): Promise<string> => {
-    const cwd = await ptyManager.getSessionCwd(ptyId);
-    return cwd ?? process.cwd();
+    return getPtyCwd(ptyId);
   }, []);
+
+  // Helper to get focused PTY ID
+  const getFocusedPtyId = useCallback((): string | undefined => {
+    const focusedPaneId = activeWorkspace.focusedPaneId;
+    if (!focusedPaneId) return undefined;
+
+    if (activeWorkspace.mainPane?.id === focusedPaneId) {
+      return activeWorkspace.mainPane.ptyId;
+    }
+
+    const stackPane = activeWorkspace.stackPanes.find(p => p.id === focusedPaneId);
+    return stackPane?.ptyId;
+  }, [activeWorkspace]);
 
   // Write to the focused pane's PTY
   const writeToFocused = useCallback((data: string) => {
-    const focusedPaneId = activeWorkspace.focusedPaneId;
-    if (!focusedPaneId) return;
-
-    // Find the focused pane
-    let focusedPtyId: string | undefined;
-
-    if (activeWorkspace.mainPane?.id === focusedPaneId) {
-      focusedPtyId = activeWorkspace.mainPane.ptyId;
-    } else {
-      const stackPane = activeWorkspace.stackPanes.find(p => p.id === focusedPaneId);
-      focusedPtyId = stackPane?.ptyId;
-    }
-
+    const focusedPtyId = getFocusedPtyId();
     if (focusedPtyId) {
-      ptyManager.write(focusedPtyId, data);
+      // Fire and forget for responsive typing
+      writeToPty(focusedPtyId, data);
     }
-  }, [activeWorkspace]);
+  }, [getFocusedPtyId]);
 
   // Resize a PTY session
-  const resizePTY = useCallback((ptyId: string, cols: number, rows: number) => {
-    ptyManager.resize(ptyId, cols, rows);
+  const handleResizePTY = useCallback((ptyId: string, cols: number, rows: number) => {
+    // Fire and forget
+    resizePty(ptyId, cols, rows);
   }, []);
 
   // Update pane position for graphics passthrough
-  const setPanePosition = useCallback((ptyId: string, x: number, y: number) => {
-    ptyManager.setPanePosition(ptyId, x, y);
+  const handleSetPanePosition = useCallback((ptyId: string, x: number, y: number) => {
+    // Fire and forget
+    setPanePosition(ptyId, x, y);
   }, []);
 
   // Write to a specific PTY
-  const writeToPTY = useCallback((ptyId: string, data: string) => {
-    ptyManager.write(ptyId, data);
+  const handleWriteToPTY = useCallback((ptyId: string, data: string) => {
+    // Fire and forget for responsive typing
+    writeToPty(ptyId, data);
   }, []);
 
   // Get the current working directory of the focused pane
   const getFocusedCwd = useCallback(async (): Promise<string | null> => {
-    const focusedPaneId = activeWorkspace.focusedPaneId;
-    if (!focusedPaneId) return null;
-
-    // Find the focused pane's PTY ID
-    let focusedPtyId: string | undefined;
-    if (activeWorkspace.mainPane?.id === focusedPaneId) {
-      focusedPtyId = activeWorkspace.mainPane.ptyId;
-    } else {
-      const stackPane = activeWorkspace.stackPanes.find(p => p.id === focusedPaneId);
-      focusedPtyId = stackPane?.ptyId;
-    }
-
+    const focusedPtyId = getFocusedPtyId();
     if (!focusedPtyId) return null;
-
-    return ptyManager.getSessionCwd(focusedPtyId);
-  }, [activeWorkspace]);
+    return getPtyCwd(focusedPtyId);
+  }, [getFocusedPtyId]);
 
   // Paste from clipboard to the focused PTY
   const pasteToFocused = useCallback(async (): Promise<boolean> => {
-    const focusedPaneId = activeWorkspace.focusedPaneId;
-    if (!focusedPaneId) return false;
-
-    // Find the focused pane's PTY
-    let focusedPtyId: string | undefined;
-
-    if (activeWorkspace.mainPane?.id === focusedPaneId) {
-      focusedPtyId = activeWorkspace.mainPane.ptyId;
-    } else {
-      const stackPane = activeWorkspace.stackPanes.find(p => p.id === focusedPaneId);
-      focusedPtyId = stackPane?.ptyId;
-    }
-
+    const focusedPtyId = getFocusedPtyId();
     if (!focusedPtyId) return false;
 
-    // Read from clipboard
     const clipboardText = await readFromClipboard();
     if (!clipboardText) return false;
 
-    // Write to PTY
-    ptyManager.write(focusedPtyId, clipboardText);
+    writeToPty(focusedPtyId, clipboardText);
     return true;
-  }, [activeWorkspace]);
+  }, [getFocusedPtyId]);
 
-  // Get the cursor key mode from the focused pane
+  // Get the cursor key mode from the focused pane (sync - uses cache)
   const getFocusedCursorKeyMode = useCallback((): 'normal' | 'application' => {
-    const focusedPaneId = activeWorkspace.focusedPaneId;
-    if (!focusedPaneId) return 'normal';
-
-    // Find the focused pane's PTY ID
-    let focusedPtyId: string | undefined;
-    if (activeWorkspace.mainPane?.id === focusedPaneId) {
-      focusedPtyId = activeWorkspace.mainPane.ptyId;
-    } else {
-      const stackPane = activeWorkspace.stackPanes.find(p => p.id === focusedPaneId);
-      focusedPtyId = stackPane?.ptyId;
-    }
-
+    const focusedPtyId = getFocusedPtyId();
     if (!focusedPtyId) return 'normal';
 
-    // Get terminal state which includes cursor key mode
-    const terminalState = ptyManager.getTerminalState(focusedPtyId);
+    const terminalState = terminalStatesCache.current.get(focusedPtyId);
     return terminalState?.cursorKeyMode ?? 'normal';
-  }, [activeWorkspace]);
+  }, [getFocusedPtyId]);
 
-  // Check if mouse tracking is enabled for a PTY
-  // This is used to determine if mouse events should be forwarded to the child process
-  const isMouseTrackingEnabled = useCallback((ptyId: string): boolean => {
-    const terminalState = ptyManager.getTerminalState(ptyId);
+  // Check if mouse tracking is enabled for a PTY (sync - uses cache)
+  const handleIsMouseTrackingEnabled = useCallback((ptyId: string): boolean => {
+    const terminalState = terminalStatesCache.current.get(ptyId);
     return terminalState?.mouseTracking ?? false;
   }, []);
 
-  // Check if terminal is in alternate screen mode (vim, htop, etc.)
-  const isAlternateScreen = useCallback((ptyId: string): boolean => {
-    const terminalState = ptyManager.getTerminalState(ptyId);
+  // Check if terminal is in alternate screen mode (sync - uses cache)
+  const handleIsAlternateScreen = useCallback((ptyId: string): boolean => {
+    const terminalState = terminalStatesCache.current.get(ptyId);
     return terminalState?.alternateScreen ?? false;
   }, []);
 
-  // Get scroll state for a PTY
-  const getScrollState = useCallback((ptyId: string): TerminalScrollState | undefined => {
-    return ptyManager.getScrollState(ptyId);
+  // Get scroll state for a PTY (sync - uses cache, but also fetches async)
+  const handleGetScrollState = useCallback((ptyId: string): TerminalScrollState | undefined => {
+    // Return cached value immediately
+    const cached = scrollStatesCache.current.get(ptyId);
+
+    // Also fetch fresh state async and update cache
+    getScrollState(ptyId).then((state) => {
+      if (state) {
+        scrollStatesCache.current.set(ptyId, {
+          viewportOffset: state.viewportOffset,
+          scrollbackLength: state.scrollbackLength,
+          isAtBottom: state.isAtBottom,
+        });
+      }
+    });
+
+    return cached;
   }, []);
 
-  // Scroll terminal by delta lines (positive = scroll up into history)
+  // Scroll terminal by delta lines
   const scrollTerminal = useCallback((ptyId: string, delta: number): void => {
-    const state = ptyManager.getScrollState(ptyId);
-    if (state) {
-      const newOffset = state.viewportOffset + delta;
-      ptyManager.setScrollOffset(ptyId, newOffset);
+    const cached = scrollStatesCache.current.get(ptyId);
+    if (cached) {
+      const newOffset = cached.viewportOffset + delta;
+      setScrollOffset(ptyId, newOffset);
+      // Update cache optimistically
+      scrollStatesCache.current.set(ptyId, {
+        ...cached,
+        viewportOffset: Math.max(0, newOffset),
+        isAtBottom: newOffset <= 0,
+      });
     }
   }, []);
 
   // Set absolute scroll offset
-  const setScrollOffset = useCallback((ptyId: string, offset: number): void => {
-    ptyManager.setScrollOffset(ptyId, offset);
+  const handleSetScrollOffset = useCallback((ptyId: string, offset: number): void => {
+    setScrollOffset(ptyId, offset);
+    // Update cache optimistically
+    const cached = scrollStatesCache.current.get(ptyId);
+    if (cached) {
+      scrollStatesCache.current.set(ptyId, {
+        ...cached,
+        viewportOffset: Math.max(0, offset),
+        isAtBottom: offset <= 0,
+      });
+    }
   }, []);
 
-  // Scroll terminal to bottom (live content)
-  const scrollToBottom = useCallback((ptyId: string): void => {
-    ptyManager.scrollToBottom(ptyId);
+  // Scroll terminal to bottom
+  const handleScrollToBottom = useCallback((ptyId: string): void => {
+    scrollToBottom(ptyId);
+    // Update cache optimistically
+    const cached = scrollStatesCache.current.get(ptyId);
+    if (cached) {
+      scrollStatesCache.current.set(ptyId, {
+        ...cached,
+        viewportOffset: 0,
+        isAtBottom: true,
+      });
+    }
   }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      ptyManager.destroyAll();
+      // Unsubscribe all
+      for (const unsub of unsubscribeFns.current.values()) {
+        unsub();
+      }
+      destroyAllPtys();
     };
   }, []);
 
   const value: TerminalContextValue = {
     createPTY,
-    destroyPTY,
-    destroyAllPTYs,
+    destroyPTY: handleDestroyPTY,
+    destroyAllPTYs: handleDestroyAllPTYs,
     writeToFocused,
-    writeToPTY,
+    writeToPTY: handleWriteToPTY,
     pasteToFocused,
-    resizePTY,
-    setPanePosition,
+    resizePTY: handleResizePTY,
+    setPanePosition: handleSetPanePosition,
     getFocusedCwd,
     getSessionCwd,
     getFocusedCursorKeyMode,
-    isMouseTrackingEnabled,
-    isAlternateScreen,
-    getScrollState,
+    isMouseTrackingEnabled: handleIsMouseTrackingEnabled,
+    isAlternateScreen: handleIsAlternateScreen,
+    getScrollState: handleGetScrollState,
     scrollTerminal,
-    setScrollOffset,
-    scrollToBottom,
+    setScrollOffset: handleSetScrollOffset,
+    scrollToBottom: handleScrollToBottom,
     isInitialized,
   };
 

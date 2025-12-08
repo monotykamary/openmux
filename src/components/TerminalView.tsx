@@ -1,11 +1,18 @@
 /**
  * TerminalView - renders terminal state using direct buffer access for performance
+ * Uses Effect bridge for PTY operations.
  */
 
 import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { RGBA, type OptimizedBuffer } from '@opentui/core';
-import type { TerminalState, TerminalCell } from '../core/types';
-import { ptyManager } from '../terminal';
+import type { TerminalState, TerminalCell, TerminalScrollState } from '../core/types';
+import type { GhosttyEmulator } from '../terminal/ghostty-emulator';
+import {
+  getTerminalState,
+  subscribeToPty,
+  getScrollState,
+  getEmulator,
+} from '../effect/bridge';
 
 interface TerminalViewProps {
   ptyId: string;
@@ -43,23 +50,74 @@ export const TerminalView = memo(function TerminalView({
   offsetY = 0,
 }: TerminalViewProps) {
   // Store terminal state in a ref to avoid React re-renders
-  const terminalStateRef = useRef<TerminalState | null>(
-    ptyManager.getTerminalState(ptyId) ?? null
-  );
+  const terminalStateRef = useRef<TerminalState | null>(null);
+  // Cache scroll state for sync access in render
+  const scrollStateRef = useRef<TerminalScrollState>({
+    viewportOffset: 0,
+    scrollbackLength: 0,
+    isAtBottom: true,
+  });
+  // Cache emulator for sync access to scrollback lines
+  const emulatorRef = useRef<GhosttyEmulator | null>(null);
   // Version counter to trigger re-renders when state changes
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
-    const unsubscribe = ptyManager.subscribe(ptyId, (state) => {
-      terminalStateRef.current = state;
-      // Increment version to trigger re-render
+    let unsubscribe: (() => void) | null = null;
+    let mounted = true;
+
+    // Initialize async resources
+    const init = async () => {
+      // Get initial terminal state
+      const initialState = await getTerminalState(ptyId);
+      if (!mounted) return;
+      terminalStateRef.current = initialState;
+
+      // Get emulator for scrollback access
+      const emulator = await getEmulator(ptyId);
+      if (!mounted) return;
+      emulatorRef.current = emulator;
+
+      // Get initial scroll state
+      const scrollState = await getScrollState(ptyId);
+      if (!mounted) return;
+      if (scrollState) {
+        scrollStateRef.current = scrollState;
+      }
+
+      // Subscribe to terminal state updates
+      unsubscribe = await subscribeToPty(ptyId, (state) => {
+        terminalStateRef.current = state;
+        // Increment version to trigger re-render
+        setVersion(v => v + 1);
+      });
+
+      // Trigger initial render
       setVersion(v => v + 1);
-    });
+    };
+
+    init();
 
     return () => {
-      unsubscribe();
+      mounted = false;
+      if (unsubscribe) {
+        unsubscribe();
+      }
     };
   }, [ptyId]);
+
+  // Update scroll state periodically (for scrollback rendering)
+  useEffect(() => {
+    const updateScrollState = async () => {
+      const scrollState = await getScrollState(ptyId);
+      if (scrollState) {
+        scrollStateRef.current = scrollState;
+      }
+    };
+
+    // Update scroll state on each render (version change)
+    updateScrollState();
+  }, [ptyId, version]);
 
   // Render callback that directly writes to buffer
   const renderTerminal = useCallback((buffer: OptimizedBuffer) => {
@@ -74,10 +132,10 @@ export const TerminalView = memo(function TerminalView({
       return;
     }
 
-    // Get scroll state
-    const scrollState = ptyManager.getScrollState(ptyId);
-    const viewportOffset = scrollState?.viewportOffset ?? 0;
-    const scrollbackLength = scrollState?.scrollbackLength ?? 0;
+    // Get scroll state from cache
+    const scrollState = scrollStateRef.current;
+    const viewportOffset = scrollState.viewportOffset;
+    const scrollbackLength = scrollState.scrollbackLength;
     const isAtBottom = viewportOffset === 0;
 
     const rows = Math.min(state.rows, height);
@@ -88,7 +146,7 @@ export const TerminalView = memo(function TerminalView({
     const fallbackFg = BLACK;
 
     // Pre-fetch all rows we need for rendering (optimization: fetch once per row, not per cell)
-    const emulator = viewportOffset > 0 ? ptyManager.getEmulator(ptyId) : null;
+    const emulator = viewportOffset > 0 ? emulatorRef.current : null;
     const rowCache: (TerminalCell[] | null)[] = new Array(rows);
 
     for (let y = 0; y < rows; y++) {

@@ -13,19 +13,28 @@
     "dev": "bun run --watch src/index.tsx",
     "typecheck": "tsc --noEmit",
     "build": "./scripts/build.sh",
-    "install:local": "./scripts/build.sh --install"
+    "install:local": "./scripts/build.sh --install",
+    "prepare": "effect-language-service patch",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
+    "@effect/language-service": "^0.60.0",
+    "@effect/vitest": "^0.27.0",
     "@types/bun": "latest",
-    "@types/react": "^19.2.7"
+    "@types/react": "^19.2.7",
+    "vitest": "^4.0.15"
   },
   "peerDependencies": {
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@effect/cli": "^0.72.1",
+    "@effect/platform": "^0.93.6",
     "@opentui/core": "^0.1.57",
     "@opentui/react": "^0.1.57",
     "bun-pty": "^0.4.2",
+    "effect": "^3.19.9",
     "ghostty-web": "^0.3.0",
     "react": "^19.2.1"
   }
