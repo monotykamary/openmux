@@ -265,6 +265,47 @@ export async function subscribeToPty(
   }
 }
 
+/**
+ * Get a scrollback line from the terminal emulator.
+ * Returns null if the line doesn't exist or the PTY is not found.
+ */
+export async function getScrollbackLine(
+  ptyId: string,
+  lineIndex: number
+): Promise<import("../core/types").TerminalCell[] | null> {
+  try {
+    return await runEffect(
+      Effect.gen(function* () {
+        const pty = yield* Pty
+        const emulator = yield* pty.getEmulator(PtyId.make(ptyId))
+        return emulator.getScrollbackLine(lineIndex)
+      })
+    )
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Get the terminal emulator instance for direct access.
+ * Primarily used for scrollback rendering in TerminalView.
+ * Should be called once and cached for sync access in render loops.
+ */
+export async function getEmulator(
+  ptyId: string
+): Promise<import("../terminal/ghostty-emulator").GhosttyEmulator | null> {
+  try {
+    return await runEffect(
+      Effect.gen(function* () {
+        const pty = yield* Pty
+        return yield* pty.getEmulator(PtyId.make(ptyId))
+      })
+    )
+  } catch {
+    return null
+  }
+}
+
 // =============================================================================
 // Session Bridge
 // =============================================================================
