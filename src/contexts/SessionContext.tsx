@@ -16,16 +16,16 @@ import {
 import type { SessionId, SessionMetadata, Workspace, WorkspaceId } from '../core/types';
 import { DEFAULT_CONFIG } from '../core/config';
 import {
-  createSession as createSessionOnDisk,
-  listSessions,
-  getActiveSessionId,
-  renameSession as renameSessionOnDisk,
-  deleteSession as deleteSessionOnDisk,
+  createSessionLegacy as createSessionOnDisk,
+  listSessionsLegacy as listSessions,
+  getActiveSessionIdLegacy as getActiveSessionId,
+  renameSessionLegacy as renameSessionOnDisk,
+  deleteSessionLegacy as deleteSessionOnDisk,
   saveCurrentSession,
   loadSessionData,
   switchToSession,
   getSessionSummary,
-} from '../core/session';
+} from '../effect/bridge';
 
 export interface SessionSummary {
   workspaceCount: number;
