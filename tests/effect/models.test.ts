@@ -100,24 +100,27 @@ describe("Schema Encoding/Decoding", () => {
   describe("SerializedSession", () => {
     it("decodes valid session JSON", () => {
       const json = {
-        id: "session-123",
-        name: "Test Session",
+        metadata: {
+          id: "session-123",
+          name: "Test Session",
+          createdAt: 1704067200000,
+          lastSwitchedAt: 1704067200000,
+          autoNamed: false,
+        },
         workspaces: [],
         activeWorkspaceId: 1,
-        createdAt: "2024-01-01T00:00:00.000Z",
-        updatedAt: "2024-01-01T00:00:00.000Z",
       }
 
       const session = Schema.decodeUnknownSync(SerializedSession)(json)
-      expect(session.id).toBe("session-123")
-      expect(session.name).toBe("Test Session")
+      expect(session.metadata.id).toBe("session-123")
+      expect(session.metadata.name).toBe("Test Session")
       expect(session.workspaces).toEqual([])
       expect(session.activeWorkspaceId).toBe(1)
-      expect(session.createdAt).toBeInstanceOf(Date)
+      expect(session.metadata.createdAt).toBe(1704067200000)
     })
 
     it("rejects invalid session JSON", () => {
-      const json = { id: "session-123" } // Missing required fields
+      const json = { metadata: { id: "session-123" } } // Missing required fields
       expect(() =>
         Schema.decodeUnknownSync(SerializedSession)(json)
       ).toThrow()

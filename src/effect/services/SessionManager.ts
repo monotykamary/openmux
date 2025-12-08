@@ -1,9 +1,9 @@
 /**
  * Session manager service for orchestrating session operations.
+ * Compatible with legacy core/types.ts interfaces.
  */
 import { Context, Effect, Layer, Ref } from "effect"
 import { SessionStorage } from "./SessionStorage"
-import { Pty } from "./Pty"
 import {
   SessionStorageError,
   SessionNotFoundError,
@@ -19,7 +19,6 @@ import {
 import {
   SessionId,
   WorkspaceId,
-  PtyId,
   makeSessionId,
 } from "../types"
 
@@ -40,7 +39,7 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
   SessionManager,
   {
     /** Create a new session */
-    readonly createSession: (name: string) => Effect.Effect<SessionId, SessionStorageError>
+    readonly createSession: (name?: string) => Effect.Effect<SessionMetadata, SessionStorageError>
 
     /** Load a session by ID */
     readonly loadSession: (
@@ -63,7 +62,7 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
       newName: string
     ) => Effect.Effect<void, SessionError>
 
-    /** List all sessions */
+    /** List all sessions sorted by lastSwitchedAt (most recent first) */
     readonly listSessions: () => Effect.Effect<
       readonly SessionMetadata[],
       SessionStorageError
@@ -77,17 +76,38 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
       id: SessionId | null
     ) => Effect.Effect<void, SessionStorageError>
 
+    /** Switch to a session (updates lastSwitchedAt) */
+    readonly switchToSession: (
+      id: SessionId
+    ) => Effect.Effect<void, SessionError>
+
+    /** Get session metadata by ID */
+    readonly getSessionMetadata: (
+      id: SessionId
+    ) => Effect.Effect<SessionMetadata | null, SessionStorageError>
+
+    /** Update auto-name for a session based on cwd */
+    readonly updateAutoName: (
+      id: SessionId,
+      cwd: string
+    ) => Effect.Effect<void, SessionError>
+
+    /** Get session summary (workspace/pane counts) */
+    readonly getSessionSummary: (
+      id: SessionId
+    ) => Effect.Effect<{ workspaceCount: number; paneCount: number } | null, SessionError>
+
     /** Serialize workspaces to session format */
     readonly serializeWorkspaces: (
+      metadata: SessionMetadata,
       workspaces: ReadonlyMap<number, WorkspaceState>,
       activeWorkspaceId: number,
       getCwd: (ptyId: string) => Promise<string>
-    ) => Effect.Effect<SerializedSession, SessionStorageError>
+    ) => Effect.Effect<SerializedSession, never>
 
     /** Quick save - serialize and save current state */
     readonly quickSave: (
-      sessionId: SessionId,
-      name: string,
+      metadata: SessionMetadata,
       workspaces: ReadonlyMap<number, WorkspaceState>,
       activeWorkspaceId: number,
       getCwd: (ptyId: string) => Promise<string>
@@ -99,7 +119,6 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
     SessionManager,
     Effect.gen(function* () {
       const storage = yield* SessionStorage
-      const pty = yield* Pty
 
       // Track active session
       const activeSessionRef = yield* Ref.make<SessionId | null>(null)
@@ -110,19 +129,30 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
         yield* Ref.set(activeSessionRef, index.activeSessionId)
       }
 
+      /** Extract auto-name from path (last directory component) */
+      const getAutoName = (cwd: string): string => {
+        const parts = cwd.split("/").filter(Boolean)
+        return parts[parts.length - 1] ?? "untitled"
+      }
+
       const createSession = Effect.fn("SessionManager.createSession")(
-        function* (name: string) {
+        function* (name?: string) {
           const id = makeSessionId()
-          const now = new Date()
+          const now = Date.now()
+
+          const metadata = SessionMetadata.make({
+            id,
+            name: name ?? getAutoName(process.cwd()),
+            createdAt: now,
+            lastSwitchedAt: now,
+            autoNamed: !name,
+          })
 
           // Create empty session
           const session = SerializedSession.make({
-            id,
-            name,
+            metadata,
             workspaces: [],
             activeWorkspaceId: WorkspaceId.make(1),
-            createdAt: now,
-            updatedAt: now,
           })
 
           // Save session file
@@ -130,13 +160,6 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
 
           // Update index
           const currentIndex = yield* storage.loadIndex()
-          const metadata = SessionMetadata.make({
-            id,
-            name,
-            createdAt: now,
-            updatedAt: now,
-          })
-
           yield* storage.saveIndex(
             SessionIndex.make({
               sessions: [...currentIndex.sessions, metadata],
@@ -147,7 +170,7 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
           // Set as active
           yield* Ref.set(activeSessionRef, id)
 
-          return id
+          return metadata
         }
       )
 
@@ -160,25 +183,24 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
       const saveSession = Effect.fn("SessionManager.saveSession")(function* (
         session: SerializedSession
       ) {
-        // Update the session with new timestamp
-        const updated = SerializedSession.make({
-          ...session,
-          updatedAt: new Date(),
-        })
+        yield* storage.saveSession(session)
 
-        yield* storage.saveSession(updated)
-
-        // Update index timestamp
+        // Update index
         const currentIndex = yield* storage.loadIndex()
-        const updatedSessions = currentIndex.sessions.map((s) =>
-          s.id === session.id
-            ? SessionMetadata.make({ ...s, updatedAt: updated.updatedAt })
-            : s
+        const existingIdx = currentIndex.sessions.findIndex(
+          (s) => s.id === session.metadata.id
         )
+
+        const sessions =
+          existingIdx >= 0
+            ? currentIndex.sessions.map((s, i) =>
+                i === existingIdx ? session.metadata : s
+              )
+            : [...currentIndex.sessions, session.metadata]
 
         yield* storage.saveIndex(
           SessionIndex.make({
-            sessions: updatedSessions,
+            sessions,
             activeSessionId: currentIndex.activeSessionId,
           })
         )
@@ -195,10 +217,10 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
             (s) => s.id !== id
           )
 
-          // If deleting active session, clear it
+          // If deleting active session, switch to another
           const newActiveId =
             currentIndex.activeSessionId === id
-              ? null
+              ? filteredSessions[0]?.id ?? null
               : currentIndex.activeSessionId
 
           yield* storage.saveIndex(
@@ -211,7 +233,7 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
           // Update ref if needed
           const currentActive = yield* Ref.get(activeSessionRef)
           if (currentActive === id) {
-            yield* Ref.set(activeSessionRef, null)
+            yield* Ref.set(activeSessionRef, newActiveId)
           }
         }
       )
@@ -220,10 +242,14 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
         function* (id: SessionId, newName: string) {
           // Load and update session
           const session = yield* storage.loadSession(id)
+          const updatedMetadata = SessionMetadata.make({
+            ...session.metadata,
+            name: newName,
+            autoNamed: false,
+          })
           const updated = SerializedSession.make({
             ...session,
-            name: newName,
-            updatedAt: new Date(),
+            metadata: updatedMetadata,
           })
 
           yield* storage.saveSession(updated)
@@ -231,13 +257,7 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
           // Update index
           const currentIndex = yield* storage.loadIndex()
           const updatedSessions = currentIndex.sessions.map((s) =>
-            s.id === id
-              ? SessionMetadata.make({
-                  ...s,
-                  name: newName,
-                  updatedAt: updated.updatedAt,
-                })
-              : s
+            s.id === id ? updatedMetadata : s
           )
 
           yield* storage.saveIndex(
@@ -251,7 +271,11 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
 
       const listSessions = Effect.fn("SessionManager.listSessions")(
         function* () {
-          return yield* storage.listSessions()
+          const sessions = yield* storage.listSessions()
+          // Sort by lastSwitchedAt (most recent first)
+          return [...sessions].sort(
+            (a, b) => b.lastSwitchedAt - a.lastSwitchedAt
+          )
         }
       )
 
@@ -276,16 +300,109 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
         )
       })
 
+      const switchToSession = Effect.fn("SessionManager.switchToSession")(
+        function* (id: SessionId) {
+          const currentIndex = yield* storage.loadIndex()
+          const session = currentIndex.sessions.find((s) => s.id === id)
+
+          if (!session) {
+            return yield* SessionNotFoundError.make({ sessionId: id })
+          }
+
+          // Update lastSwitchedAt
+          const now = Date.now()
+          const updatedMetadata = SessionMetadata.make({
+            ...session,
+            lastSwitchedAt: now,
+          })
+
+          const updatedSessions = currentIndex.sessions.map((s) =>
+            s.id === id ? updatedMetadata : s
+          )
+
+          yield* storage.saveIndex(
+            SessionIndex.make({
+              sessions: updatedSessions,
+              activeSessionId: id,
+            })
+          )
+
+          // Update session file too
+          const sessionData = yield* storage.loadSession(id)
+          yield* storage.saveSession(
+            SerializedSession.make({
+              ...sessionData,
+              metadata: updatedMetadata,
+            })
+          )
+
+          yield* Ref.set(activeSessionRef, id)
+        }
+      )
+
+      const getSessionMetadata = Effect.fn("SessionManager.getSessionMetadata")(
+        function* (id: SessionId) {
+          const index = yield* storage.loadIndex()
+          return index.sessions.find((s) => s.id === id) ?? null
+        }
+      )
+
+      const updateAutoName = Effect.fn("SessionManager.updateAutoName")(
+        function* (id: SessionId, cwd: string) {
+          const index = yield* storage.loadIndex()
+          const session = index.sessions.find((s) => s.id === id)
+
+          if (session && session.autoNamed) {
+            const newName = getAutoName(cwd)
+            if (newName !== session.name) {
+              const updated = SessionMetadata.make({ ...session, name: newName })
+              const updatedSessions = index.sessions.map((s) =>
+                s.id === id ? updated : s
+              )
+              yield* storage.saveIndex(
+                SessionIndex.make({
+                  sessions: updatedSessions,
+                  activeSessionId: index.activeSessionId,
+                })
+              )
+            }
+          }
+        }
+      )
+
+      const getSessionSummary = Effect.fn("SessionManager.getSessionSummary")(
+        function* (id: SessionId) {
+          const exists = yield* storage.sessionExists(id)
+          if (!exists) return null
+
+          const session = yield* storage.loadSession(id).pipe(
+            Effect.catchAll(() => Effect.succeed(null))
+          )
+          if (!session) return null
+
+          let paneCount = 0
+          let workspaceCount = 0
+
+          for (const ws of session.workspaces) {
+            if (ws.mainPane || ws.stackPanes.length > 0) {
+              workspaceCount++
+              if (ws.mainPane) paneCount++
+              paneCount += ws.stackPanes.length
+            }
+          }
+
+          return { workspaceCount, paneCount }
+        }
+      )
+
       const serializeWorkspaces = Effect.fn(
         "SessionManager.serializeWorkspaces"
       )(function* (
+        metadata: SessionMetadata,
         workspaces: ReadonlyMap<number, WorkspaceState>,
         activeWorkspaceId: number,
         getCwd: (ptyId: string) => Promise<string>
       ) {
-        const sessionId = (yield* Ref.get(activeSessionRef)) ?? makeSessionId()
-        const now = new Date()
-
         // Collect all CWDs
         const cwdMap = new Map<string, string>()
         for (const workspace of workspaces.values()) {
@@ -311,6 +428,9 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
         // Serialize workspaces
         const serializedWorkspaces: SerializedWorkspace[] = []
         for (const [id, workspace] of workspaces) {
+          // Only serialize workspaces with panes
+          if (!workspace.mainPane && workspace.stackPanes.length === 0) continue
+
           const mainPane = workspace.mainPane
             ? SerializedPaneData.make({
                 id: workspace.mainPane.id,
@@ -336,6 +456,7 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
               id: WorkspaceId.make(id),
               mainPane,
               stackPanes,
+              focusedPaneId: workspace.focusedPaneId ?? null,
               layoutMode: workspace.layoutMode,
               activeStackIndex: workspace.activeStackIndex,
               zoomed: workspace.zoomed,
@@ -344,35 +465,25 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
         }
 
         return SerializedSession.make({
-          id: sessionId,
-          name: "Session",
+          metadata,
           workspaces: serializedWorkspaces,
           activeWorkspaceId: WorkspaceId.make(activeWorkspaceId),
-          createdAt: now,
-          updatedAt: now,
         })
       })
 
       const quickSave = Effect.fn("SessionManager.quickSave")(function* (
-        sessionId: SessionId,
-        name: string,
+        metadata: SessionMetadata,
         workspaces: ReadonlyMap<number, WorkspaceState>,
         activeWorkspaceId: number,
         getCwd: (ptyId: string) => Promise<string>
       ) {
         const session = yield* serializeWorkspaces(
+          metadata,
           workspaces,
           activeWorkspaceId,
           getCwd
         )
-
-        const namedSession = SerializedSession.make({
-          ...session,
-          id: sessionId,
-          name,
-        })
-
-        yield* saveSession(namedSession)
+        yield* saveSession(session)
       })
 
       return SessionManager.of({
@@ -384,6 +495,10 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
         listSessions,
         getActiveSessionId,
         setActiveSessionId,
+        switchToSession,
+        getSessionMetadata,
+        updateAutoName,
+        getSessionSummary,
         serializeWorkspaces,
         quickSave,
       })
@@ -398,17 +513,22 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
       const activeRef = yield* Ref.make<SessionId | null>(null)
 
       const createSession = Effect.fn("SessionManager.createSession")(
-        function* (name: string) {
+        function* (name?: string) {
           const id = makeSessionId()
-          const now = new Date()
+          const now = Date.now()
+
+          const metadata = SessionMetadata.make({
+            id,
+            name: name ?? "test-session",
+            createdAt: now,
+            lastSwitchedAt: now,
+            autoNamed: !name,
+          })
 
           const session = SerializedSession.make({
-            id,
-            name,
+            metadata,
             workspaces: [],
             activeWorkspaceId: WorkspaceId.make(1),
-            createdAt: now,
-            updatedAt: now,
           })
 
           yield* Ref.update(sessionsRef, (map) => {
@@ -418,7 +538,7 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
           })
 
           yield* Ref.set(activeRef, id)
-          return id
+          return metadata
         }
       )
 
@@ -438,7 +558,7 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
       ) {
         yield* Ref.update(sessionsRef, (map) => {
           const newMap = new Map(map)
-          newMap.set(session.id, session)
+          newMap.set(session.metadata.id, session)
           return newMap
         })
       })
@@ -461,12 +581,18 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
             return yield* SessionNotFoundError.make({ sessionId: id })
           }
 
+          const updated = SerializedSession.make({
+            ...session,
+            metadata: SessionMetadata.make({
+              ...session.metadata,
+              name: newName,
+              autoNamed: false,
+            }),
+          })
+
           yield* Ref.update(sessionsRef, (map) => {
             const newMap = new Map(map)
-            newMap.set(
-              id,
-              SerializedSession.make({ ...session, name: newName })
-            )
+            newMap.set(id, updated)
             return newMap
           })
         }
@@ -475,14 +601,9 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
       const listSessions = Effect.fn("SessionManager.listSessions")(
         function* () {
           const sessions = yield* Ref.get(sessionsRef)
-          return Array.from(sessions.values()).map((s) =>
-            SessionMetadata.make({
-              id: s.id,
-              name: s.name,
-              createdAt: s.createdAt,
-              updatedAt: s.updatedAt,
-            })
-          )
+          return Array.from(sessions.values())
+            .map((s) => s.metadata)
+            .sort((a, b) => b.lastSwitchedAt - a.lastSwitchedAt)
         }
       )
 
@@ -498,16 +619,47 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
         yield* Ref.set(activeRef, id)
       })
 
+      const switchToSession = Effect.fn("SessionManager.switchToSession")(
+        function* (id: SessionId) {
+          const sessions = yield* Ref.get(sessionsRef)
+          const session = sessions.get(id)
+          if (!session) {
+            return yield* SessionNotFoundError.make({ sessionId: id })
+          }
+          yield* Ref.set(activeRef, id)
+        }
+      )
+
+      const getSessionMetadata = Effect.fn("SessionManager.getSessionMetadata")(
+        function* (id: SessionId) {
+          const sessions = yield* Ref.get(sessionsRef)
+          const session = sessions.get(id)
+          return session?.metadata ?? null
+        }
+      )
+
+      const updateAutoName = Effect.fn("SessionManager.updateAutoName")(
+        function* (_id: SessionId, _cwd: string) {
+          // No-op in test
+        }
+      )
+
+      const getSessionSummary = Effect.fn("SessionManager.getSessionSummary")(
+        function* (id: SessionId) {
+          const sessions = yield* Ref.get(sessionsRef)
+          const session = sessions.get(id)
+          if (!session) return null
+          return { workspaceCount: session.workspaces.length, paneCount: 0 }
+        }
+      )
+
       const serializeWorkspaces = Effect.fn(
         "SessionManager.serializeWorkspaces"
-      )(function* () {
+      )(function* (metadata: SessionMetadata) {
         return SerializedSession.make({
-          id: makeSessionId(),
-          name: "Test Session",
+          metadata,
           workspaces: [],
           activeWorkspaceId: WorkspaceId.make(1),
-          createdAt: new Date(),
-          updatedAt: new Date(),
         })
       })
 
@@ -524,6 +676,10 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
         listSessions,
         getActiveSessionId,
         setActiveSessionId,
+        switchToSession,
+        getSessionMetadata,
+        updateAutoName: updateAutoName as any,
+        getSessionSummary: getSessionSummary as any,
         serializeWorkspaces: serializeWorkspaces as any,
         quickSave: quickSave as any,
       })
@@ -538,6 +694,7 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
 interface WorkspaceState {
   mainPane: { id: string; ptyId?: string; title?: string } | null
   stackPanes: Array<{ id: string; ptyId?: string; title?: string }>
+  focusedPaneId?: string
   layoutMode: "vertical" | "horizontal" | "stacked"
   activeStackIndex: number
   zoomed: boolean

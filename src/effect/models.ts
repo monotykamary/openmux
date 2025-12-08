@@ -55,32 +55,31 @@ export class SerializedPaneData extends Schema.Class<SerializedPaneData>("Serial
   cwd: Schema.String,
 }) {}
 
-/** Serialized workspace for persistence */
+/** Serialized workspace for persistence - matches legacy core/types.ts */
 export class SerializedWorkspace extends Schema.Class<SerializedWorkspace>("SerializedWorkspace")({
   id: WorkspaceId,
   mainPane: Schema.NullOr(SerializedPaneData),
   stackPanes: Schema.Array(SerializedPaneData),
-  layoutMode: LayoutMode,
+  focusedPaneId: Schema.NullOr(Schema.String),
   activeStackIndex: Schema.Int,
+  layoutMode: LayoutMode,
   zoomed: Schema.Boolean,
 }) {}
 
-/** Full serialized session for persistence */
-export class SerializedSession extends Schema.Class<SerializedSession>("SerializedSession")({
-  id: SessionId,
-  name: Schema.String,
-  workspaces: Schema.Array(SerializedWorkspace),
-  activeWorkspaceId: WorkspaceId,
-  createdAt: Schema.Date,
-  updatedAt: Schema.Date,
-}) {}
-
-/** Session metadata for listing */
+/** Session metadata for listing - matches legacy core/types.ts */
 export class SessionMetadata extends Schema.Class<SessionMetadata>("SessionMetadata")({
   id: SessionId,
   name: Schema.String,
-  createdAt: Schema.Date,
-  updatedAt: Schema.Date,
+  createdAt: Schema.Number,
+  lastSwitchedAt: Schema.Number,
+  autoNamed: Schema.Boolean,
+}) {}
+
+/** Full serialized session for persistence - matches legacy core/types.ts */
+export class SerializedSession extends Schema.Class<SerializedSession>("SerializedSession")({
+  metadata: SessionMetadata,
+  workspaces: Schema.Array(SerializedWorkspace),
+  activeWorkspaceId: WorkspaceId,
 }) {}
 
 /** Session index for tracking all sessions */

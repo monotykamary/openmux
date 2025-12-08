@@ -10,6 +10,7 @@ import { runEffect, runEffectIgnore } from "./runtime"
 import { Clipboard, Pty, SessionManager, SessionStorage } from "./services"
 import { PtyId, Cols, Rows, SessionId, makePtyId } from "./types"
 import type { SerializedSession, SessionMetadata } from "./models"
+import type { SessionMetadata as LegacySessionMetadata } from "../core/types"
 
 // =============================================================================
 // Clipboard Bridge
@@ -166,7 +167,8 @@ export async function createSession(name: string): Promise<string> {
   return runEffect(
     Effect.gen(function* () {
       const manager = yield* SessionManager
-      return yield* manager.createSession(name)
+      const metadata = yield* manager.createSession(name)
+      return metadata.id
     })
   )
 }
@@ -247,22 +249,123 @@ export async function setActiveSessionId(id: string | null): Promise<void> {
 }
 
 // =============================================================================
-// Legacy Session Bridge (wraps existing core/session for gradual migration)
+// Additional Session Bridge Functions (Effect implementations)
 // =============================================================================
 
-// Re-export existing session functions for gradual migration
-// These can be replaced with Effect implementations over time
+/**
+ * Switch to a session (updates lastSwitchedAt timestamp).
+ */
+export async function switchToSession(id: string): Promise<void> {
+  await runEffect(
+    Effect.gen(function* () {
+      const manager = yield* SessionManager
+      yield* manager.switchToSession(SessionId.make(id))
+    })
+  )
+}
+
+/**
+ * Get session metadata by ID.
+ */
+export async function getSessionMetadata(id: string): Promise<SessionMetadata | null> {
+  return runEffect(
+    Effect.gen(function* () {
+      const manager = yield* SessionManager
+      return yield* manager.getSessionMetadata(SessionId.make(id))
+    })
+  )
+}
+
+/**
+ * Update auto-name for a session based on cwd.
+ */
+export async function updateAutoName(id: string, cwd: string): Promise<void> {
+  await runEffect(
+    Effect.gen(function* () {
+      const manager = yield* SessionManager
+      yield* manager.updateAutoName(SessionId.make(id), cwd)
+    })
+  )
+}
+
+/**
+ * Get session summary (workspace/pane counts).
+ */
+export async function getSessionSummary(
+  id: string
+): Promise<{ workspaceCount: number; paneCount: number } | null> {
+  return runEffect(
+    Effect.gen(function* () {
+      const manager = yield* SessionManager
+      return yield* manager.getSessionSummary(SessionId.make(id))
+    })
+  )
+}
+
+/**
+ * Extract auto-name from a path (last directory component).
+ */
+export function getAutoName(cwd: string): string {
+  const parts = cwd.split("/").filter(Boolean)
+  return parts[parts.length - 1] ?? "untitled"
+}
+
+// =============================================================================
+// Legacy Compatibility Functions
+// These maintain backwards compatibility with SessionContext imports
+// =============================================================================
+
+/**
+ * Create a new session (legacy compatibility - returns full metadata).
+ */
+export async function createSessionLegacy(name?: string): Promise<LegacySessionMetadata> {
+  return runEffect(
+    Effect.gen(function* () {
+      const manager = yield* SessionManager
+      const metadata = yield* manager.createSession(name)
+      // Effect SessionMetadata is structurally compatible with legacy
+      return metadata as unknown as LegacySessionMetadata
+    })
+  )
+}
+
+/**
+ * List all sessions (legacy compatibility - returns mutable array).
+ */
+export async function listSessionsLegacy(): Promise<LegacySessionMetadata[]> {
+  return runEffect(
+    Effect.gen(function* () {
+      const manager = yield* SessionManager
+      const sessions = yield* manager.listSessions()
+      // Convert to mutable array of legacy type
+      return [...sessions] as unknown as LegacySessionMetadata[]
+    })
+  )
+}
+
+/**
+ * Get active session ID (legacy compatibility).
+ */
+export async function getActiveSessionIdLegacy(): Promise<string | null> {
+  return getActiveSessionId()
+}
+
+/**
+ * Rename session (legacy compatibility).
+ */
+export async function renameSessionLegacy(id: string, name: string): Promise<void> {
+  return renameSession(id, name)
+}
+
+/**
+ * Delete session (legacy compatibility).
+ */
+export async function deleteSessionLegacy(id: string): Promise<void> {
+  return deleteSession(id)
+}
+
+// These still use legacy implementations due to complex serialization
 export {
-  createSession as createSessionLegacy,
-  listSessions as listSessionsLegacy,
-  getActiveSessionId as getActiveSessionIdLegacy,
-  renameSession as renameSessionLegacy,
-  deleteSession as deleteSessionLegacy,
   saveCurrentSession,
   loadSessionData,
-  switchToSession,
-  getSessionSummary,
-  getSessionMetadata,
-  updateAutoName,
-  getAutoName,
 } from "../core/session"

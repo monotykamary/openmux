@@ -113,7 +113,7 @@ export class SessionStorage extends Context.Tag("@openmux/SessionStorage")<
       const saveSession = Effect.fn("SessionStorage.saveSession")(function* (
         session: SerializedSession
       ) {
-        yield* fs.writeJson(sessionPath(session.id), SerializedSession, session)
+        yield* fs.writeJson(sessionPath(session.metadata.id), SerializedSession, session)
       })
 
       const deleteSession = Effect.fn("SessionStorage.deleteSession")(
@@ -198,7 +198,7 @@ export class SessionStorage extends Context.Tag("@openmux/SessionStorage")<
       const saveSession = Effect.fn("SessionStorage.saveSession")(function* (
         session: SerializedSession
       ) {
-        yield* fs.writeJson(sessionPath(session.id), SerializedSession, session)
+        yield* fs.writeJson(sessionPath(session.metadata.id), SerializedSession, session)
       })
 
       const deleteSession = Effect.fn("SessionStorage.deleteSession")(
