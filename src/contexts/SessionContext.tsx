@@ -204,10 +204,13 @@ interface SessionProviderProps {
   onSessionLoad: (
     workspaces: Map<WorkspaceId, Workspace>,
     activeWorkspaceId: WorkspaceId,
-    cwdMap: Map<string, string>
+    cwdMap: Map<string, string>,
+    sessionId: string
   ) => void;
-  /** Callback to destroy all PTYs before switching */
-  onBeforeSwitch: () => void;
+  /** Callback to suspend PTYs before switching (saves mapping, doesn't destroy) */
+  onBeforeSwitch: (currentSessionId: string) => void;
+  /** Callback to cleanup PTYs when a session is deleted */
+  onDeleteSession: (sessionId: string) => void;
 }
 
 export function SessionProvider({
@@ -217,6 +220,7 @@ export function SessionProvider({
   getActiveWorkspaceId,
   onSessionLoad,
   onBeforeSwitch,
+  onDeleteSession,
 }: SessionProviderProps) {
   const initialState: SessionState = {
     sessions: [],
@@ -240,6 +244,7 @@ export function SessionProvider({
   const getActiveWorkspaceIdRef = useRef(getActiveWorkspaceId);
   const onSessionLoadRef = useRef(onSessionLoad);
   const onBeforeSwitchRef = useRef(onBeforeSwitch);
+  const onDeleteSessionRef = useRef(onDeleteSession);
 
   useEffect(() => {
     getCwdRef.current = getCwd;
@@ -247,7 +252,8 @@ export function SessionProvider({
     getActiveWorkspaceIdRef.current = getActiveWorkspaceId;
     onSessionLoadRef.current = onSessionLoad;
     onBeforeSwitchRef.current = onBeforeSwitch;
-  }, [getCwd, getWorkspaces, getActiveWorkspaceId, onSessionLoad, onBeforeSwitch]);
+    onDeleteSessionRef.current = onDeleteSession;
+  }, [getCwd, getWorkspaces, getActiveWorkspaceId, onSessionLoad, onBeforeSwitch, onDeleteSession]);
 
   const refreshSessions = useCallback(async () => {
     const sessions = await listSessions();
@@ -288,7 +294,7 @@ export function SessionProvider({
           // Load session data and notify parent
           const data = await loadSessionData(activeId);
           if (data && data.workspaces.size > 0) {
-            onSessionLoadRef.current(data.workspaces, data.activeWorkspaceId, data.cwdMap);
+            onSessionLoadRef.current(data.workspaces, data.activeWorkspaceId, data.cwdMap, activeId);
           }
         }
       }
@@ -322,7 +328,7 @@ export function SessionProvider({
 
   const createSession = useCallback(async (name?: string) => {
     // Save current session first
-    if (state.activeSession) {
+    if (state.activeSession && state.activeSessionId) {
       const workspaces = getWorkspacesRef.current();
       const activeWorkspaceId = getActiveWorkspaceIdRef.current();
       await saveCurrentSession(
@@ -331,24 +337,26 @@ export function SessionProvider({
         activeWorkspaceId,
         getCwdRef.current
       );
+
+      // Suspend PTYs for current session before switching
+      onBeforeSwitchRef.current(state.activeSessionId);
     }
 
     const metadata = await createSessionOnDisk(name);
     await refreshSessions();
     dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
 
-    // Clear current workspaces for new session
-    onBeforeSwitchRef.current();
-    onSessionLoadRef.current(new Map(), 1, new Map());
+    // Load empty workspaces for new session
+    onSessionLoadRef.current(new Map(), 1, new Map(), metadata.id);
 
     return metadata;
-  }, [state.activeSession, refreshSessions]);
+  }, [state.activeSession, state.activeSessionId, refreshSessions]);
 
   const switchSession = useCallback(async (id: SessionId) => {
     if (id === state.activeSessionId) return;
 
     // Save current session
-    if (state.activeSession) {
+    if (state.activeSession && state.activeSessionId) {
       const workspaces = getWorkspacesRef.current();
       const activeWorkspaceId = getActiveWorkspaceIdRef.current();
       await saveCurrentSession(
@@ -357,10 +365,10 @@ export function SessionProvider({
         activeWorkspaceId,
         getCwdRef.current
       );
-    }
 
-    // Destroy current PTYs
-    onBeforeSwitchRef.current();
+      // Suspend PTYs for current session (save mapping, don't destroy)
+      onBeforeSwitchRef.current(state.activeSessionId);
+    }
 
     // Load new session
     await switchToSession(id);
@@ -368,7 +376,7 @@ export function SessionProvider({
 
     if (data) {
       dispatch({ type: 'SET_ACTIVE_SESSION', id, session: data.metadata });
-      onSessionLoadRef.current(data.workspaces, data.activeWorkspaceId, data.cwdMap);
+      onSessionLoadRef.current(data.workspaces, data.activeWorkspaceId, data.cwdMap, id);
     }
 
     dispatch({ type: 'CLOSE_SESSION_PICKER' });
@@ -392,6 +400,9 @@ export function SessionProvider({
   }, [state.activeSessionId, state.activeSession, refreshSessions]);
 
   const deleteSession = useCallback(async (id: SessionId) => {
+    // Clean up PTYs for the deleted session
+    onDeleteSessionRef.current(id);
+
     await deleteSessionOnDisk(id);
     await refreshSessions();
 

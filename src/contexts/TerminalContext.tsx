@@ -39,6 +39,12 @@ interface TerminalContextValue {
   destroyPTY: (ptyId: string) => void;
   /** Destroy all PTY sessions */
   destroyAllPTYs: () => void;
+  /** Suspend a session (save PTY mapping, unsubscribe without destroying) */
+  suspendSession: (sessionId: string) => void;
+  /** Resume a session (resubscribe to saved PTYs, returns paneId→ptyId map) */
+  resumeSession: (sessionId: string) => Promise<Map<string, string> | undefined>;
+  /** Cleanup PTYs for a deleted session */
+  cleanupSessionPtys: (sessionId: string) => void;
   /** Write input to the focused pane's PTY */
   writeToFocused: (data: string) => void;
   /** Write input to a specific PTY */
@@ -85,6 +91,10 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   // Track ptyId -> paneId mapping for exit handling
   const ptyToPaneMap = useRef<Map<string, string>>(new Map());
 
+  // Track PTYs by session ID for persistence across session switches
+  // sessionId → Map<paneId, ptyId>
+  const sessionPtyMapRef = useRef<Map<string, Map<string, string>>>(new Map());
+
   // Cache terminal states for synchronous access (updated via subscription)
   const terminalStatesCache = useRef<Map<string, TerminalState>>(new Map());
 
@@ -127,6 +137,12 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
       if (mappedPaneId) {
         dispatch({ type: 'CLOSE_PANE_BY_ID', paneId: mappedPaneId });
         ptyToPaneMap.current.delete(ptyId);
+      }
+      // Also remove from session mappings
+      for (const [, mapping] of sessionPtyMapRef.current) {
+        for (const [pid, ptid] of mapping) {
+          if (ptid === ptyId) mapping.delete(pid);
+        }
       }
     });
 
@@ -178,6 +194,91 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
 
     // Destroy all PTYs (fire and forget)
     destroyAllPtys();
+  }, []);
+
+  // Suspend a session: save PTY mapping and unsubscribe (but don't destroy PTYs)
+  const handleSuspendSession = useCallback((sessionId: string) => {
+    // Save current pane→pty mapping for this session
+    const mapping = new Map<string, string>();
+    for (const [ptyId, paneId] of ptyToPaneMap.current) {
+      mapping.set(paneId, ptyId);
+    }
+    sessionPtyMapRef.current.set(sessionId, mapping);
+
+    // Unsubscribe from all PTYs (stop rendering, but keep alive)
+    for (const unsub of unsubscribeFns.current.values()) {
+      unsub();
+    }
+    unsubscribeFns.current.clear();
+    terminalStatesCache.current.clear();
+    scrollStatesCache.current.clear();
+    ptyToPaneMap.current.clear();
+    // Note: DO NOT call destroyAllPtys() - PTYs stay alive
+  }, []);
+
+  // Resume a session: resubscribe to saved PTYs
+  const handleResumeSession = useCallback(async (sessionId: string): Promise<Map<string, string> | undefined> => {
+    const savedMapping = sessionPtyMapRef.current.get(sessionId);
+    if (!savedMapping || savedMapping.size === 0) {
+      return undefined;
+    }
+
+    // Resubscribe to each PTY
+    for (const [paneId, ptyId] of savedMapping) {
+      try {
+        // Register exit callback
+        const unsubExit = await onPtyExit(ptyId, () => {
+          const mappedPaneId = ptyToPaneMap.current.get(ptyId);
+          if (mappedPaneId) {
+            dispatch({ type: 'CLOSE_PANE_BY_ID', paneId: mappedPaneId });
+            ptyToPaneMap.current.delete(ptyId);
+          }
+          // Also remove from session mapping
+          for (const [, mapping] of sessionPtyMapRef.current) {
+            for (const [pid, ptid] of mapping) {
+              if (ptid === ptyId) mapping.delete(pid);
+            }
+          }
+        });
+
+        // Subscribe to terminal state updates
+        const unsubState = await subscribeToPty(ptyId, (state) => {
+          terminalStatesCache.current.set(ptyId, state);
+        });
+
+        // Store unsubscribe functions
+        unsubscribeFns.current.set(ptyId, () => {
+          unsubExit();
+          unsubState();
+        });
+
+        // Restore pty→pane mapping
+        ptyToPaneMap.current.set(ptyId, paneId);
+      } catch (err) {
+        // PTY may have exited while suspended - remove from mapping
+        savedMapping.delete(paneId);
+      }
+    }
+
+    return savedMapping;
+  }, [dispatch]);
+
+  // Cleanup PTYs for a deleted session
+  const handleCleanupSessionPtys = useCallback((sessionId: string) => {
+    const savedMapping = sessionPtyMapRef.current.get(sessionId);
+    if (savedMapping) {
+      for (const ptyId of savedMapping.values()) {
+        // Unsubscribe if currently subscribed
+        const unsub = unsubscribeFns.current.get(ptyId);
+        if (unsub) {
+          unsub();
+          unsubscribeFns.current.delete(ptyId);
+        }
+        // Destroy the PTY
+        destroyPty(ptyId);
+      }
+      sessionPtyMapRef.current.delete(sessionId);
+    }
   }, []);
 
   // Get CWD for a specific PTY session
@@ -342,6 +443,9 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     createPTY,
     destroyPTY: handleDestroyPTY,
     destroyAllPTYs: handleDestroyAllPTYs,
+    suspendSession: handleSuspendSession,
+    resumeSession: handleResumeSession,
+    cleanupSessionPtys: handleCleanupSessionPtys,
     writeToFocused,
     writeToPTY: handleWriteToPTY,
     pasteToFocused,

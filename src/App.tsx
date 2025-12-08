@@ -276,12 +276,15 @@ function AppContent() {
  */
 function SessionBridge({ children }: { children: React.ReactNode }) {
   const { dispatch: layoutDispatch, state: layoutState } = useLayout();
-  const { createPTY, destroyAllPTYs, getSessionCwd, isInitialized } = useTerminal();
+  const { createPTY, destroyAllPTYs, suspendSession, resumeSession, cleanupSessionPtys, getSessionCwd, isInitialized } = useTerminal();
 
   // Refs for stable callbacks
   const layoutStateRef = useRef(layoutState);
   const createPTYRef = useRef(createPTY);
   const destroyAllPTYsRef = useRef(destroyAllPTYs);
+  const suspendSessionRef = useRef(suspendSession);
+  const resumeSessionRef = useRef(resumeSession);
+  const cleanupSessionPtysRef = useRef(cleanupSessionPtys);
   const getSessionCwdRef = useRef(getSessionCwd);
   const layoutDispatchRef = useRef(layoutDispatch);
 
@@ -289,9 +292,12 @@ function SessionBridge({ children }: { children: React.ReactNode }) {
     layoutStateRef.current = layoutState;
     createPTYRef.current = createPTY;
     destroyAllPTYsRef.current = destroyAllPTYs;
+    suspendSessionRef.current = suspendSession;
+    resumeSessionRef.current = resumeSession;
+    cleanupSessionPtysRef.current = cleanupSessionPtys;
     getSessionCwdRef.current = getSessionCwd;
     layoutDispatchRef.current = layoutDispatch;
-  }, [layoutState, createPTY, destroyAllPTYs, getSessionCwd, layoutDispatch]);
+  }, [layoutState, createPTY, destroyAllPTYs, suspendSession, resumeSession, cleanupSessionPtys, getSessionCwd, layoutDispatch]);
 
   // Callbacks for SessionProvider
   const getCwd = useCallback(async (ptyId: string) => {
@@ -306,30 +312,54 @@ function SessionBridge({ children }: { children: React.ReactNode }) {
     return layoutStateRef.current.activeWorkspaceId;
   }, []);
 
-  const onSessionLoad = useCallback((
+  const onSessionLoad = useCallback(async (
     workspaces: Map<WorkspaceId, Workspace>,
     activeWorkspaceId: WorkspaceId,
-    cwdMap: Map<string, string>
+    cwdMap: Map<string, string>,
+    sessionId: string
   ) => {
-    // Destroy any existing PTYs before loading session
-    // This prevents orphaned PTYs when initial pane is replaced by session data
-    destroyAllPTYsRef.current();
+    // Try to resume PTYs for this session (if we've visited it before)
+    const restoredPtys = await resumeSessionRef.current(sessionId);
 
-    // Clear PTY tracking to allow new PTYs to be created for restored panes
+    // If we have restored PTYs, assign them to the panes
+    if (restoredPtys && restoredPtys.size > 0) {
+      for (const [, workspace] of workspaces) {
+        if (workspace.mainPane) {
+          const ptyId = restoredPtys.get(workspace.mainPane.id);
+          if (ptyId) {
+            workspace.mainPane.ptyId = ptyId;
+          }
+        }
+        for (const pane of workspace.stackPanes) {
+          const ptyId = restoredPtys.get(pane.id);
+          if (ptyId) {
+            pane.ptyId = ptyId;
+          }
+        }
+      }
+    }
+
+    // Clear PTY tracking to allow new PTYs to be created for panes without restored PTYs
     (globalThis as unknown as { __clearPtyTracking?: () => void }).__clearPtyTracking?.();
 
     // Load workspaces into layout
     layoutDispatchRef.current({ type: 'LOAD_SESSION', workspaces, activeWorkspaceId });
 
-    // Store cwdMap in globalThis for AppContent to use
+    // Store cwdMap in globalThis for AppContent to use (for panes without restored PTYs)
     (globalThis as unknown as { __sessionCwdMap?: Map<string, string> }).__sessionCwdMap = cwdMap;
   }, []);
 
-  const onBeforeSwitch = useCallback(() => {
-    destroyAllPTYsRef.current();
+  const onBeforeSwitch = useCallback((currentSessionId: string) => {
+    // Suspend PTYs for current session (save mapping, unsubscribe but don't destroy)
+    suspendSessionRef.current(currentSessionId);
     layoutDispatchRef.current({ type: 'CLEAR_ALL' });
     // Clear PTY tracking
     (globalThis as unknown as { __clearPtyTracking?: () => void }).__clearPtyTracking?.();
+  }, []);
+
+  const onDeleteSession = useCallback((sessionId: string) => {
+    // Clean up PTYs for deleted session
+    cleanupSessionPtysRef.current(sessionId);
   }, []);
 
   return (
@@ -339,6 +369,7 @@ function SessionBridge({ children }: { children: React.ReactNode }) {
       getActiveWorkspaceId={getActiveWorkspaceId}
       onSessionLoad={onSessionLoad}
       onBeforeSwitch={onBeforeSwitch}
+      onDeleteSession={onDeleteSession}
     >
       {children}
     </SessionProvider>
