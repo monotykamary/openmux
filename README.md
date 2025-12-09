@@ -22,20 +22,48 @@ A terminal multiplexer with master-stack layout (Zellij-style), built with:
 
 ## Installation
 
+### Quick Install (curl)
+
 ```bash
-bun install
+curl -fsSL https://raw.githubusercontent.com/monotykamary/openmux/main/scripts/install.sh | bash
 ```
+
+### npm / bun
+
+```bash
+npm install -g openmux
+# or
+bun add -g openmux
+```
+
+### From Source
+
+```bash
+git clone https://github.com/monotykamary/openmux.git
+cd openmux
+bun install
+bun run build --install
+```
+
+### GitHub Releases
+
+Download prebuilt binaries from [GitHub Releases](https://github.com/monotykamary/openmux/releases).
+
+Available platforms:
+- macOS (Apple Silicon / Intel)
+- Linux (x64 / arm64)
 
 ## Usage
 
 ```bash
-bun start
+openmux
 ```
 
-Or with watch mode:
+For development:
 
 ```bash
-bun dev
+bun start      # Run from source
+bun dev        # Run with watch mode
 ```
 
 ## Keyboard Shortcuts

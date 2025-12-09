@@ -1,22 +1,49 @@
 {
   "name": "openmux",
   "version": "0.1.0",
-  "description": "Terminal multiplexer with BSP layout using OpenTUI",
+  "description": "Terminal multiplexer with master-stack tiling layout",
   "module": "src/index.tsx",
   "type": "module",
-  "private": true,
   "bin": {
-    "openmux": "./src/index.tsx"
+    "openmux": "./bin/openmux"
   },
+  "files": [
+    "bin",
+    "dist"
+  ],
   "scripts": {
     "start": "bun run src/index.tsx",
     "dev": "bun run --watch src/index.tsx",
     "typecheck": "tsc --noEmit",
     "build": "./scripts/build.sh",
+    "build:release": "./scripts/build.sh --release",
     "install:local": "./scripts/build.sh --install",
     "prepare": "effect-language-service patch",
+    "postinstall": "node scripts/postinstall.js",
     "test": "vitest run",
     "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/monotykamary/openmux.git"
+  },
+  "author": "monotykamary",
+  "license": "MIT",
+  "homepage": "https://github.com/monotykamary/openmux#readme",
+  "bugs": {
+    "url": "https://github.com/monotykamary/openmux/issues"
+  },
+  "keywords": [
+    "terminal",
+    "multiplexer",
+    "tui",
+    "tmux",
+    "zellij",
+    "bun",
+    "opentui"
+  ],
+  "engines": {
+    "bun": ">=1.0.0"
   },
   "devDependencies": {
     "@effect/language-service": "^0.60.0",

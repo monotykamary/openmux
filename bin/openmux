@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# openmux npm bin wrapper
+# Locates and executes the downloaded binary
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PACKAGE_DIR="$(dirname "$SCRIPT_DIR")"
+DIST_DIR="$PACKAGE_DIR/dist"
+
+# Determine library extension based on OS
+case "$(uname -s)" in
+    Darwin) LIB_EXT="dylib" ;;
+    Linux) LIB_EXT="so" ;;
+    *) echo "Unsupported OS" >&2; exit 1 ;;
+esac
+
+# Check if binary exists
+if [[ ! -x "$DIST_DIR/openmux-bin" ]]; then
+    echo "Error: openmux binary not found at $DIST_DIR/openmux-bin" >&2
+    echo "Run 'npm run build' or reinstall the package" >&2
+    exit 1
+fi
+
+# Set library path and execute
+export BUN_PTY_LIB="${BUN_PTY_LIB:-$DIST_DIR/librust_pty.$LIB_EXT}"
+exec "$DIST_DIR/openmux-bin" "$@"
