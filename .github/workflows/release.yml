@@ -13,10 +13,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: darwin-arm64
             artifact_name: openmux-darwin-arm64
-          - os: macos-13
+          - os: macos-15-large
             target: darwin-x64
             artifact_name: openmux-darwin-x64
           - os: ubuntu-latest
