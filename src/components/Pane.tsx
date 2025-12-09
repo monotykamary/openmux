@@ -297,7 +297,7 @@ export function Pane({
 
     if (shouldForwardToApp && onMouseInput) {
       // Forward to PTY as SGR mouse sequences (existing behavior)
-      const scrollUp = event.scroll?.delta && event.scroll.delta < 0;
+      const scrollUp = event.scroll?.direction === 'up';
       const button = scrollUp ? 4 : 5; // 4 = scroll up, 5 = scroll down
 
       const sequence = inputHandler.encodeMouse({
