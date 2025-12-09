@@ -2,7 +2,7 @@
  * Pane component - individual terminal pane with border and focus state
  */
 
-import { useCallback, useRef, type ReactNode } from 'react';
+import { useCallback, useRef, useEffect, type ReactNode } from 'react';
 import type { MouseEvent as OpenTUIMouseEvent } from '@opentui/core';
 import { useTheme } from '../contexts/ThemeContext';
 import { useTerminal } from '../contexts/TerminalContext';
@@ -51,6 +51,51 @@ export function Pane({
     startY: 0,
     startOffset: 0,
   });
+
+  // Track auto-scroll during selection drag outside pane bounds
+  const autoScrollRef = useRef<{
+    direction: 'up' | 'down' | null;
+    intervalId: ReturnType<typeof setInterval> | null;
+  }>({
+    direction: null,
+    intervalId: null,
+  });
+
+  // Cleanup auto-scroll interval on unmount
+  useEffect(() => {
+    return () => {
+      if (autoScrollRef.current.intervalId) {
+        clearInterval(autoScrollRef.current.intervalId);
+      }
+    };
+  }, []);
+
+  // Start or update auto-scroll
+  const startAutoScroll = useCallback((direction: 'up' | 'down') => {
+    if (autoScrollRef.current.direction === direction) return; // Already scrolling this direction
+
+    // Clear existing interval
+    if (autoScrollRef.current.intervalId) {
+      clearInterval(autoScrollRef.current.intervalId);
+    }
+
+    autoScrollRef.current.direction = direction;
+    autoScrollRef.current.intervalId = setInterval(() => {
+      if (ptyId) {
+        // Scroll up = increase offset (older content), scroll down = decrease offset (newer content)
+        scrollTerminal(ptyId, direction === 'up' ? 1 : -1);
+      }
+    }, 50); // Scroll every 50ms for smooth scrolling
+  }, [ptyId, scrollTerminal]);
+
+  // Stop auto-scroll
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollRef.current.intervalId) {
+      clearInterval(autoScrollRef.current.intervalId);
+      autoScrollRef.current.intervalId = null;
+    }
+    autoScrollRef.current.direction = null;
+  }, []);
 
   // Check if a position is on the scrollbar (rightmost column when scrolled)
   const isOnScrollbar = useCallback((relX: number, relY: number): boolean => {
@@ -161,6 +206,8 @@ export function Pane({
     event.preventDefault();
     // End scrollbar drag
     scrollbarDragRef.current.isDragging = false;
+    // Stop any auto-scrolling
+    stopAutoScroll();
 
     // Check if we're in selection mode - complete selection (auto-copy)
     const selection = ptyId ? getSelection(ptyId) : undefined;
@@ -185,7 +232,7 @@ export function Pane({
     }
 
     handleMouseEvent(event, 'up');
-  }, [handleMouseEvent, ptyId, getSelection, getScrollState, getEmulatorSync, getTerminalStateSync, completeSelection]);
+  }, [handleMouseEvent, ptyId, getSelection, getScrollState, getEmulatorSync, getTerminalStateSync, completeSelection, stopAutoScroll]);
 
   const handleMouseMove = useCallback((event: OpenTUIMouseEvent) => {
     event.preventDefault();
@@ -209,15 +256,31 @@ export function Pane({
     if (selection?.isSelecting && ptyId) {
       const relX = event.x - x - 1;
       const relY = event.y - y - 1;
+
+      // Auto-scroll when dragging outside pane bounds
+      if (relY < 0) {
+        // Dragging above the pane - scroll up (show older content)
+        startAutoScroll('up');
+      } else if (relY >= innerHeight) {
+        // Dragging below the pane - scroll down (show newer content)
+        startAutoScroll('down');
+      } else {
+        // Inside pane bounds - stop auto-scrolling
+        stopAutoScroll();
+      }
+
       const scrollState = getScrollState(ptyId);
       const scrollbackLength = scrollState?.scrollbackLength ?? 0;
       const scrollOffset = scrollState?.viewportOffset ?? 0;
-      updateSelection(ptyId, relX, relY, scrollbackLength, scrollOffset);
+
+      // Clamp relY to valid range for selection update
+      const clampedY = Math.max(0, Math.min(relY, innerHeight - 1));
+      updateSelection(ptyId, relX, clampedY, scrollbackLength, scrollOffset);
       return;
     }
 
     handleMouseEvent(event, 'drag');
-  }, [handleMouseEvent, ptyId, x, y, yToScrollOffset, setScrollOffset, getSelection, getScrollState, updateSelection]);
+  }, [handleMouseEvent, ptyId, x, y, innerHeight, yToScrollOffset, setScrollOffset, getSelection, getScrollState, updateSelection, startAutoScroll, stopAutoScroll]);
 
   const handleMouseScroll = useCallback((event: OpenTUIMouseEvent) => {
     if (!ptyId) return;
