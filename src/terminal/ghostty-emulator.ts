@@ -411,11 +411,33 @@ export class GhosttyEmulator {
       return this.createEmptyCell();
     }
 
+    // Width=0 cells are spacer/continuation cells for wide characters
+    // They should render as empty space with the cell's background color
+    if (cell.width === 0) {
+      return {
+        char: ' ',
+        fg: { r: cell.fg_r, g: cell.fg_g, b: cell.fg_b },
+        bg: { r: cell.bg_r, g: cell.bg_g, b: cell.bg_b },
+        bold: false,
+        italic: false,
+        underline: false,
+        strikethrough: false,
+        inverse: false,
+        blink: false,
+        dim: false,
+        width: 1,
+      };
+    }
+
+    // Check for INVISIBLE flag (CellFlags.INVISIBLE = 32)
+    // Invisible cells should render as space but keep their colors
+    const isInvisible = (cell.flags & 32) !== 0;
+
     // For other invalid codepoints (null, control chars, etc.), preserve the cell's
     // colors but replace the character with a space. This keeps htop-style colored
     // backgrounds working while filtering out unprintable glyphs.
     let char = ' ';
-    if (this.isValidCodepoint(cell.codepoint)) {
+    if (!isInvisible && this.isValidCodepoint(cell.codepoint)) {
       try {
         char = String.fromCodePoint(cell.codepoint);
       } catch {
