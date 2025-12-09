@@ -21,7 +21,12 @@
     "prepare": "effect-language-service patch",
     "postinstall": "node scripts/postinstall.cjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "release": "standard-version",
+    "release:minor": "standard-version --release-as minor",
+    "release:major": "standard-version --release-as major",
+    "release:patch": "standard-version --release-as patch",
+    "release:first": "standard-version --first-release"
   },
   "repository": {
     "type": "git",
@@ -50,6 +55,7 @@
     "@effect/vitest": "^0.27.0",
     "@types/bun": "latest",
     "@types/react": "^19.2.7",
+    "standard-version": "^9.5.0",
     "vitest": "^4.0.15"
   },
   "peerDependencies": {
