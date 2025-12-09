@@ -9,7 +9,6 @@
   },
   "files": [
     "bin",
-    "scripts/postinstall.cjs",
     "README.md",
     "LICENSE"
   ],
@@ -21,7 +20,6 @@
     "build:release": "./scripts/build.sh --release",
     "install:local": "./scripts/build.sh --install",
     "prepare": "effect-language-service patch",
-    "postinstall": "node scripts/postinstall.cjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "release": "standard-version",
