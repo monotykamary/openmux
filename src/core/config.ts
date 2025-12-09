@@ -4,7 +4,7 @@
 
 import type { LayoutMode, Padding, Theme } from './types';
 
-export interface BSPConfig {
+export interface LayoutConfig {
   /** Gap between panes in terminal cells */
   windowGap: number;
 
@@ -41,7 +41,7 @@ function getSessionStoragePath(): string {
   return `${home}/.config/openmux/sessions`;
 }
 
-export const DEFAULT_CONFIG: BSPConfig = {
+export const DEFAULT_CONFIG: LayoutConfig = {
   windowGap: 0,
   outerPadding: { top: 0, right: 0, bottom: 0, left: 0 },
   borderWidth: 1,

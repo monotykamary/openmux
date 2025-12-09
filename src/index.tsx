@@ -1,7 +1,5 @@
 /**
- * openmux - Terminal multiplexer with BSP layout
- *
- * Entry point for the application
+ * Terminal multiplexer with master-stack layout
  */
 
 import { createCliRenderer } from '@opentui/core';

@@ -1,5 +1,5 @@
 /**
- * Core type definitions for the BSP tree layout system
+ * Core type definitions for the master-stack layout system
  */
 
 /** Split orientation - determines how space is divided */
@@ -23,7 +23,7 @@ export type LayoutMode = 'vertical' | 'horizontal' | 'stacked';
 export type WorkspaceId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 /**
- * Pane data (simplified - no BSP tree needed for master-stack)
+ * Pane data (simplified - no tree structure needed for master-stack)
  */
 export interface PaneData {
   id: NodeId;
@@ -77,8 +77,8 @@ export interface SplitNode {
   direction: SplitDirection;
   /** Split ratio from 0 to 1 (position of split from start) */
   ratio: number;
-  first: BSPNode;
-  second: BSPNode;
+  first: LayoutNode;
+  second: LayoutNode;
   /** Computed layout rectangle */
   rectangle?: Rectangle;
 }
@@ -99,8 +99,8 @@ export interface PaneNode {
   rectangle?: Rectangle;
 }
 
-/** BSP tree node - either a split or a pane */
-export type BSPNode = SplitNode | PaneNode;
+/** Layout node - either a split or a pane */
+export type LayoutNode = SplitNode | PaneNode;
 
 /**
  * Terminal cell from libghostty-vt or fallback parser
@@ -206,10 +206,10 @@ export interface Theme {
 }
 
 /**
- * Layout state containing the BSP tree
+ * Layout state containing the layout tree
  */
 export interface LayoutState {
-  root: BSPNode | null;
+  root: LayoutNode | null;
   focusedPaneId: NodeId | null;
   splitPreview?: {
     targetPaneId: NodeId;

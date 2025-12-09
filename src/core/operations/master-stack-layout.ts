@@ -8,7 +8,7 @@
  */
 
 import type { Rectangle, Workspace, PaneData, LayoutMode } from '../types';
-import type { BSPConfig } from '../config';
+import type { LayoutConfig } from '../config';
 
 /**
  * Calculate rectangles for all panes in a workspace
@@ -16,7 +16,7 @@ import type { BSPConfig } from '../config';
 export function calculateMasterStackLayout(
   workspace: Workspace,
   viewport: Rectangle,
-  config: BSPConfig
+  config: LayoutConfig
 ): Workspace {
   const { mainPane, stackPanes, layoutMode, zoomed, focusedPaneId } = workspace;
 

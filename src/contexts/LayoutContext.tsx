@@ -11,7 +11,7 @@ import {
   type Dispatch,
 } from 'react';
 import type { NodeId, Direction, Rectangle, Workspace, WorkspaceId, LayoutMode, PaneData } from '../core/types';
-import { BSPConfig, DEFAULT_CONFIG } from '../core/config';
+import { LayoutConfig, DEFAULT_CONFIG } from '../core/config';
 import {
   calculateMasterStackLayout,
   getAllWorkspacePanes,
@@ -65,7 +65,7 @@ interface LayoutState {
   workspaces: Map<WorkspaceId, Workspace>;
   activeWorkspaceId: WorkspaceId;
   viewport: Rectangle;
-  config: BSPConfig;
+  config: LayoutConfig;
   /** Version counter that increments on save-worthy changes */
   layoutVersion: number;
 }
@@ -99,7 +99,7 @@ function updateWorkspace(state: LayoutState, workspace: Workspace): Map<Workspac
   return newWorkspaces;
 }
 
-function recalculateLayout(workspace: Workspace, viewport: Rectangle, config: BSPConfig): Workspace {
+function recalculateLayout(workspace: Workspace, viewport: Rectangle, config: LayoutConfig): Workspace {
   return calculateMasterStackLayout(workspace, viewport, config);
 }
 
@@ -509,7 +509,7 @@ interface LayoutContextValue {
 const LayoutContext = createContext<LayoutContextValue | null>(null);
 
 interface LayoutProviderProps {
-  config?: Partial<BSPConfig>;
+  config?: Partial<LayoutConfig>;
   children: ReactNode;
 }
 
