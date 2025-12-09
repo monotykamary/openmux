@@ -319,26 +319,17 @@ export class GhosttyEmulator {
       if (y >= 0 && y < this._rows && this.cachedCells[y]) {
         const row = this.cachedCells[y];
         const lineLength = Math.min(line.length, this._cols);
-        let lastCell: TerminalCell | null = null;
 
         // Update cells in place
         for (let x = 0; x < lineLength; x++) {
-          const cell = this.convertCell(line[x]);
-          row[x] = cell;
-          lastCell = cell;
+          row[x] = this.convertCell(line[x]);
         }
 
-        // If the line is shorter than the viewport width, fill the remainder
-        // using the last cell's style so background colors (e.g., htop headers)
-        // continue across the row.
-        const fillCell =
-          lastCell ??
-          this.createEmptyCell(); // lineLength could be 0 on a cleared line
+        // If the line is shorter than the viewport width, fill with empty cells
+        // Don't propagate lastCell's colors - let ghostty-web handle styling
+        const emptyCell = this.createEmptyCell();
         for (let x = lineLength; x < this._cols; x++) {
-          row[x] = {
-            ...fillCell,
-            char: ' ',
-          };
+          row[x] = emptyCell;
         }
         // Increment version for this row
         this.rowVersions[y]++;
@@ -428,10 +419,22 @@ export class GhosttyEmulator {
    * Convert a single GhosttyCell to TerminalCell
    */
   private convertCell(cell: GhosttyCell): TerminalCell {
-    // Zero-width characters should use default colors to prevent color artifacts
-    // These are invisible modifiers that shouldn't carry styling
+    // Zero-width characters render as space but preserve background color
+    // Only strip foreground to prevent invisible colored text
     if (this.isZeroWidthChar(cell.codepoint)) {
-      return this.createEmptyCell();
+      return {
+        char: ' ',
+        fg: { r: cell.bg_r, g: cell.bg_g, b: cell.bg_b }, // fg = bg (invisible)
+        bg: { r: cell.bg_r, g: cell.bg_g, b: cell.bg_b },
+        bold: false,
+        italic: false,
+        underline: false,
+        strikethrough: false,
+        inverse: false,
+        blink: false,
+        dim: false,
+        width: 1,
+      };
     }
 
     // Width=0 cells are spacer/continuation cells for wide characters

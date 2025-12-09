@@ -249,17 +249,25 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           scrollState: { viewportOffset: 0 },
         }
 
-        // Wire up PTY data handler
+        // Pending data buffer for batched writes
+        let pendingData = ''
+
+        // Wire up PTY data handler - batch both writes AND notifications
         pty.onData((data: string) => {
           const textData = session.graphicsPassthrough.process(data)
           if (textData.length > 0) {
-            session.emulator.write(textData)
+            pendingData += textData
           }
 
-          // Batch notifications
+          // Batch writes and notifications together
           if (!session.pendingNotify) {
             session.pendingNotify = true
             setImmediate(() => {
+              // Write all pending data at once
+              if (pendingData.length > 0) {
+                session.emulator.write(pendingData)
+                pendingData = ''
+              }
               notifySubscribers(session)
               session.pendingNotify = false
             })
