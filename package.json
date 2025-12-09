@@ -19,7 +19,7 @@
     "build:release": "./scripts/build.sh --release",
     "install:local": "./scripts/build.sh --install",
     "prepare": "effect-language-service patch",
-    "postinstall": "node scripts/postinstall.js",
+    "postinstall": "node scripts/postinstall.cjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
