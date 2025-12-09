@@ -33,7 +33,6 @@ export function StatusBar({ width }: StatusBarProps) {
         flexDirection: 'row',
         justifyContent: 'space-between',
       }}
-      backgroundColor={theme.statusBar.backgroundColor}
     >
       {/* Left section: app name, session name and workspace tabs */}
       <box style={{ flexDirection: 'row', gap: 1 }}>
