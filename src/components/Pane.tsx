@@ -6,6 +6,7 @@ import { useCallback, useRef, type ReactNode } from 'react';
 import type { MouseEvent as OpenTUIMouseEvent } from '@opentui/core';
 import { useTheme } from '../contexts/ThemeContext';
 import { useTerminal } from '../contexts/TerminalContext';
+import { useSelection } from '../contexts/SelectionContext';
 import { TerminalView } from './TerminalView';
 import { inputHandler } from '../terminal';
 
@@ -37,7 +38,8 @@ export function Pane({
   onMouseInput,
 }: PaneProps) {
   const theme = useTheme();
-  const { isMouseTrackingEnabled, isAlternateScreen, scrollTerminal, getScrollState, setScrollOffset } = useTerminal();
+  const { isMouseTrackingEnabled, isAlternateScreen, scrollTerminal, getScrollState, setScrollOffset, getEmulatorSync, getTerminalStateSync } = useTerminal();
+  const { startSelection, updateSelection, completeSelection, clearSelection, getSelection } = useSelection();
 
   // Calculate inner dimensions (account for border)
   const innerWidth = Math.max(1, width - 2);
@@ -136,15 +138,54 @@ export function Pane({
       return;
     }
 
+    // Check if should handle selection vs forward to PTY
+    // Shift key overrides app mouse tracking to allow selection
+    const appWantsMouse = ptyId && (isMouseTrackingEnabled(ptyId) || isAlternateScreen(ptyId));
+    const shiftOverride = event.modifiers?.shift;
+    const shouldSelect = !appWantsMouse || shiftOverride;
+
+    if (shouldSelect && ptyId) {
+      // Clear any existing selection and start a new one
+      clearSelection(ptyId);
+      const scrollState = getScrollState(ptyId);
+      const scrollbackLength = scrollState?.scrollbackLength ?? 0;
+      const scrollOffset = scrollState?.viewportOffset ?? 0;
+      startSelection(ptyId, relX, relY, scrollbackLength, scrollOffset);
+      return;
+    }
+
     handleMouseEvent(event, 'down');
-  }, [onClick, handleMouseEvent, x, y, isOnScrollbar, ptyId, getScrollState, yToScrollOffset, setScrollOffset]);
+  }, [onClick, handleMouseEvent, x, y, isOnScrollbar, ptyId, getScrollState, yToScrollOffset, setScrollOffset, isMouseTrackingEnabled, isAlternateScreen, clearSelection, startSelection]);
 
   const handleMouseUp = useCallback((event: OpenTUIMouseEvent) => {
     event.preventDefault();
     // End scrollbar drag
     scrollbarDragRef.current.isDragging = false;
+
+    // Check if we're in selection mode - complete selection (auto-copy)
+    const selection = ptyId ? getSelection(ptyId) : undefined;
+    if (selection?.isSelecting && ptyId) {
+      const scrollState = getScrollState(ptyId);
+      const scrollbackLength = scrollState?.scrollbackLength ?? 0;
+
+      // Create a line getter that handles both scrollback and live terminal
+      const getLine = (absoluteY: number) => {
+        const emulator = getEmulatorSync(ptyId);
+        const state = getTerminalStateSync(ptyId);
+        if (absoluteY < scrollbackLength) {
+          return emulator?.getScrollbackLine(absoluteY) ?? null;
+        } else {
+          const liveY = absoluteY - scrollbackLength;
+          return state?.cells[liveY] ?? null;
+        }
+      };
+
+      completeSelection(ptyId, scrollbackLength, getLine);
+      return;
+    }
+
     handleMouseEvent(event, 'up');
-  }, [handleMouseEvent]);
+  }, [handleMouseEvent, ptyId, getSelection, getScrollState, getEmulatorSync, getTerminalStateSync, completeSelection]);
 
   const handleMouseMove = useCallback((event: OpenTUIMouseEvent) => {
     event.preventDefault();
@@ -163,8 +204,20 @@ export function Pane({
       return;
     }
 
+    // Check if we're in selection mode - update selection
+    const selection = ptyId ? getSelection(ptyId) : undefined;
+    if (selection?.isSelecting && ptyId) {
+      const relX = event.x - x - 1;
+      const relY = event.y - y - 1;
+      const scrollState = getScrollState(ptyId);
+      const scrollbackLength = scrollState?.scrollbackLength ?? 0;
+      const scrollOffset = scrollState?.viewportOffset ?? 0;
+      updateSelection(ptyId, relX, relY, scrollbackLength, scrollOffset);
+      return;
+    }
+
     handleMouseEvent(event, 'drag');
-  }, [handleMouseEvent, ptyId, y, yToScrollOffset, setScrollOffset]);
+  }, [handleMouseEvent, ptyId, x, y, yToScrollOffset, setScrollOffset, getSelection, getScrollState, updateSelection]);
 
   const handleMouseScroll = useCallback((event: OpenTUIMouseEvent) => {
     if (!ptyId) return;

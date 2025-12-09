@@ -13,6 +13,7 @@ import {
   getScrollState,
   getEmulator,
 } from '../effect/bridge';
+import { useSelection } from '../contexts/SelectionContext';
 
 interface TerminalViewProps {
   ptyId: string;
@@ -32,6 +33,10 @@ const BLACK = RGBA.fromInts(0, 0, 0);
 const SCROLLBAR_TRACK = RGBA.fromInts(40, 40, 40);
 const SCROLLBAR_THUMB = RGBA.fromInts(100, 100, 100);
 
+// Selection colors
+const SELECTION_BG = RGBA.fromInts(80, 120, 200);
+const SELECTION_FG = RGBA.fromInts(255, 255, 255);
+
 // Text attributes for buffer API
 const ATTR_BOLD = 1;
 const ATTR_ITALIC = 2;
@@ -49,6 +54,9 @@ export const TerminalView = memo(function TerminalView({
   offsetX = 0,
   offsetY = 0,
 }: TerminalViewProps) {
+  // Get selection state
+  const { isCellSelected, selectionVersion } = useSelection();
+
   // Store terminal state in a ref to avoid React re-renders
   const terminalStateRef = useRef<TerminalState | null>(null);
   // Cache scroll state for sync access in render
@@ -173,6 +181,8 @@ export const TerminalView = memo(function TerminalView({
 
     for (let y = 0; y < rows; y++) {
       const row = rowCache[y];
+      // Calculate absolute Y for selection check (accounts for scrollback)
+      const absoluteY = scrollbackLength - viewportOffset + y;
 
       for (let x = 0; x < cols; x++) {
         const cell = row?.[x] ?? null;
@@ -186,6 +196,9 @@ export const TerminalView = memo(function TerminalView({
         // Only show cursor when at bottom (not scrolled back) and focused
         const isCursor = isAtBottom && isFocused && state.cursor.visible &&
                          state.cursor.y === y && state.cursor.x === x;
+
+        // Check if cell is selected
+        const isSelected = isCellSelected(ptyId, x, absoluteY);
 
         // Determine cell colors
         let fgR = cell.fg.r, fgG = cell.fg.g, fgB = cell.fg.b;
@@ -208,8 +221,12 @@ export const TerminalView = memo(function TerminalView({
         let fg = RGBA.fromInts(fgR, fgG, fgB);
         let bg = RGBA.fromInts(bgR, bgG, bgB);
 
-        // Apply cursor styling
-        if (isCursor) {
+        // Apply selection styling (takes priority over cursor)
+        if (isSelected) {
+          fg = SELECTION_FG;
+          bg = SELECTION_BG;
+        } else if (isCursor) {
+          // Apply cursor styling (only if not selected)
           fg = bg ?? BLACK;
           bg = WHITE;
         }
@@ -258,7 +275,7 @@ export const TerminalView = memo(function TerminalView({
         );
       }
     }
-  }, [width, height, isFocused, offsetX, offsetY, ptyId]);
+  }, [width, height, isFocused, offsetX, offsetY, ptyId, isCellSelected, selectionVersion]);
 
   const terminalState = terminalStateRef.current;
 

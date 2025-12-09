@@ -14,8 +14,9 @@ import {
   useKeyboardHandler,
   useTerminal,
 } from './contexts';
+import { SelectionProvider, useSelection } from './contexts/SelectionContext';
 import { SessionProvider, useSession } from './contexts/SessionContext';
-import { PaneContainer, StatusBar, KeyboardHints } from './components';
+import { PaneContainer, StatusBar, KeyboardHints, CopyNotification } from './components';
 import { SessionPicker } from './components/SessionPicker';
 import { inputHandler } from './terminal';
 import type { Workspace, WorkspaceId } from './core/types';
@@ -25,6 +26,7 @@ function AppContent() {
   const { dispatch, activeWorkspace, panes, state: layoutState } = useLayout();
   const { createPTY, resizePTY, setPanePosition, writeToFocused, writeToPTY, pasteToFocused, getFocusedCwd, getFocusedCursorKeyMode, isInitialized, destroyAllPTYs, getSessionCwd } = useTerminal();
   const { togglePicker, state: sessionState } = useSession();
+  const { clearAllSelections, copyNotification } = useSelection();
   const renderer = useRenderer();
 
   // Track pending CWD for new panes (captured before NEW_PANE dispatch)
@@ -217,6 +219,9 @@ function AppContent() {
 
         // If not handled by multiplexer and in normal mode, forward to PTY
         if (!handled && mode === 'normal' && !sessionState.showSessionPicker) {
+          // Clear any active selection when user types
+          clearAllSelections();
+
           // Get the focused pane's cursor key mode (DECCKM)
           // This affects how arrow keys are encoded (application vs normal mode)
           const cursorKeyMode = getFocusedCursorKeyMode();
@@ -242,7 +247,7 @@ function AppContent() {
           }
         }
       },
-      [handleKeyDown, mode, writeToFocused, getFocusedCursorKeyMode, sessionState.showSessionPicker]
+      [handleKeyDown, mode, writeToFocused, getFocusedCursorKeyMode, sessionState.showSessionPicker, clearAllSelections]
     )
   );
 
@@ -265,6 +270,17 @@ function AppContent() {
 
       {/* Session picker overlay */}
       <SessionPicker width={width} height={height} />
+
+      {/* Copy notification toast */}
+      <CopyNotification
+        visible={copyNotification.visible}
+        charCount={copyNotification.charCount}
+        paneRect={
+          copyNotification.ptyId
+            ? panes.find(p => p.ptyId === copyNotification.ptyId)?.rectangle ?? null
+            : null
+        }
+      />
     </box>
   );
 }
@@ -379,9 +395,11 @@ function SessionBridge({ children }: { children: React.ReactNode }) {
 function AppWithTerminal() {
   return (
     <TerminalProvider>
-      <SessionBridge>
-        <AppContent />
-      </SessionBridge>
+      <SelectionProvider>
+        <SessionBridge>
+          <AppContent />
+        </SessionBridge>
+      </SelectionProvider>
     </TerminalProvider>
   );
 }

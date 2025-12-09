@@ -30,7 +30,9 @@ import {
   scrollToBottom,
   subscribeToPty,
   readFromClipboard,
+  getEmulator,
 } from '../effect/bridge';
+import type { GhosttyEmulator } from '../terminal/ghostty-emulator';
 
 interface TerminalContextValue {
   /** Create a new PTY session for a pane */
@@ -73,6 +75,10 @@ interface TerminalContextValue {
   setScrollOffset: (ptyId: string, offset: number) => void;
   /** Scroll terminal to bottom (live content) */
   scrollToBottom: (ptyId: string) => void;
+  /** Get cached emulator synchronously (for selection text extraction) */
+  getEmulatorSync: (ptyId: string) => GhosttyEmulator | null;
+  /** Get cached terminal state synchronously (for selection text extraction) */
+  getTerminalStateSync: (ptyId: string) => TerminalState | null;
   /** Check if ghostty is initialized */
   isInitialized: boolean;
 }
@@ -100,6 +106,9 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
 
   // Cache scroll states for synchronous access
   const scrollStatesCache = useRef<Map<string, TerminalScrollState>>(new Map());
+
+  // Cache emulators for synchronous access (needed for selection text extraction)
+  const emulatorsCache = useRef<Map<string, GhosttyEmulator>>(new Map());
 
   // Track unsubscribe functions for cleanup
   const unsubscribeFns = useRef<Map<string, () => void>>(new Map());
@@ -151,6 +160,12 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
       terminalStatesCache.current.set(ptyId, state);
     });
 
+    // Cache the emulator for synchronous access (selection text extraction)
+    const emulator = await getEmulator(ptyId);
+    if (emulator) {
+      emulatorsCache.current.set(ptyId, emulator);
+    }
+
     // Store unsubscribe functions
     unsubscribeFns.current.set(ptyId, () => {
       unsubExit();
@@ -175,6 +190,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     // Clear caches
     terminalStatesCache.current.delete(ptyId);
     scrollStatesCache.current.delete(ptyId);
+    emulatorsCache.current.delete(ptyId);
     ptyToPaneMap.current.delete(ptyId);
 
     // Destroy the PTY (fire and forget)
@@ -190,6 +206,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     unsubscribeFns.current.clear();
     terminalStatesCache.current.clear();
     scrollStatesCache.current.clear();
+    emulatorsCache.current.clear();
     ptyToPaneMap.current.clear();
 
     // Destroy all PTYs (fire and forget)
@@ -212,6 +229,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     unsubscribeFns.current.clear();
     terminalStatesCache.current.clear();
     scrollStatesCache.current.clear();
+    emulatorsCache.current.clear();
     ptyToPaneMap.current.clear();
     // Note: DO NOT call destroyAllPtys() - PTYs stay alive
   }, []);
@@ -245,6 +263,12 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
         const unsubState = await subscribeToPty(ptyId, (state) => {
           terminalStatesCache.current.set(ptyId, state);
         });
+
+        // Cache the emulator for synchronous access
+        const emulator = await getEmulator(ptyId);
+        if (emulator) {
+          emulatorsCache.current.set(ptyId, emulator);
+        }
 
         // Store unsubscribe functions
         unsubscribeFns.current.set(ptyId, () => {
@@ -428,6 +452,16 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     }
   }, []);
 
+  // Get cached emulator synchronously (for selection text extraction)
+  const getEmulatorSync = useCallback((ptyId: string): GhosttyEmulator | null => {
+    return emulatorsCache.current.get(ptyId) ?? null;
+  }, []);
+
+  // Get cached terminal state synchronously (for selection text extraction)
+  const getTerminalStateSync = useCallback((ptyId: string): TerminalState | null => {
+    return terminalStatesCache.current.get(ptyId) ?? null;
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -460,6 +494,8 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     scrollTerminal,
     setScrollOffset: handleSetScrollOffset,
     scrollToBottom: handleScrollToBottom,
+    getEmulatorSync,
+    getTerminalStateSync,
     isInitialized,
   };
 
