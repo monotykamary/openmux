@@ -372,14 +372,48 @@ export class GhosttyEmulator {
     if ((codepoint & 0xFFFE) === 0xFFFE) return false;
     // Out of Unicode range
     if (codepoint > 0x10FFFF) return false;
+    // Note: Zero-width characters (U+200B-U+200F, U+2060, U+FEFF, U+FE00-U+FE0F)
+    // are handled separately in isZeroWidthChar() with different treatment
     return true;
+  }
+
+  /**
+   * Check if a codepoint is a zero-width character that should use default colors
+   * These are invisible modifiers that can carry stale color information
+   */
+  private isZeroWidthChar(codepoint: number): boolean {
+    // Zero-width space (U+200B)
+    if (codepoint === 0x200B) return true;
+    // Zero-width non-joiner (U+200C)
+    if (codepoint === 0x200C) return true;
+    // Zero-width joiner (U+200D)
+    if (codepoint === 0x200D) return true;
+    // Left-to-right mark (U+200E)
+    if (codepoint === 0x200E) return true;
+    // Right-to-left mark (U+200F)
+    if (codepoint === 0x200F) return true;
+    // Word joiner (U+2060)
+    if (codepoint === 0x2060) return true;
+    // Byte order mark / Zero-width no-break space (U+FEFF)
+    if (codepoint === 0xFEFF) return true;
+    // Variation selectors (U+FE00-U+FE0F)
+    if (codepoint >= 0xFE00 && codepoint <= 0xFE0F) return true;
+    return false;
   }
 
   /**
    * Convert a single GhosttyCell to TerminalCell
    */
   private convertCell(cell: GhosttyCell): TerminalCell {
-    // Filter out invalid codepoints that would render as diamonds or cause errors
+    // Zero-width characters should use default colors to prevent color artifacts
+    // These are invisible modifiers that shouldn't carry styling
+    if (this.isZeroWidthChar(cell.codepoint)) {
+      return this.createEmptyCell();
+    }
+
+    // For other invalid codepoints (null, control chars, etc.), preserve the cell's
+    // colors but replace the character with a space. This keeps htop-style colored
+    // backgrounds working while filtering out unprintable glyphs.
     let char = ' ';
     if (this.isValidCodepoint(cell.codepoint)) {
       try {
@@ -389,6 +423,7 @@ export class GhosttyEmulator {
         char = ' ';
       }
     }
+
     return {
       char,
       fg: { r: cell.fg_r, g: cell.fg_g, b: cell.fg_b },

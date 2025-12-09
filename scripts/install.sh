@@ -23,7 +23,7 @@ spinner() {
         printf "\r  %s %s" "${spin:i++%${#spin}:1}" "$2"
         sleep 0.1
     done
-    printf "\r"
+    printf "\r\033[K"
 }
 
 error() {
