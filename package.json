@@ -26,7 +26,8 @@
     "release:minor": "standard-version --release-as minor",
     "release:major": "standard-version --release-as major",
     "release:patch": "standard-version --release-as patch",
-    "release:first": "standard-version --first-release"
+    "release:first": "standard-version --first-release",
+    "publish:npm": "./scripts/publish.sh"
   },
   "repository": {
     "type": "git",
