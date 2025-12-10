@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.16](https://github.com/monotykamary/openmux/compare/v0.1.15...v0.1.16) (2025-12-10)
+
+
+### Features
+
+* add OSC color query passthrough for terminal apps ([a53dca1](https://github.com/monotykamary/openmux/commit/a53dca1fc6ea80b79f78c3920bf92916fcec53ec))
+
+
+### Bug Fixes
+
+* add DSR passthrough for cursor position queries ([e829a8e](https://github.com/monotykamary/openmux/commit/e829a8eae49784ecb433e89ba025c78b92c6d21b))
+
 ### [0.1.15](https://github.com/monotykamary/openmux/compare/v0.1.14...v0.1.15) (2025-12-10)
 
 
