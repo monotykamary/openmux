@@ -282,6 +282,20 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         })
         // Set terminal version for XTVERSION responses
         dsrPassthrough.setTerminalVersion('0.1.16')
+        // Set size getter for XTWINOPS queries
+        dsrPassthrough.setSizeGetter(() => {
+          // Estimate pixel dimensions based on cell size (8x16 is typical)
+          const cellWidth = 8
+          const cellHeight = 16
+          return {
+            cols: session.cols,
+            rows: session.rows,
+            pixelWidth: session.cols * cellWidth,
+            pixelHeight: session.rows * cellHeight,
+            cellWidth,
+            cellHeight,
+          }
+        })
 
         // Pending data buffer for batched writes
         let pendingData = ''
