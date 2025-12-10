@@ -36,9 +36,6 @@ export function StatusBar({ width }: StatusBarProps) {
     >
       {/* Left section: app name, session name and workspace tabs */}
       <box style={{ flexDirection: 'row', gap: 1 }}>
-        <text fg={theme.statusBar.foregroundColor}>
-          [openmux]
-        </text>
         <text fg="#00AAFF">[{displaySessionName}]</text>
         <WorkspaceTabs
           populatedWorkspaces={populatedWorkspaces}
