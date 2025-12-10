@@ -58,21 +58,37 @@ const XTGETTCAP_PREFIX = `${DCS}+q`;
 // Kitty keyboard protocol query
 const KITTY_KEYBOARD_QUERY = `${ESC}[?u`;
 
+// XTWINOPS window size queries - use FULL patterns to avoid matching other CSI sequences
+const XTWINOPS_14T = `${ESC}[14t`;  // Window size in pixels
+const XTWINOPS_16T = `${ESC}[16t`;  // Cell size in pixels
+const XTWINOPS_18T = `${ESC}[18t`;  // Text area in characters
+
+// Extended cursor position report
+const DECXCPR_QUERY = `${ESC}[?6n`;
+
 // OSC color query patterns - can end with BEL or ST
-// OSC 10;? = query foreground, OSC 11;? = query background
+// OSC 4;index;? = query palette color
+const OSC_PALETTE_PREFIX = `${ESC}]4;`;
+// OSC 10;? = query foreground, OSC 11;? = query background, OSC 12;? = query cursor
 const OSC_FG_QUERY_BEL = `${ESC}]10;?${BEL}`;
 const OSC_FG_QUERY_ST = `${ESC}]10;?${ST}`;
 const OSC_BG_QUERY_BEL = `${ESC}]11;?${BEL}`;
 const OSC_BG_QUERY_ST = `${ESC}]11;?${ST}`;
+const OSC_CURSOR_QUERY_BEL = `${ESC}]12;?${BEL}`;
+const OSC_CURSOR_QUERY_ST = `${ESC}]12;?${ST}`;
 
 export interface DsrQuery {
-  type: 'cpr' | 'status' | 'da1' | 'da2' | 'da3' | 'xtversion' | 'decrqm' | 'xtgettcap' | 'kitty-keyboard' | 'osc-fg' | 'osc-bg';
+  type: 'cpr' | 'decxcpr' | 'status' | 'da1' | 'da2' | 'da3' | 'xtversion' | 'decrqm' | 'xtgettcap' | 'kitty-keyboard' | 'xtwinops' | 'osc-palette' | 'osc-fg' | 'osc-bg' | 'osc-cursor';
   startIndex: number;
   endIndex: number;
   /** Mode number for DECRQM queries */
   mode?: number;
   /** Capability names for XTGETTCAP queries (hex-encoded) */
   capabilities?: string[];
+  /** Window operation type for XTWINOPS (14, 16, 18) */
+  winop?: number;
+  /** Color index for OSC 4 palette queries */
+  colorIndex?: number;
 }
 
 export interface DsrParseResult {
@@ -89,14 +105,18 @@ function mightContainQueries(data: string): boolean {
   // Check for CSI sequences (ESC[)
   if (data.includes(`${ESC}[`)) {
     // DSR queries (5n, 6n), DA queries (c), XTVERSION (q), DECRQM ($p), Kitty (?u)
+    // XTWINOPS uses specific patterns 14t, 16t, 18t to avoid false positives
     if (data.includes('n') || data.includes('c') || data.includes('q') ||
-        data.includes('$p') || data.includes('?u')) {
+        data.includes('$p') || data.includes('?u') ||
+        data.includes('14t') || data.includes('16t') || data.includes('18t')) {
       return true;
     }
   }
-  // Check for OSC color queries (ESC]10;? or ESC]11;?)
-  if (data.includes(`${ESC}]`) && data.includes(';?')) {
-    return true;
+  // Check for OSC queries (ESC]4;, ESC]10;?, ESC]11;?, ESC]12;?)
+  if (data.includes(`${ESC}]`)) {
+    if (data.includes(';?') || data.includes(']4;')) {
+      return true;
+    }
   }
   // Check for DCS sequences (XTGETTCAP)
   if (data.includes(DCS)) {
@@ -266,6 +286,22 @@ export function parseDsrQueries(data: string): DsrParseResult {
       continue;
     }
 
+    // Check for DECXCPR (Extended Cursor Position Report) - ESC[?6n
+    // Must check before DECRQM since both start with ESC[?
+    if (data.startsWith(DECXCPR_QUERY, currentIndex)) {
+      if (currentIndex > textStart) {
+        textSegments.push(data.slice(textStart, currentIndex));
+      }
+      queries.push({
+        type: 'decxcpr',
+        startIndex: currentIndex,
+        endIndex: currentIndex + DECXCPR_QUERY.length,
+      });
+      currentIndex += DECXCPR_QUERY.length;
+      textStart = currentIndex;
+      continue;
+    }
+
     // Check for DECRQM (Request DEC Private Mode) - ESC[?Ps$p
     // Need to parse the mode number dynamically
     if (data.startsWith(DECRQM_PREFIX, currentIndex)) {
@@ -307,6 +343,51 @@ export function parseDsrQueries(data: string): DsrParseResult {
       continue;
     }
 
+    // Check for XTWINOPS window size queries - use full patterns to avoid false positives
+    // ESC[14t = window size in pixels, ESC[16t = cell size, ESC[18t = text area chars
+    if (data.startsWith(XTWINOPS_14T, currentIndex)) {
+      if (currentIndex > textStart) {
+        textSegments.push(data.slice(textStart, currentIndex));
+      }
+      queries.push({
+        type: 'xtwinops',
+        startIndex: currentIndex,
+        endIndex: currentIndex + XTWINOPS_14T.length,
+        winop: 14,
+      });
+      currentIndex += XTWINOPS_14T.length;
+      textStart = currentIndex;
+      continue;
+    }
+    if (data.startsWith(XTWINOPS_16T, currentIndex)) {
+      if (currentIndex > textStart) {
+        textSegments.push(data.slice(textStart, currentIndex));
+      }
+      queries.push({
+        type: 'xtwinops',
+        startIndex: currentIndex,
+        endIndex: currentIndex + XTWINOPS_16T.length,
+        winop: 16,
+      });
+      currentIndex += XTWINOPS_16T.length;
+      textStart = currentIndex;
+      continue;
+    }
+    if (data.startsWith(XTWINOPS_18T, currentIndex)) {
+      if (currentIndex > textStart) {
+        textSegments.push(data.slice(textStart, currentIndex));
+      }
+      queries.push({
+        type: 'xtwinops',
+        startIndex: currentIndex,
+        endIndex: currentIndex + XTWINOPS_18T.length,
+        winop: 18,
+      });
+      currentIndex += XTWINOPS_18T.length;
+      textStart = currentIndex;
+      continue;
+    }
+
     // Check for XTGETTCAP (Termcap Query) - DCS+qXXXX...ST or DCS+qXXXX...BEL
     if (data.startsWith(XTGETTCAP_PREFIX, currentIndex)) {
       // Find the terminator (ST = ESC\ or BEL)
@@ -342,6 +423,41 @@ export function parseDsrQueries(data: string): DsrParseResult {
         currentIndex = endPos + terminatorLen;
         textStart = currentIndex;
         continue;
+      }
+    }
+
+    // Check for OSC 4 palette color query - ESC]4;index;?BEL or ESC]4;index;?ST
+    if (data.startsWith(OSC_PALETTE_PREFIX, currentIndex)) {
+      // Parse: ESC]4;index;?terminator
+      let endPos = currentIndex + OSC_PALETTE_PREFIX.length;
+      let indexStr = '';
+      while (endPos < data.length && /\d/.test(data[endPos])) {
+        indexStr += data[endPos];
+        endPos++;
+      }
+      // Check for ;? followed by terminator
+      if (indexStr.length > 0 && data.startsWith(';?', endPos)) {
+        endPos += 2; // Skip ;?
+        let terminatorLen = 0;
+        if (data[endPos] === BEL) {
+          terminatorLen = 1;
+        } else if (data.startsWith(ST, endPos)) {
+          terminatorLen = ST.length;
+        }
+        if (terminatorLen > 0) {
+          if (currentIndex > textStart) {
+            textSegments.push(data.slice(textStart, currentIndex));
+          }
+          queries.push({
+            type: 'osc-palette',
+            startIndex: currentIndex,
+            endIndex: endPos + terminatorLen,
+            colorIndex: parseInt(indexStr, 10),
+          });
+          currentIndex = endPos + terminatorLen;
+          textStart = currentIndex;
+          continue;
+        }
       }
     }
 
@@ -401,6 +517,34 @@ export function parseDsrQueries(data: string): DsrParseResult {
       continue;
     }
 
+    // Check for OSC cursor color query (ESC]12;? with BEL or ST terminator)
+    if (data.startsWith(OSC_CURSOR_QUERY_BEL, currentIndex)) {
+      if (currentIndex > textStart) {
+        textSegments.push(data.slice(textStart, currentIndex));
+      }
+      queries.push({
+        type: 'osc-cursor',
+        startIndex: currentIndex,
+        endIndex: currentIndex + OSC_CURSOR_QUERY_BEL.length,
+      });
+      currentIndex += OSC_CURSOR_QUERY_BEL.length;
+      textStart = currentIndex;
+      continue;
+    }
+    if (data.startsWith(OSC_CURSOR_QUERY_ST, currentIndex)) {
+      if (currentIndex > textStart) {
+        textSegments.push(data.slice(textStart, currentIndex));
+      }
+      queries.push({
+        type: 'osc-cursor',
+        startIndex: currentIndex,
+        endIndex: currentIndex + OSC_CURSOR_QUERY_ST.length,
+      });
+      currentIndex += OSC_CURSOR_QUERY_ST.length;
+      textStart = currentIndex;
+      continue;
+    }
+
     currentIndex++;
   }
 
@@ -450,6 +594,54 @@ export function generateOscBgResponse(r: number, g: number, b: number): string {
   const g16 = (g * 257).toString(16).padStart(4, '0');
   const b16 = (b * 257).toString(16).padStart(4, '0');
   return `${ESC}]11;rgb:${r16}/${g16}/${b16}${ST}`;
+}
+
+/**
+ * Generate an OSC cursor color response
+ * Format: ESC]12;rgb:rrrr/gggg/bbbb ESC\
+ */
+export function generateOscCursorResponse(r: number, g: number, b: number): string {
+  const r16 = (r * 257).toString(16).padStart(4, '0');
+  const g16 = (g * 257).toString(16).padStart(4, '0');
+  const b16 = (b * 257).toString(16).padStart(4, '0');
+  return `${ESC}]12;rgb:${r16}/${g16}/${b16}${ST}`;
+}
+
+/**
+ * Generate an OSC 4 palette color response
+ * Format: ESC]4;index;rgb:rrrr/gggg/bbbb ESC\
+ */
+export function generateOscPaletteResponse(index: number, r: number, g: number, b: number): string {
+  const r16 = (r * 257).toString(16).padStart(4, '0');
+  const g16 = (g * 257).toString(16).padStart(4, '0');
+  const b16 = (b * 257).toString(16).padStart(4, '0');
+  return `${ESC}]4;${index};rgb:${r16}/${g16}/${b16}${ST}`;
+}
+
+/**
+ * Generate a DECXCPR (Extended Cursor Position Report) response
+ * Format: ESC[?row;col;pageR (1-based positions, page is always 1)
+ */
+export function generateDecxcprResponse(row: number, col: number): string {
+  return `${ESC}[?${row + 1};${col + 1};1R`;
+}
+
+/**
+ * Generate an XTWINOPS response for window size queries
+ * Format depends on the operation:
+ * - 14t (pixels): ESC[4;height;width t
+ * - 16t (cell size): ESC[6;height;width t
+ * - 18t (text area): ESC[8;rows;cols t
+ */
+export function generateXtwinopsResponse(winop: number, height: number, width: number): string {
+  let responseCode: number;
+  switch (winop) {
+    case 14: responseCode = 4; break;
+    case 16: responseCode = 6; break;
+    case 18: responseCode = 8; break;
+    default: return '';
+  }
+  return `${ESC}[${responseCode};${height};${width}t`;
 }
 
 /**
@@ -591,13 +783,42 @@ const KNOWN_MODES: Record<number, 0 | 1 | 2 | 3 | 4> = {
   2026: 2,   // Synchronized output (reset)
 };
 
+// Default 256-color ANSI palette
+const DEFAULT_PALETTE: number[] = (() => {
+  const palette: number[] = [];
+  // Standard 16 colors (indices 0-15)
+  const standard16 = [
+    0x000000, 0xcd0000, 0x00cd00, 0xcdcd00, 0x0000ee, 0xcd00cd, 0x00cdcd, 0xe5e5e5,
+    0x7f7f7f, 0xff0000, 0x00ff00, 0xffff00, 0x5c5cff, 0xff00ff, 0x00ffff, 0xffffff,
+  ];
+  palette.push(...standard16);
+  // 216 color cube (indices 16-231)
+  const levels = [0x00, 0x5f, 0x87, 0xaf, 0xd7, 0xff];
+  for (let r = 0; r < 6; r++) {
+    for (let g = 0; g < 6; g++) {
+      for (let b = 0; b < 6; b++) {
+        palette.push((levels[r] << 16) | (levels[g] << 8) | levels[b]);
+      }
+    }
+  }
+  // Grayscale (indices 232-255)
+  for (let i = 0; i < 24; i++) {
+    const v = 8 + i * 10;
+    palette.push((v << 16) | (v << 8) | v);
+  }
+  return palette;
+})();
+
 export class DsrPassthrough {
   private ptyWriter: ((data: string) => void) | null = null;
   private cursorGetter: (() => { x: number; y: number }) | null = null;
   private colorsGetter: (() => { foreground: number; background: number }) | null = null;
   private modeGetter: ((mode: number) => boolean | null) | null = null;
+  private paletteGetter: ((index: number) => number | null) | null = null;
+  private sizeGetter: (() => { cols: number; rows: number; pixelWidth: number; pixelHeight: number; cellWidth: number; cellHeight: number }) | null = null;
   private kittyKeyboardFlags: number = 0;
   private terminalVersion: string = '0.1.0';
+  private cursorColor: number = 0xFFFFFF;
 
   constructor() {}
 
@@ -646,6 +867,28 @@ export class DsrPassthrough {
   }
 
   /**
+   * Set the palette getter function (called to get palette colors for OSC 4 queries)
+   * Returns color in 0xRRGGBB format, or null to use default palette
+   */
+  setPaletteGetter(getter: (index: number) => number | null): void {
+    this.paletteGetter = getter;
+  }
+
+  /**
+   * Set the size getter function (called to get terminal dimensions for XTWINOPS)
+   */
+  setSizeGetter(getter: () => { cols: number; rows: number; pixelWidth: number; pixelHeight: number; cellWidth: number; cellHeight: number }): void {
+    this.sizeGetter = getter;
+  }
+
+  /**
+   * Set the cursor color for OSC 12 queries (0xRRGGBB format)
+   */
+  setCursorColor(color: number): void {
+    this.cursorColor = color;
+  }
+
+  /**
    * Process PTY data, intercepting terminal queries and generating responses
    * Returns the data to send to the emulator (without queries)
    */
@@ -673,6 +916,11 @@ export class DsrPassthrough {
       // Get cursor position from emulator
       const cursor = this.cursorGetter?.() ?? { x: 0, y: 0 };
       const response = generateCprResponse(cursor.y, cursor.x);
+      this.ptyWriter(response);
+    } else if (query.type === 'decxcpr') {
+      // Extended cursor position report
+      const cursor = this.cursorGetter?.() ?? { x: 0, y: 0 };
+      const response = generateDecxcprResponse(cursor.y, cursor.x);
       this.ptyWriter(response);
     } else if (query.type === 'status') {
       // Device is OK
@@ -746,6 +994,56 @@ export class DsrPassthrough {
       const b = colors.background & 0xFF;
       const response = generateOscBgResponse(r, g, b);
       this.ptyWriter(response);
+    } else if (query.type === 'osc-cursor') {
+      // Get cursor color
+      const r = (this.cursorColor >> 16) & 0xFF;
+      const g = (this.cursorColor >> 8) & 0xFF;
+      const b = this.cursorColor & 0xFF;
+      const response = generateOscCursorResponse(r, g, b);
+      this.ptyWriter(response);
+    } else if (query.type === 'osc-palette') {
+      // Get palette color by index
+      const index = query.colorIndex ?? 0;
+      let color: number;
+      if (this.paletteGetter) {
+        const customColor = this.paletteGetter(index);
+        color = customColor ?? (DEFAULT_PALETTE[index] ?? 0);
+      } else {
+        color = DEFAULT_PALETTE[index] ?? 0;
+      }
+      const r = (color >> 16) & 0xFF;
+      const g = (color >> 8) & 0xFF;
+      const b = color & 0xFF;
+      const response = generateOscPaletteResponse(index, r, g, b);
+      this.ptyWriter(response);
+    } else if (query.type === 'xtwinops') {
+      // Window size queries
+      const winop = query.winop ?? 18;
+      if (this.sizeGetter) {
+        const size = this.sizeGetter();
+        let height: number, width: number;
+        switch (winop) {
+          case 14: // Window size in pixels
+            height = size.pixelHeight;
+            width = size.pixelWidth;
+            break;
+          case 16: // Cell size in pixels
+            height = size.cellHeight;
+            width = size.cellWidth;
+            break;
+          case 18: // Text area in characters
+          default:
+            height = size.rows;
+            width = size.cols;
+            break;
+        }
+        const response = generateXtwinopsResponse(winop, height, width);
+        this.ptyWriter(response);
+      } else {
+        // Fallback to default sizes
+        const response = generateXtwinopsResponse(winop, 24, 80);
+        this.ptyWriter(response);
+      }
     }
   }
 
@@ -757,5 +1055,7 @@ export class DsrPassthrough {
     this.cursorGetter = null;
     this.colorsGetter = null;
     this.modeGetter = null;
+    this.paletteGetter = null;
+    this.sizeGetter = null;
   }
 }
