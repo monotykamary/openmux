@@ -219,6 +219,7 @@ function AppContent() {
 
         // If not handled by multiplexer and in normal mode, forward to PTY
         if (!handled && mode === 'normal' && !sessionState.showSessionPicker) {
+
           // Clear any active selection when user types
           clearAllSelections();
 

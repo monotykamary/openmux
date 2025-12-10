@@ -99,6 +99,11 @@ class InputHandlerImpl {
     switch (lowerKey) {
       case 'return':
       case 'enter':
+        // Alt+Enter = soft newline (insert line without submit)
+        // Note: Shift+Enter detection is unreliable due to OpenTUI/kitty protocol issues
+        if (alt && !ctrl) {
+          return '\n';
+        }
         return '\r';
       case 'tab':
         return shift ? '\x1b[Z' : '\t';
