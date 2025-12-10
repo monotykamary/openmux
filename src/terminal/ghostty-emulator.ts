@@ -398,6 +398,31 @@ export class GhosttyEmulator {
   }
 
   /**
+   * Check if a codepoint is a space-like character that should be normalized to regular space
+   * These are visually empty/blank characters that might cause rendering inconsistencies
+   * if not converted to standard space (U+0020)
+   */
+  private isSpaceLikeChar(codepoint: number): boolean {
+    // No-break space (U+00A0)
+    if (codepoint === 0x00A0) return true;
+    // Ogham space mark (U+1680) - renders as space in most fonts
+    if (codepoint === 0x1680) return true;
+    // Various width spaces (U+2000-U+200A)
+    // EN QUAD, EM QUAD, EN SPACE, EM SPACE, etc.
+    if (codepoint >= 0x2000 && codepoint <= 0x200A) return true;
+    // NARROW NO-BREAK SPACE (U+202F)
+    if (codepoint === 0x202F) return true;
+    // MEDIUM MATHEMATICAL SPACE (U+205F)
+    if (codepoint === 0x205F) return true;
+    // IDEOGRAPHIC SPACE (U+3000) - full-width CJK space
+    if (codepoint === 0x3000) return true;
+    // BRAILLE PATTERN BLANK (U+2800) - all dots off, looks empty
+    // Often used in TUI graphics that use braille patterns
+    if (codepoint === 0x2800) return true;
+    return false;
+  }
+
+  /**
    * Check if a codepoint is a zero-width/invisible character that should use default colors
    * These are invisible modifiers that can carry stale color information
    * Based on Unicode "Default_Ignorable_Code_Point" property
@@ -463,6 +488,25 @@ export class GhosttyEmulator {
         blink: false,
         dim: false,
         width: 1,
+      };
+    }
+
+    // Space-like characters (braille blank, typographic spaces, etc.) should be
+    // normalized to regular space to avoid rendering inconsistencies between
+    // terminals. The colors are preserved so backgrounds render correctly.
+    if (this.isSpaceLikeChar(cell.codepoint)) {
+      return {
+        char: ' ',
+        fg: { r: cell.fg_r, g: cell.fg_g, b: cell.fg_b },
+        bg: { r: cell.bg_r, g: cell.bg_g, b: cell.bg_b },
+        bold: (cell.flags & CellFlags.BOLD) !== 0,
+        italic: (cell.flags & CellFlags.ITALIC) !== 0,
+        underline: (cell.flags & CellFlags.UNDERLINE) !== 0,
+        strikethrough: (cell.flags & CellFlags.STRIKETHROUGH) !== 0,
+        inverse: (cell.flags & CellFlags.INVERSE) !== 0,
+        blink: (cell.flags & CellFlags.BLINK) !== 0,
+        dim: (cell.flags & CellFlags.FAINT) !== 0,
+        width: 1, // Normalize to width 1 for consistent rendering
       };
     }
 
