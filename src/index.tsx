@@ -21,13 +21,12 @@ async function main() {
     });
 
     // Enable kitty keyboard protocol AFTER renderer setup
-    // Flag 8 = report all keys as escape codes (required for Shift+Enter)
+    // Flag 1 = disambiguate escape codes (detect Alt+key without breaking regular input)
+    // Flag 8 was too aggressive - it reports ALL keys as escape codes, breaking shift
     // Must be done after createCliRenderer since setupTerminal() resets modes
     // See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
-    // Note: We need BOTH the renderer call (to tell OpenTUI to parse kitty format)
-    // AND the raw escape sequence (to tell Ghostty to send kitty format)
-    renderer.enableKittyKeyboard(8);
-    process.stdout.write('\x1b[>8u');
+    renderer.enableKittyKeyboard(1);
+    process.stdout.write('\x1b[>1u');
     // Force flush
     if (process.stdout.isTTY) {
       (process.stdout as any)._handle?.flush?.();
