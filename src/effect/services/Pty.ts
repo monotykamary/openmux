@@ -30,6 +30,7 @@ interface InternalPtySession {
   cwd: string
   shell: string
   subscribers: Set<(state: TerminalState) => void>
+  scrollSubscribers: Set<() => void>
   exitCallbacks: Set<(exitCode: number) => void>
   pendingNotify: boolean
   scrollState: {
@@ -126,6 +127,12 @@ export class Pty extends Context.Tag("@openmux/Pty")<
       callback: (state: TerminalState) => void
     ) => Effect.Effect<() => void, PtyNotFoundError>
 
+    /** Subscribe to scroll state changes (lightweight - no state rebuild) */
+    readonly subscribeToScroll: (
+      id: PtyId,
+      callback: () => void
+    ) => Effect.Effect<() => void, PtyNotFoundError>
+
     /** Subscribe to PTY exit events */
     readonly onExit: (
       id: PtyId,
@@ -180,11 +187,18 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           return session.value
         })
 
-      // Helper to notify subscribers
+      // Helper to notify subscribers (for terminal state changes)
       const notifySubscribers = (session: InternalPtySession) => {
         const state = session.emulator.getTerminalState()
         for (const callback of session.subscribers) {
           callback(state)
+        }
+      }
+
+      // Helper to notify scroll subscribers (lightweight - no state rebuild)
+      const notifyScrollSubscribers = (session: InternalPtySession) => {
+        for (const callback of session.scrollSubscribers) {
+          callback()
         }
       }
 
@@ -250,6 +264,7 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           cwd,
           shell,
           subscribers: new Set(),
+          scrollSubscribers: new Set(),
           exitCallbacks: new Set(),
           pendingNotify: false,
           scrollState: { viewportOffset: 0 },
@@ -346,7 +361,9 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         // Auto-scroll to bottom when user types
         if (session.scrollState.viewportOffset > 0) {
           session.scrollState.viewportOffset = 0
+          // Notify both terminal state and scroll subscribers
           notifySubscribers(session)
+          notifyScrollSubscribers(session)
         }
 
         session.pty.write(data)
@@ -480,7 +497,20 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           0,
           Math.min(offset, maxOffset)
         )
-        notifySubscribers(session)
+        // Use scroll-only notification - doesn't rebuild terminal state
+        notifyScrollSubscribers(session)
+      })
+
+      const subscribeToScroll = Effect.fn("Pty.subscribeToScroll")(function* (
+        id: PtyId,
+        callback: () => void
+      ) {
+        const session = yield* getSessionOrFail(id)
+        session.scrollSubscribers.add(callback)
+
+        return () => {
+          session.scrollSubscribers.delete(callback)
+        }
       })
 
       const getEmulator = Effect.fn("Pty.getEmulator")(function* (id: PtyId) {
@@ -506,6 +536,7 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         getSession,
         getTerminalState,
         subscribe,
+        subscribeToScroll,
         onExit,
         setPanePosition,
         getScrollState,
@@ -542,6 +573,7 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         cursorVisible: true,
       } as unknown as TerminalState),
     subscribe: () => Effect.succeed(() => {}),
+    subscribeToScroll: () => Effect.succeed(() => {}),
     onExit: () => Effect.succeed(() => {}),
     setPanePosition: () => Effect.void,
     getScrollState: () =>

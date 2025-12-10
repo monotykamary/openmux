@@ -314,13 +314,15 @@ export function Pane({
     } else {
       // Handle scroll locally - scroll through scrollback buffer
       // OpenTUI scroll events have direction: "up" | "down" | "left" | "right"
+      // Scroll by 3 lines per event for comfortable scrolling speed
+      const scrollSpeed = 3;
       const direction = event.scroll?.direction;
       if (direction === 'up') {
         // Scroll up = look at older content = increase viewport offset
-        scrollTerminal(ptyId, 1);
+        scrollTerminal(ptyId, scrollSpeed);
       } else if (direction === 'down') {
         // Scroll down = look at newer content = decrease viewport offset
-        scrollTerminal(ptyId, -1);
+        scrollTerminal(ptyId, -scrollSpeed);
       }
     }
   }, [ptyId, x, y, innerWidth, innerHeight, onMouseInput, isAlternateScreen, isMouseTrackingEnabled, scrollTerminal]);

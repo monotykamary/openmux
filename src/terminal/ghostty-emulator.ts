@@ -68,6 +68,8 @@ export class GhosttyEmulator {
   private globalVersion = 0;
   // Cached empty cell to avoid repeated allocation
   private cachedEmptyCell: TerminalCell | null = null;
+  // Scrollback line cache - avoids re-converting cells on each scroll
+  private scrollbackCache: Map<number, TerminalCell[]> = new Map();
 
   constructor(options: GhosttyEmulatorOptions = {}) {
     const { cols = 80, rows = 24, colors } = options;
@@ -132,6 +134,8 @@ export class GhosttyEmulator {
    */
   write(data: string | Uint8Array): void {
     this.terminal.write(data);
+    // Clear scrollback cache - new data may have shifted scrollback
+    this.scrollbackCache.clear();
   }
 
   /**
@@ -146,6 +150,9 @@ export class GhosttyEmulator {
 
     // Reinitialize cached cells for new dimensions
     this.initializeCachedCells();
+
+    // Clear scrollback cache - resize may reflow lines
+    this.scrollbackCache.clear();
 
     // Force full refresh after resize
     this.updateAllCells();
@@ -257,9 +264,22 @@ export class GhosttyEmulator {
    * @returns Array of cells, or null if not available
    */
   getScrollbackLine(offset: number): TerminalCell[] | null {
+    // Check cache first
+    const cached = this.scrollbackCache.get(offset);
+    if (cached) {
+      return cached;
+    }
+
+    // Fetch from terminal and convert
     const line = this.terminal.getScrollbackLine(offset);
     if (!line) return null;
-    return line.map(cell => this.convertCell(cell));
+
+    const converted = line.map(cell => this.convertCell(cell));
+
+    // Cache the converted line
+    this.scrollbackCache.set(offset, converted);
+
+    return converted;
   }
 
   /**

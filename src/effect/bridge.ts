@@ -266,6 +266,26 @@ export async function subscribeToPty(
 }
 
 /**
+ * Subscribe to scroll state changes (lightweight - no terminal state rebuild).
+ * Returns an unsubscribe function.
+ */
+export async function subscribeToScroll(
+  ptyId: string,
+  callback: () => void
+): Promise<() => void> {
+  try {
+    return await runEffect(
+      Effect.gen(function* () {
+        const pty = yield* Pty
+        return yield* pty.subscribeToScroll(PtyId.make(ptyId), callback)
+      })
+    )
+  } catch {
+    return () => {}
+  }
+}
+
+/**
  * Get a scrollback line from the terminal emulator.
  * Returns null if the line doesn't exist or the PTY is not found.
  */

@@ -158,12 +158,32 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     // Subscribe to terminal state updates for caching
     const unsubState = await subscribeToPty(ptyId, (state) => {
       terminalStatesCache.current.set(ptyId, state);
+      // Also update scroll state cache - scrollbackLength changes as content grows
+      getScrollState(ptyId).then((scrollState) => {
+        if (scrollState) {
+          scrollStatesCache.current.set(ptyId, {
+            viewportOffset: scrollState.viewportOffset,
+            scrollbackLength: scrollState.scrollbackLength,
+            isAtBottom: scrollState.isAtBottom,
+          });
+        }
+      });
     });
 
     // Cache the emulator for synchronous access (selection text extraction)
     const emulator = await getEmulator(ptyId);
     if (emulator) {
       emulatorsCache.current.set(ptyId, emulator);
+    }
+
+    // Initialize scroll state cache (required for scrolling and selection to work immediately)
+    const initialScrollState = await getScrollState(ptyId);
+    if (initialScrollState) {
+      scrollStatesCache.current.set(ptyId, {
+        viewportOffset: initialScrollState.viewportOffset,
+        scrollbackLength: initialScrollState.scrollbackLength,
+        isAtBottom: initialScrollState.isAtBottom,
+      });
     }
 
     // Store unsubscribe functions
@@ -262,12 +282,32 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
         // Subscribe to terminal state updates
         const unsubState = await subscribeToPty(ptyId, (state) => {
           terminalStatesCache.current.set(ptyId, state);
+          // Also update scroll state cache - scrollbackLength changes as content grows
+          getScrollState(ptyId).then((scrollState) => {
+            if (scrollState) {
+              scrollStatesCache.current.set(ptyId, {
+                viewportOffset: scrollState.viewportOffset,
+                scrollbackLength: scrollState.scrollbackLength,
+                isAtBottom: scrollState.isAtBottom,
+              });
+            }
+          });
         });
 
         // Cache the emulator for synchronous access
         const emulator = await getEmulator(ptyId);
         if (emulator) {
           emulatorsCache.current.set(ptyId, emulator);
+        }
+
+        // Initialize scroll state cache
+        const initialScrollState = await getScrollState(ptyId);
+        if (initialScrollState) {
+          scrollStatesCache.current.set(ptyId, {
+            viewportOffset: initialScrollState.viewportOffset,
+            scrollbackLength: initialScrollState.scrollbackLength,
+            isAtBottom: initialScrollState.isAtBottom,
+          });
         }
 
         // Store unsubscribe functions
@@ -327,6 +367,15 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   const writeToFocused = useCallback((data: string) => {
     const focusedPtyId = getFocusedPtyId();
     if (focusedPtyId) {
+      // Reset scroll cache to bottom (typing auto-scrolls)
+      const cached = scrollStatesCache.current.get(focusedPtyId);
+      if (cached && cached.viewportOffset > 0) {
+        scrollStatesCache.current.set(focusedPtyId, {
+          ...cached,
+          viewportOffset: 0,
+          isAtBottom: true,
+        });
+      }
       // Fire and forget for responsive typing
       writeToPty(focusedPtyId, data);
     }
@@ -346,6 +395,15 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
 
   // Write to a specific PTY
   const handleWriteToPTY = useCallback((ptyId: string, data: string) => {
+    // Reset scroll cache to bottom (typing auto-scrolls)
+    const cached = scrollStatesCache.current.get(ptyId);
+    if (cached && cached.viewportOffset > 0) {
+      scrollStatesCache.current.set(ptyId, {
+        ...cached,
+        viewportOffset: 0,
+        isAtBottom: true,
+      });
+    }
     // Fire and forget for responsive typing
     writeToPty(ptyId, data);
   }, []);
@@ -365,6 +423,15 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     const clipboardText = await readFromClipboard();
     if (!clipboardText) return false;
 
+    // Reset scroll cache to bottom (pasting auto-scrolls)
+    const cached = scrollStatesCache.current.get(focusedPtyId);
+    if (cached && cached.viewportOffset > 0) {
+      scrollStatesCache.current.set(focusedPtyId, {
+        ...cached,
+        viewportOffset: 0,
+        isAtBottom: true,
+      });
+    }
     writeToPty(focusedPtyId, clipboardText);
     return true;
   }, [getFocusedPtyId]);
@@ -420,6 +487,20 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
         ...cached,
         viewportOffset: Math.max(0, newOffset),
         isAtBottom: newOffset <= 0,
+      });
+    } else {
+      // Fallback: fetch state and then scroll (handles edge cases where cache isn't populated)
+      getScrollState(ptyId).then((state) => {
+        if (state) {
+          const newOffset = state.viewportOffset + delta;
+          setScrollOffset(ptyId, newOffset);
+          // Populate cache
+          scrollStatesCache.current.set(ptyId, {
+            viewportOffset: Math.max(0, newOffset),
+            scrollbackLength: state.scrollbackLength,
+            isAtBottom: newOffset <= 0,
+          });
+        }
       });
     }
   }, []);

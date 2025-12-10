@@ -10,6 +10,7 @@ import type { GhosttyEmulator } from '../terminal/ghostty-emulator';
 import {
   getTerminalState,
   subscribeToPty,
+  subscribeToScroll,
   getScrollState,
   getEmulator,
 } from '../effect/bridge';
@@ -81,9 +82,12 @@ export const TerminalView = memo(function TerminalView({
   const emulatorRef = useRef<GhosttyEmulator | null>(null);
   // Version counter to trigger re-renders when state changes
   const [version, setVersion] = useState(0);
-  
+  // Track pending scroll update for throttling (setImmediate handle)
+  const pendingScrollRef = useRef<ReturnType<typeof setImmediate> | null>(null);
+
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
+    let unsubscribeState: (() => void) | null = null;
+    let unsubscribeScroll: (() => void) | null = null;
     let mounted = true;
 
     // Initialize async resources
@@ -106,10 +110,33 @@ export const TerminalView = memo(function TerminalView({
       }
 
       // Subscribe to terminal state updates
-      unsubscribe = await subscribeToPty(ptyId, (state) => {
+      unsubscribeState = await subscribeToPty(ptyId, (state) => {
         terminalStateRef.current = state;
         // Increment version to trigger re-render
         setVersion(v => v + 1);
+      });
+
+      // Subscribe to scroll changes (throttled with setImmediate to batch rapid scrolls)
+      unsubscribeScroll = await subscribeToScroll(ptyId, () => {
+        // If we already have an update scheduled, let it handle this one too
+        if (pendingScrollRef.current !== null) {
+          return;
+        }
+
+        // Schedule update for next tick (batches multiple scroll events)
+        pendingScrollRef.current = setImmediate(async () => {
+          pendingScrollRef.current = null;
+
+          if (!mounted) return;
+
+          // Update scroll state ref
+          const newScrollState = await getScrollState(ptyId);
+          if (mounted && newScrollState) {
+            scrollStateRef.current = newScrollState;
+          }
+          // Increment version to trigger re-render
+          setVersion(v => v + 1);
+        });
       });
 
       // Trigger initial render
@@ -120,8 +147,16 @@ export const TerminalView = memo(function TerminalView({
 
     return () => {
       mounted = false;
-      if (unsubscribe) {
-        unsubscribe();
+      if (unsubscribeState) {
+        unsubscribeState();
+      }
+      if (unsubscribeScroll) {
+        unsubscribeScroll();
+      }
+      // Cancel any pending scroll update
+      if (pendingScrollRef.current !== null) {
+        clearImmediate(pendingScrollRef.current);
+        pendingScrollRef.current = null;
       }
     };
   }, [ptyId]);
