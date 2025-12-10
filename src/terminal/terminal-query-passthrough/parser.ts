@@ -30,10 +30,11 @@ import {
 export function mightContainQueries(data: string): boolean {
   // Check for CSI sequences (ESC[)
   if (data.includes(`${ESC}[`)) {
-    // DSR queries (5n, 6n), DA queries (c), XTVERSION (q), DECRQM ($p), Kitty (?u)
+    // DSR queries (5n, 6n), DA queries (c), XTVERSION (q), DECRQM ($p)
     // XTWINOPS uses specific patterns 14t, 16t, 18t to avoid false positives
+    // Kitty keyboard query is exactly ESC[?u - check for the full pattern
     if (data.includes('n') || data.includes('c') || data.includes('q') ||
-        data.includes('$p') || data.includes('?u') ||
+        data.includes('$p') || data.includes(`${ESC}[?u`) ||
         data.includes('14t') || data.includes('16t') || data.includes('18t')) {
       return true;
     }
