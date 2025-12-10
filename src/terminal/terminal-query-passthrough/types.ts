@@ -11,13 +11,15 @@ export type QueryType =
   | 'da3'           // Tertiary Device Attributes (ESC[=c)
   | 'xtversion'     // Terminal Version (ESC[>q)
   | 'decrqm'        // DEC Request Mode (ESC[?Ps$p)
+  | 'decrqss'       // Request Status String (DCS$q...ST)
   | 'xtgettcap'     // Termcap Query (DCS+q...ST)
   | 'kitty-keyboard' // Kitty Keyboard Protocol (ESC[?u)
   | 'xtwinops'      // Window Operations (ESC[14t, 16t, 18t)
   | 'osc-palette'   // OSC 4 Palette Query
   | 'osc-fg'        // OSC 10 Foreground Query
   | 'osc-bg'        // OSC 11 Background Query
-  | 'osc-cursor';   // OSC 12 Cursor Color Query
+  | 'osc-cursor'    // OSC 12 Cursor Color Query
+  | 'osc-clipboard'; // OSC 52 Clipboard Query
 
 export interface TerminalQuery {
   type: QueryType;
@@ -31,6 +33,10 @@ export interface TerminalQuery {
   winop?: number;
   /** Color index for OSC 4 palette queries */
   colorIndex?: number;
+  /** Status string type for DECRQSS queries (e.g., 'm' for SGR, ' q' for DECSCUSR) */
+  statusType?: string;
+  /** Clipboard selection for OSC 52 (c=clipboard, p=primary, etc.) */
+  clipboardSelection?: string;
 }
 
 export interface QueryParseResult {

@@ -28,6 +28,8 @@
  * - OSC 10 (ESC]10;?): Foreground color query - responds with ESC]10;rgb:rr/gg/bb
  * - OSC 11 (ESC]11;?): Background color query - responds with ESC]11;rgb:rr/gg/bb
  * - OSC 12 (ESC]12;?): Cursor color query - responds with ESC]12;rgb:rr/gg/bb
+ * - OSC 52 (ESC]52;sel;?): Clipboard query - responds with empty (security)
+ * - DECRQSS (DCS$q...ST): Request status string - responds with current state
  */
 
 import type { TerminalQuery } from './types';
@@ -50,6 +52,9 @@ import {
   generateXtwinopsResponse,
   generateXtversionResponse,
   generateKittyKeyboardResponse,
+  generateDecrqssValidResponse,
+  generateDecrqssInvalidResponse,
+  generateOscClipboardEmptyResponse,
 } from './responses';
 
 export class TerminalQueryPassthrough {
@@ -301,6 +306,49 @@ export class TerminalQueryPassthrough {
         const response = generateXtwinopsResponse(winop, 24, 80);
         this.ptyWriter(response);
       }
+    } else if (query.type === 'osc-clipboard') {
+      // Clipboard query - respond with empty for security
+      // Apps should not be able to read clipboard through terminal queries
+      const selection = query.clipboardSelection ?? 'c';
+      const response = generateOscClipboardEmptyResponse(selection);
+      this.ptyWriter(response);
+    } else if (query.type === 'decrqss') {
+      // Request status string - respond based on status type
+      const statusType = query.statusType ?? '';
+      let response: string;
+
+      switch (statusType) {
+        case 'm':
+          // SGR (Select Graphic Rendition) - return reset state
+          response = generateDecrqssValidResponse('0m');
+          break;
+        case ' q':
+          // DECSCUSR (Cursor Style) - return blinking block (default)
+          response = generateDecrqssValidResponse('1 q');
+          break;
+        case '"q':
+          // DECSCA (Select Character Attribute) - return not protected
+          response = generateDecrqssValidResponse('0"q');
+          break;
+        case 'r':
+          // DECSTBM (Top and Bottom Margins) - return full screen
+          if (this.sizeGetter) {
+            const size = this.sizeGetter();
+            response = generateDecrqssValidResponse(`1;${size.rows}r`);
+          } else {
+            response = generateDecrqssValidResponse('1;24r');
+          }
+          break;
+        case '"p':
+          // DECSCL (Conformance Level) - return VT220
+          response = generateDecrqssValidResponse('62;1"p');
+          break;
+        default:
+          // Unknown status type
+          response = generateDecrqssInvalidResponse();
+          break;
+      }
+      this.ptyWriter(response);
     }
   }
 

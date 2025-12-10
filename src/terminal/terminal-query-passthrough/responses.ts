@@ -222,3 +222,36 @@ export function generateXtversionResponse(name: string, version: string): string
 export function generateKittyKeyboardResponse(flags: number): string {
   return `${ESC}[?${flags}u`;
 }
+
+// =============================================================================
+// DECRQSS (Request Status String) Responses
+// =============================================================================
+
+/**
+ * Generate a DECRQSS valid response
+ * Format: DCS 1 $ r Pt ST
+ * Pt is the status string (e.g., "0m" for SGR reset)
+ */
+export function generateDecrqssValidResponse(statusString: string): string {
+  return `${DCS}1$r${statusString}${ST}`;
+}
+
+/**
+ * Generate a DECRQSS invalid response
+ * Format: DCS 0 $ r ST
+ */
+export function generateDecrqssInvalidResponse(): string {
+  return `${DCS}0$r${ST}`;
+}
+
+// =============================================================================
+// OSC 52 (Clipboard) Responses
+// =============================================================================
+
+/**
+ * Generate an empty OSC 52 clipboard response (for denied/empty clipboard)
+ * Format: ESC]52;selection; ST
+ */
+export function generateOscClipboardEmptyResponse(selection: string): string {
+  return `${ESC}]52;${selection};${ST}`;
+}

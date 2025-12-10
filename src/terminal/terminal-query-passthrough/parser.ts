@@ -11,6 +11,7 @@ import {
   DA1_QUERY, DA1_QUERY_FULL, DA2_QUERY, DA2_QUERY_FULL, DA3_QUERY, DA3_QUERY_FULL,
   XTVERSION_QUERY, XTVERSION_QUERY_FULL,
   DECRQM_PREFIX, DECRQM_SUFFIX,
+  DECRQSS_PREFIX,
   XTGETTCAP_PREFIX,
   KITTY_KEYBOARD_QUERY,
   XTWINOPS_14T, XTWINOPS_16T, XTWINOPS_18T,
@@ -19,6 +20,7 @@ import {
   OSC_FG_QUERY_BEL, OSC_FG_QUERY_ST,
   OSC_BG_QUERY_BEL, OSC_BG_QUERY_ST,
   OSC_CURSOR_QUERY_BEL, OSC_CURSOR_QUERY_ST,
+  OSC_CLIPBOARD_PREFIX,
 } from './constants';
 
 /**
@@ -36,13 +38,13 @@ export function mightContainQueries(data: string): boolean {
       return true;
     }
   }
-  // Check for OSC queries (ESC]4;, ESC]10;?, ESC]11;?, ESC]12;?)
+  // Check for OSC queries (ESC]4;, ESC]10;?, ESC]11;?, ESC]12;?, ESC]52;)
   if (data.includes(`${ESC}]`)) {
-    if (data.includes(';?') || data.includes(']4;')) {
+    if (data.includes(';?') || data.includes(']4;') || data.includes(']52;')) {
       return true;
     }
   }
-  // Check for DCS sequences (XTGETTCAP)
+  // Check for DCS sequences (XTGETTCAP, DECRQSS)
   if (data.includes(DCS)) {
     return true;
   }
@@ -467,6 +469,80 @@ export function parseTerminalQueries(data: string): QueryParseResult {
       currentIndex += OSC_CURSOR_QUERY_ST.length;
       textStart = currentIndex;
       continue;
+    }
+
+    // Check for OSC 52 clipboard query - ESC]52;selection;?BEL or ESC]52;selection;?ST
+    if (data.startsWith(OSC_CLIPBOARD_PREFIX, currentIndex)) {
+      // Parse: ESC]52;selection;?terminator
+      let endPos = currentIndex + OSC_CLIPBOARD_PREFIX.length;
+      let selection = '';
+      // Selection can be c, p, q, s, or 0-7
+      while (endPos < data.length && /[cpqs0-7]/.test(data[endPos])) {
+        selection += data[endPos];
+        endPos++;
+      }
+      // Check for ;? followed by terminator (query format)
+      if (selection.length > 0 && data.startsWith(';?', endPos)) {
+        endPos += 2; // Skip ;?
+        let terminatorLen = 0;
+        if (data[endPos] === BEL) {
+          terminatorLen = 1;
+        } else if (data.startsWith(ST, endPos)) {
+          terminatorLen = ST.length;
+        }
+        if (terminatorLen > 0) {
+          if (currentIndex > textStart) {
+            textSegments.push(data.slice(textStart, currentIndex));
+          }
+          queries.push({
+            type: 'osc-clipboard',
+            startIndex: currentIndex,
+            endIndex: endPos + terminatorLen,
+            clipboardSelection: selection,
+          });
+          currentIndex = endPos + terminatorLen;
+          textStart = currentIndex;
+          continue;
+        }
+      }
+    }
+
+    // Check for DECRQSS (Request Status String) - DCS$qPt ST
+    // Pt can be: m (SGR), "p (DECSCL), SP q (DECSCUSR), "q (DECSCA), r (DECSTBM), etc.
+    if (data.startsWith(DECRQSS_PREFIX, currentIndex)) {
+      // Find the terminator (ST = ESC\ or BEL)
+      let endPos = currentIndex + DECRQSS_PREFIX.length;
+      let terminated = false;
+      let terminatorLen = 0;
+      while (endPos < data.length) {
+        if (data[endPos] === BEL) {
+          terminated = true;
+          terminatorLen = 1;
+          break;
+        }
+        if (data.startsWith(ST, endPos)) {
+          terminated = true;
+          terminatorLen = ST.length;
+          break;
+        }
+        endPos++;
+      }
+      if (terminated) {
+        if (currentIndex > textStart) {
+          textSegments.push(data.slice(textStart, currentIndex));
+        }
+        // Extract the status type (the part between $q and ST)
+        const statusType = data.slice(currentIndex + DECRQSS_PREFIX.length, endPos);
+        queries.push({
+          type: 'decrqss',
+          startIndex: currentIndex,
+          endIndex: endPos + terminatorLen,
+          statusType,
+        });
+        currentIndex = endPos + terminatorLen;
+        textStart = currentIndex;
+        continue;
+      }
     }
 
     currentIndex++;
