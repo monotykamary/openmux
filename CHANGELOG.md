@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.20](https://github.com/monotykamary/openmux/compare/v0.1.19...v0.1.20) (2025-12-10)
+
+
+### Performance
+
+* optimize scroll performance and fix selection issues ([77c57f3](https://github.com/monotykamary/openmux/commit/77c57f3e37a3cc402bf1e7c7f34acfc1e6bd959d))
+
 ### [0.1.19](https://github.com/monotykamary/openmux/compare/v0.1.18...v0.1.19) (2025-12-10)
 
 
