@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.24](https://github.com/monotykamary/openmux/compare/v0.1.23...v0.1.24) (2025-12-12)
+
+
+### Bug Fixes
+
+* account for tab bar height in stacked layout mode ([241ae3a](https://github.com/monotykamary/openmux/commit/241ae3a047437f380348a3ee4939597e8a6938a4))
+
 ### [0.1.23](https://github.com/monotykamary/openmux/compare/v0.1.22...v0.1.23) (2025-12-12)
 
 ### [0.1.22](https://github.com/monotykamary/openmux/compare/v0.1.21...v0.1.22) (2025-12-12)
