@@ -136,11 +136,10 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
   }) => {
     const { key, ctrl, alt, shift, meta } = event;
 
-    // Handle Ctrl+V or Cmd+V for paste in normal mode
-    if (kbState.mode === 'normal' && (ctrl || meta) && !shift && key.toLowerCase() === 'v') {
-      onPaste?.();
-      return true;
-    }
+    // Note: We do NOT intercept Ctrl+V here. Applications like Claude Code need to
+    // receive Ctrl+V directly so they can trigger their own clipboard reading (which
+    // supports images). For text paste, use prefix+] or prefix+p, or Cmd+V on macOS
+    // (which triggers bracketed paste via PasteEvent handled in App.tsx).
 
     // Handle Alt keybindings (prefix-less actions) in normal mode
     if (kbState.mode === 'normal' && alt) {
