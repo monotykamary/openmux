@@ -15,6 +15,7 @@ import {
   getEmulator,
 } from '../effect/bridge';
 import { useSelection } from '../contexts/SelectionContext';
+import { useSearch } from '../contexts/SearchContext';
 
 interface TerminalViewProps {
   ptyId: string;
@@ -37,6 +38,12 @@ const SCROLLBAR_THUMB = RGBA.fromInts(100, 100, 100);
 // Selection colors
 const SELECTION_BG = RGBA.fromInts(80, 120, 200);
 const SELECTION_FG = RGBA.fromInts(255, 255, 255);
+
+// Search highlight colors
+const SEARCH_MATCH_BG = RGBA.fromInts(180, 140, 0);    // Orange/gold for matches
+const SEARCH_MATCH_FG = RGBA.fromInts(0, 0, 0);        // Black text
+const SEARCH_CURRENT_BG = RGBA.fromInts(255, 200, 0);  // Bright yellow for current match
+const SEARCH_CURRENT_FG = RGBA.fromInts(0, 0, 0);      // Black text
 
 // RGBA cache to avoid per-cell allocations (pack RGB into single number as key)
 const rgbaCache = new Map<number, RGBA>();
@@ -69,6 +76,8 @@ export const TerminalView = memo(function TerminalView({
 }: TerminalViewProps) {
   // Get selection state
   const { isCellSelected, selectionVersion } = useSelection();
+  // Get search state
+  const { isSearchMatch, isCurrentMatch, searchVersion } = useSearch();
 
   // Store terminal state in a ref to avoid React re-renders
   const terminalStateRef = useRef<TerminalState | null>(null);
@@ -247,6 +256,10 @@ export const TerminalView = memo(function TerminalView({
         // Check if cell is selected
         const isSelected = isCellSelected(ptyId, x, absoluteY);
 
+        // Check if cell is a search match
+        const isMatch = isSearchMatch(ptyId, x, absoluteY);
+        const isCurrent = isCurrentMatch(ptyId, x, absoluteY);
+
         // Determine cell colors
         let fgR = cell.fg.r, fgG = cell.fg.g, fgB = cell.fg.b;
         let bgR = cell.bg.r, bgG = cell.bg.g, bgB = cell.bg.b;
@@ -268,14 +281,23 @@ export const TerminalView = memo(function TerminalView({
         let fg = getCachedRGBA(fgR, fgG, fgB);
         let bg = getCachedRGBA(bgR, bgG, bgB);
 
-        // Apply selection styling (takes priority over cursor)
-        if (isSelected) {
-          fg = SELECTION_FG;
-          bg = SELECTION_BG;
-        } else if (isCursor) {
-          // Apply cursor styling (only if not selected)
+        // Apply styling in priority order: cursor > selection > current match > other matches
+        if (isCursor) {
+          // Cursor styling (highest priority when visible)
           fg = bg ?? BLACK;
           bg = WHITE;
+        } else if (isSelected) {
+          // Selection styling
+          fg = SELECTION_FG;
+          bg = SELECTION_BG;
+        } else if (isCurrent) {
+          // Current search match (bright yellow)
+          fg = SEARCH_CURRENT_FG;
+          bg = SEARCH_CURRENT_BG;
+        } else if (isMatch) {
+          // Other search matches (orange)
+          fg = SEARCH_MATCH_FG;
+          bg = SEARCH_MATCH_BG;
         }
 
         // Calculate attributes
@@ -323,7 +345,7 @@ export const TerminalView = memo(function TerminalView({
       }
     }
 
-    }, [width, height, isFocused, offsetX, offsetY, ptyId, isCellSelected, selectionVersion]);
+    }, [width, height, isFocused, offsetX, offsetY, ptyId, isCellSelected, selectionVersion, isSearchMatch, isCurrentMatch, searchVersion]);
 
   const terminalState = terminalStateRef.current;
 

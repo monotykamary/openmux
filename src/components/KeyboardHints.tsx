@@ -28,6 +28,7 @@ const PREFIX_MODE_HINTS: KeyHint[] = [
   { key: 'h/j/k/l', description: 'Navigate panes' },
   { key: '1-9', description: 'Switch workspace' },
   { key: 's', description: 'Session picker' },
+  { key: '/', description: 'Search in scrollback' },
   { key: 'v/H/t', description: 'Layout: vert/horiz/stack' },
   { key: 'z', description: 'Toggle zoom' },
   { key: 'x', description: 'Close pane' },

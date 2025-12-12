@@ -12,12 +12,15 @@ import {
   TerminalProvider,
   useLayout,
   useKeyboardHandler,
+  useKeyboardState,
   useTerminal,
 } from './contexts';
 import { SelectionProvider, useSelection } from './contexts/SelectionContext';
+import { SearchProvider, useSearch } from './contexts/SearchContext';
 import { SessionProvider, useSession } from './contexts/SessionContext';
 import { PaneContainer, StatusBar, KeyboardHints, CopyNotification } from './components';
 import { SessionPicker } from './components/SessionPicker';
+import { SearchOverlay } from './components/SearchOverlay';
 import { inputHandler } from './terminal';
 import type { Workspace, WorkspaceId } from './core/types';
 
@@ -27,6 +30,8 @@ function AppContent() {
   const { createPTY, resizePTY, setPanePosition, writeToFocused, writeToPTY, pasteToFocused, getFocusedCwd, getFocusedCursorKeyMode, isInitialized, destroyAllPTYs, getSessionCwd } = useTerminal();
   const { togglePicker, state: sessionState } = useSession();
   const { clearAllSelections, copyNotification } = useSelection();
+  const { searchState, enterSearchMode, exitSearchMode, setSearchQuery, nextMatch, prevMatch } = useSearch();
+  const { dispatch: kbDispatch } = useKeyboardState();
   const renderer = useRenderer();
 
   // Track pending CWD for new panes (captured before NEW_PANE dispatch)
@@ -62,6 +67,25 @@ function AppContent() {
     togglePicker();
   }, [togglePicker]);
 
+  // Search mode enter handler
+  const handleEnterSearch = useCallback(async () => {
+    // Get the focused pane's PTY ID
+    const focusedPaneId = activeWorkspace.focusedPaneId;
+    if (!focusedPaneId) return;
+
+    let focusedPtyId: string | undefined;
+    if (activeWorkspace.mainPane?.id === focusedPaneId) {
+      focusedPtyId = activeWorkspace.mainPane.ptyId;
+    } else {
+      const stackPane = activeWorkspace.stackPanes.find(p => p.id === focusedPaneId);
+      focusedPtyId = stackPane?.ptyId;
+    }
+
+    if (focusedPtyId) {
+      await enterSearchMode(focusedPtyId);
+    }
+  }, [activeWorkspace, enterSearchMode]);
+
   // Handle bracketed paste from host terminal (Cmd+V sends this)
   useEffect(() => {
     const handleBracketedPaste = (event: PasteEvent) => {
@@ -94,6 +118,7 @@ function AppContent() {
     onNewPane: handleNewPane,
     onQuit: handleQuit,
     onToggleSessionPicker: handleToggleSessionPicker,
+    onEnterSearch: handleEnterSearch,
   });
 
   // Track which panes have PTYs created
@@ -208,6 +233,59 @@ function AppContent() {
           return;
         }
 
+        // If in search mode, handle search-specific keys
+        if (mode === 'search') {
+          const key = event.name.toLowerCase();
+
+          if (key === 'escape') {
+            // Cancel search, restore original scroll position
+            exitSearchMode(true);
+            kbDispatch({ type: 'EXIT_SEARCH_MODE' });
+            return;
+          }
+
+          if (key === 'return' || key === 'enter') {
+            // Confirm search, stay at current position
+            exitSearchMode(false);
+            kbDispatch({ type: 'EXIT_SEARCH_MODE' });
+            return;
+          }
+
+          // Wait for searchState to be initialized before handling navigation/input
+          if (!searchState) {
+            return;
+          }
+
+          if (key === 'n' && !event.shift && !event.ctrl && !event.option) {
+            // Next match
+            nextMatch();
+            return;
+          }
+
+          if ((key === 'n' && event.shift) || key === 'p') {
+            // Previous match (Shift+N or p)
+            prevMatch();
+            return;
+          }
+
+          if (key === 'backspace') {
+            // Delete last character from query
+            setSearchQuery(searchState.query.slice(0, -1));
+            return;
+          }
+
+          // Single printable character - add to search query
+          const charCode = event.sequence?.charCodeAt(0) ?? 0;
+          const isPrintable = event.sequence?.length === 1 && charCode >= 32 && charCode < 127;
+          if (isPrintable && !event.ctrl && !event.option && !event.meta) {
+            setSearchQuery(searchState.query + event.sequence);
+            return;
+          }
+
+          // Consume all other keys in search mode
+          return;
+        }
+
         // First, check if this is a multiplexer command
         const handled = handleKeyDown({
           key: event.name,
@@ -248,7 +326,7 @@ function AppContent() {
           }
         }
       },
-      [handleKeyDown, mode, writeToFocused, getFocusedCursorKeyMode, sessionState.showSessionPicker, clearAllSelections]
+      [handleKeyDown, mode, writeToFocused, getFocusedCursorKeyMode, sessionState.showSessionPicker, clearAllSelections, searchState, exitSearchMode, nextMatch, prevMatch, setSearchQuery, kbDispatch]
     )
   );
 
@@ -271,6 +349,9 @@ function AppContent() {
 
       {/* Session picker overlay */}
       <SessionPicker width={width} height={height} />
+
+      {/* Search overlay */}
+      <SearchOverlay width={width} height={height} />
 
       {/* Copy notification toast */}
       <CopyNotification
@@ -397,9 +478,11 @@ function AppWithTerminal() {
   return (
     <TerminalProvider>
       <SelectionProvider>
-        <SessionBridge>
-          <AppContent />
-        </SessionBridge>
+        <SearchProvider>
+          <SessionBridge>
+            <AppContent />
+          </SessionBridge>
+        </SearchProvider>
       </SelectionProvider>
     </TerminalProvider>
   );

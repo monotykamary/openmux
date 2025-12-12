@@ -162,7 +162,7 @@ export interface TerminalScrollState {
 /**
  * Keyboard mode for prefix key system
  */
-export type KeyMode = 'normal' | 'prefix';
+export type KeyMode = 'normal' | 'prefix' | 'search';
 
 /**
  * Keyboard state

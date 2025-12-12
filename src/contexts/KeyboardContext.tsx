@@ -19,6 +19,8 @@ import { keyToDirection } from '../core/keyboard-utils';
 type KeyboardAction =
   | { type: 'ENTER_PREFIX_MODE' }
   | { type: 'EXIT_PREFIX_MODE' }
+  | { type: 'ENTER_SEARCH_MODE' }
+  | { type: 'EXIT_SEARCH_MODE' }
   | { type: 'TOGGLE_HINTS' };
 
 function keyboardReducer(state: KeyboardState, action: KeyboardAction): KeyboardState {
@@ -35,6 +37,19 @@ function keyboardReducer(state: KeyboardState, action: KeyboardAction): Keyboard
         ...state,
         mode: 'normal',
         prefixActivatedAt: undefined,
+      };
+
+    case 'ENTER_SEARCH_MODE':
+      return {
+        ...state,
+        mode: 'search',
+        prefixActivatedAt: undefined,
+      };
+
+    case 'EXIT_SEARCH_MODE':
+      return {
+        ...state,
+        mode: 'normal',
       };
 
     case 'TOGGLE_HINTS':
@@ -101,6 +116,7 @@ interface KeyboardHandlerOptions {
   onNewPane?: () => void;
   onQuit?: () => void;
   onToggleSessionPicker?: () => void;
+  onEnterSearch?: () => void;
 }
 
 /**
@@ -109,7 +125,7 @@ interface KeyboardHandlerOptions {
 export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
   const { state: kbState, dispatch: kbDispatch } = useKeyboardState();
   const { dispatch: layoutDispatch, activeWorkspace } = useLayout();
-  const { onPaste, onNewPane, onQuit, onToggleSessionPicker } = options;
+  const { onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch } = options;
 
   const handleKeyDown = useCallback((event: {
     key: string;
@@ -148,12 +164,12 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
 
     // Prefix mode commands
     if (kbState.mode === 'prefix') {
-      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste, onNewPane, onQuit, onToggleSessionPicker);
+      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch);
     }
 
     // Normal mode - pass through to terminal
     return false;
-  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste, onNewPane, onQuit, onToggleSessionPicker]);
+  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch]);
 
   return { handleKeyDown, mode: kbState.mode };
 }
@@ -238,7 +254,8 @@ function handlePrefixModeKey(
   onPaste?: () => void,
   onNewPane?: () => void,
   onQuit?: () => void,
-  onToggleSessionPicker?: () => void
+  onToggleSessionPicker?: () => void,
+  onEnterSearch?: () => void
 ): boolean {
   const exitPrefix = () => kbDispatch({ type: 'EXIT_PREFIX_MODE' });
 
@@ -321,6 +338,17 @@ function handlePrefixModeKey(
     // Quit openmux
     case 'q':
       onQuit?.();
+      return true;
+
+    // Search mode (vim-style)
+    case '/':
+      if (onEnterSearch) {
+        kbDispatch({ type: 'ENTER_SEARCH_MODE' });
+        onEnterSearch();
+        // Don't call exitPrefix() here - ENTER_SEARCH_MODE already handles the mode transition
+        return true;
+      }
+      exitPrefix();
       return true;
 
     default:

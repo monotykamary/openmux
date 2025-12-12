@@ -64,6 +64,7 @@ function ModeIndicator({ mode }: ModeIndicatorProps) {
   const modeLabels: Record<KeyMode, string> = {
     normal: '',
     prefix: '[PREFIX]',
+    search: '[SEARCH]',
   };
 
   return (
