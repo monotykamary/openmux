@@ -57,11 +57,13 @@ function getCachedRGBA(r: number, g: number, b: number): RGBA {
   return cached;
 }
 
-// Text attributes for buffer API
+// Text attributes for buffer API - must match OpenTUI's TextAttributes
+// See: @opentui/core TextAttributes { BOLD: 1, DIM: 2, ITALIC: 4, UNDERLINE: 8, BLINK: 16, INVERSE: 32, HIDDEN: 64, STRIKETHROUGH: 128 }
 const ATTR_BOLD = 1;
-const ATTR_ITALIC = 2;
-const ATTR_UNDERLINE = 4;
-const ATTR_STRIKETHROUGH = 8;
+const ATTR_DIM = 2;
+const ATTR_ITALIC = 4;
+const ATTR_UNDERLINE = 8;
+const ATTR_STRIKETHROUGH = 128;
 
 /**
  * TerminalView component - uses direct buffer rendering for maximum performance
