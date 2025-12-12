@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.21](https://github.com/monotykamary/openmux/compare/v0.1.20...v0.1.21) (2025-12-12)
+
+
+### Features
+
+* add terminal search functionality ([1763840](https://github.com/monotykamary/openmux/commit/1763840fd09f64c8717f3f5d112f8670795bd293))
+
+
+### Bug Fixes
+
+* allow Ctrl+V passthrough for image paste support ([a2c5e60](https://github.com/monotykamary/openmux/commit/a2c5e60704439ca6f30ac5f42a37dd55904e2d28))
+
 ### [0.1.20](https://github.com/monotykamary/openmux/compare/v0.1.19...v0.1.20) (2025-12-10)
 
 
