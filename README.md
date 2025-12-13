@@ -7,6 +7,8 @@ A terminal multiplexer with master-stack layout (Zellij-style), built with:
 - **bun-pty** - PTY support for Bun
 - **ghostty-web** - Terminal emulation via WASM
 
+![openmux screenshot](assets/openmux-screenshot.png)
+
 ## Features
 
 - Master-stack tiling layout (like Zellij)
