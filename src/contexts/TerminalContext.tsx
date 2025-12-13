@@ -457,23 +457,11 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     return terminalState?.alternateScreen ?? false;
   }, []);
 
-  // Get scroll state for a PTY (sync - uses cache, but also fetches async)
+  // Get scroll state for a PTY (sync - uses cache only for performance)
+  // Cache is kept fresh by: optimistic updates in scrollTerminal/setScrollOffset,
+  // and PTY subscription updates when terminal state changes
   const handleGetScrollState = useCallback((ptyId: string): TerminalScrollState | undefined => {
-    // Return cached value immediately
-    const cached = scrollStatesCache.current.get(ptyId);
-
-    // Also fetch fresh state async and update cache
-    getScrollState(ptyId).then((state) => {
-      if (state) {
-        scrollStatesCache.current.set(ptyId, {
-          viewportOffset: state.viewportOffset,
-          scrollbackLength: state.scrollbackLength,
-          isAtBottom: state.isAtBottom,
-        });
-      }
-    });
-
-    return cached;
+    return scrollStatesCache.current.get(ptyId);
   }, []);
 
   // Scroll terminal by delta lines
@@ -481,24 +469,28 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     const cached = scrollStatesCache.current.get(ptyId);
     if (cached) {
       const newOffset = cached.viewportOffset + delta;
-      setScrollOffset(ptyId, newOffset);
-      // Update cache optimistically
+      // Clamp to valid range to prevent momentum accumulation at boundaries
+      const clampedOffset = Math.max(0, Math.min(newOffset, cached.scrollbackLength));
+      setScrollOffset(ptyId, clampedOffset);
+      // Update cache optimistically with clamped value
       scrollStatesCache.current.set(ptyId, {
         ...cached,
-        viewportOffset: Math.max(0, newOffset),
-        isAtBottom: newOffset <= 0,
+        viewportOffset: clampedOffset,
+        isAtBottom: clampedOffset <= 0,
       });
     } else {
       // Fallback: fetch state and then scroll (handles edge cases where cache isn't populated)
       getScrollState(ptyId).then((state) => {
         if (state) {
           const newOffset = state.viewportOffset + delta;
-          setScrollOffset(ptyId, newOffset);
-          // Populate cache
+          // Clamp to valid range
+          const clampedOffset = Math.max(0, Math.min(newOffset, state.scrollbackLength));
+          setScrollOffset(ptyId, clampedOffset);
+          // Populate cache with clamped value
           scrollStatesCache.current.set(ptyId, {
-            viewportOffset: Math.max(0, newOffset),
+            viewportOffset: clampedOffset,
             scrollbackLength: state.scrollbackLength,
-            isAtBottom: newOffset <= 0,
+            isAtBottom: clampedOffset <= 0,
           });
         }
       });
@@ -507,14 +499,18 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
 
   // Set absolute scroll offset
   const handleSetScrollOffset = useCallback((ptyId: string, offset: number): void => {
-    setScrollOffset(ptyId, offset);
-    // Update cache optimistically
     const cached = scrollStatesCache.current.get(ptyId);
+    // Clamp to valid range to prevent momentum accumulation at boundaries
+    const clampedOffset = cached
+      ? Math.max(0, Math.min(offset, cached.scrollbackLength))
+      : Math.max(0, offset);
+    setScrollOffset(ptyId, clampedOffset);
+    // Update cache optimistically with clamped value
     if (cached) {
       scrollStatesCache.current.set(ptyId, {
         ...cached,
-        viewportOffset: Math.max(0, offset),
-        isAtBottom: offset <= 0,
+        viewportOffset: clampedOffset,
+        isAtBottom: clampedOffset <= 0,
       });
     }
   }, []);

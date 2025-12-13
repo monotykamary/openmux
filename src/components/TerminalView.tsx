@@ -11,11 +11,11 @@ import {
   getTerminalState,
   subscribeToPty,
   subscribeToScroll,
-  getScrollState,
   getEmulator,
 } from '../effect/bridge';
 import { useSelection } from '../contexts/SelectionContext';
 import { useSearch } from '../contexts/SearchContext';
+import { useTerminal } from '../contexts/TerminalContext';
 
 interface TerminalViewProps {
   ptyId: string;
@@ -80,21 +80,15 @@ export const TerminalView = memo(function TerminalView({
   const { isCellSelected, selectionVersion } = useSelection();
   // Get search state
   const { isSearchMatch, isCurrentMatch, searchVersion } = useSearch();
+  // Get scroll state from context cache (synchronous, already updated by scroll events)
+  const { getScrollState: getScrollStateFromCache } = useTerminal();
 
   // Store terminal state in a ref to avoid React re-renders
   const terminalStateRef = useRef<TerminalState | null>(null);
-  // Cache scroll state for sync access in render
-  const scrollStateRef = useRef<TerminalScrollState>({
-    viewportOffset: 0,
-    scrollbackLength: 0,
-    isAtBottom: true,
-  });
   // Cache emulator for sync access to scrollback lines
   const emulatorRef = useRef<GhosttyEmulator | null>(null);
   // Version counter to trigger re-renders when state changes
   const [version, setVersion] = useState(0);
-  // Track pending scroll update for throttling (setImmediate handle)
-  const pendingScrollRef = useRef<ReturnType<typeof setImmediate> | null>(null);
 
   useEffect(() => {
     let unsubscribeState: (() => void) | null = null;
@@ -113,13 +107,6 @@ export const TerminalView = memo(function TerminalView({
       if (!mounted) return;
       emulatorRef.current = emulator;
 
-      // Get initial scroll state
-      const scrollState = await getScrollState(ptyId);
-      if (!mounted) return;
-      if (scrollState) {
-        scrollStateRef.current = scrollState;
-      }
-
       // Subscribe to terminal state updates
       unsubscribeState = await subscribeToPty(ptyId, (state) => {
         terminalStateRef.current = state;
@@ -127,27 +114,10 @@ export const TerminalView = memo(function TerminalView({
         setVersion(v => v + 1);
       });
 
-      // Subscribe to scroll changes (throttled with setImmediate to batch rapid scrolls)
+      // Subscribe to scroll changes - just trigger re-render, scroll state comes from context cache
       unsubscribeScroll = await subscribeToScroll(ptyId, () => {
-        // If we already have an update scheduled, let it handle this one too
-        if (pendingScrollRef.current !== null) {
-          return;
-        }
-
-        // Schedule update for next tick (batches multiple scroll events)
-        pendingScrollRef.current = setImmediate(async () => {
-          pendingScrollRef.current = null;
-
-          if (!mounted) return;
-
-          // Update scroll state ref
-          const newScrollState = await getScrollState(ptyId);
-          if (mounted && newScrollState) {
-            scrollStateRef.current = newScrollState;
-          }
-          // Increment version to trigger re-render
-          setVersion(v => v + 1);
-        });
+        // Increment version to trigger re-render (scroll state read from context cache in render)
+        setVersion(v => v + 1);
       });
 
       // Trigger initial render
@@ -164,26 +134,8 @@ export const TerminalView = memo(function TerminalView({
       if (unsubscribeScroll) {
         unsubscribeScroll();
       }
-      // Cancel any pending scroll update
-      if (pendingScrollRef.current !== null) {
-        clearImmediate(pendingScrollRef.current);
-        pendingScrollRef.current = null;
-      }
     };
   }, [ptyId]);
-
-  // Update scroll state periodically (for scrollback rendering)
-  useEffect(() => {
-    const updateScrollState = async () => {
-      const scrollState = await getScrollState(ptyId);
-      if (scrollState) {
-        scrollStateRef.current = scrollState;
-      }
-    };
-
-    // Update scroll state on each render (version change)
-    updateScrollState();
-  }, [ptyId, version]);
 
   // Render callback that directly writes to buffer
   const renderTerminal = useCallback((buffer: OptimizedBuffer) => {
@@ -198,10 +150,10 @@ export const TerminalView = memo(function TerminalView({
       return;
     }
 
-    // Get scroll state from cache
-    const scrollState = scrollStateRef.current;
-    const viewportOffset = scrollState.viewportOffset;
-    const scrollbackLength = scrollState.scrollbackLength;
+    // Get scroll state from context cache (synchronous, no async overhead)
+    const scrollState = getScrollStateFromCache(ptyId);
+    const viewportOffset = scrollState?.viewportOffset ?? 0;
+    const scrollbackLength = scrollState?.scrollbackLength ?? 0;
     const isAtBottom = viewportOffset === 0;
 
     const rows = Math.min(state.rows, height);
@@ -347,7 +299,7 @@ export const TerminalView = memo(function TerminalView({
       }
     }
 
-    }, [width, height, isFocused, offsetX, offsetY, ptyId, isCellSelected, selectionVersion, isSearchMatch, isCurrentMatch, searchVersion]);
+    }, [width, height, isFocused, offsetX, offsetY, ptyId, isCellSelected, selectionVersion, isSearchMatch, isCurrentMatch, searchVersion, getScrollStateFromCache]);
 
   const terminalState = terminalStateRef.current;
 
