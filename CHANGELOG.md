@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.27](https://github.com/monotykamary/openmux/compare/v0.1.26...v0.1.27) (2025-12-13)
+
+
+### Bug Fixes
+
+* **selection:** implement Zellij-style drag-to-select behavior ([1e971b9](https://github.com/monotykamary/openmux/commit/1e971b97ffd1b142e2788c98d8489246163041ac))
+
+
+### Documentation
+
+* update CLAUDE.md with test commands and Effect module ([6da4a44](https://github.com/monotykamary/openmux/commit/6da4a4434e238454dba25ee2f21233a0f28f24c3))
+
 ### [0.1.26](https://github.com/monotykamary/openmux/compare/v0.1.25...v0.1.26) (2025-12-13)
 
 
