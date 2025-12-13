@@ -16,8 +16,9 @@ import React, {
   type ReactNode,
 } from 'react';
 import type { TerminalCell, TerminalState } from '../core/types';
-import { getEmulator, getTerminalState, getScrollState, setScrollOffset } from '../effect/bridge';
+import { getEmulator, getTerminalState, getScrollState } from '../effect/bridge';
 import type { GhosttyEmulator } from '../terminal/ghostty-emulator';
+import { useTerminal } from './TerminalContext';
 
 // =============================================================================
 // Types
@@ -225,6 +226,9 @@ interface SearchProviderProps {
 }
 
 export function SearchProvider({ children }: SearchProviderProps) {
+  // Get setScrollOffset from TerminalContext (updates cache for immediate rendering)
+  const { setScrollOffset } = useTerminal();
+
   // Store search state - use state so context consumers get updates
   const [searchState, setSearchState] = useState<SearchState | null>(null);
   // Also keep a ref for synchronous access in render callbacks (isSearchMatch/isCurrentMatch)
