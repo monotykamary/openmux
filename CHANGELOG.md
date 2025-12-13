@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.26](https://github.com/monotykamary/openmux/compare/v0.1.25...v0.1.26) (2025-12-13)
+
+
+### Bug Fixes
+
+* **bin:** clear spinner line to prevent display smearing ([75d653d](https://github.com/monotykamary/openmux/commit/75d653d63645bca55cee0f62d861f2d6ceca510f))
+
 ### [0.1.25](https://github.com/monotykamary/openmux/compare/v0.1.24...v0.1.25) (2025-12-12)
 
 
