@@ -14,6 +14,7 @@ import React, {
 } from 'react';
 import { initGhostty, isGhosttyInitialized, detectHostCapabilities } from '../terminal';
 import type { TerminalState, TerminalScrollState } from '../core/types';
+import { clampScrollOffset, calculateScrollDelta, isAtBottom } from '../core/scroll-utils';
 import { useLayout } from './LayoutContext';
 import {
   createPtySession,
@@ -468,29 +469,27 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   const scrollTerminal = useCallback((ptyId: string, delta: number): void => {
     const cached = scrollStatesCache.current.get(ptyId);
     if (cached) {
-      const newOffset = cached.viewportOffset + delta;
-      // Clamp to valid range to prevent momentum accumulation at boundaries
-      const clampedOffset = Math.max(0, Math.min(newOffset, cached.scrollbackLength));
+      // Use utility for clamped scroll calculation
+      const clampedOffset = calculateScrollDelta(cached.viewportOffset, delta, cached.scrollbackLength);
       setScrollOffset(ptyId, clampedOffset);
       // Update cache optimistically with clamped value
       scrollStatesCache.current.set(ptyId, {
         ...cached,
         viewportOffset: clampedOffset,
-        isAtBottom: clampedOffset <= 0,
+        isAtBottom: isAtBottom(clampedOffset),
       });
     } else {
       // Fallback: fetch state and then scroll (handles edge cases where cache isn't populated)
       getScrollState(ptyId).then((state) => {
         if (state) {
-          const newOffset = state.viewportOffset + delta;
-          // Clamp to valid range
-          const clampedOffset = Math.max(0, Math.min(newOffset, state.scrollbackLength));
+          // Use utility for clamped scroll calculation
+          const clampedOffset = calculateScrollDelta(state.viewportOffset, delta, state.scrollbackLength);
           setScrollOffset(ptyId, clampedOffset);
           // Populate cache with clamped value
           scrollStatesCache.current.set(ptyId, {
             viewportOffset: clampedOffset,
             scrollbackLength: state.scrollbackLength,
-            isAtBottom: clampedOffset <= 0,
+            isAtBottom: isAtBottom(clampedOffset),
           });
         }
       });
@@ -500,9 +499,9 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   // Set absolute scroll offset
   const handleSetScrollOffset = useCallback((ptyId: string, offset: number): void => {
     const cached = scrollStatesCache.current.get(ptyId);
-    // Clamp to valid range to prevent momentum accumulation at boundaries
+    // Use utility for clamping to valid range
     const clampedOffset = cached
-      ? Math.max(0, Math.min(offset, cached.scrollbackLength))
+      ? clampScrollOffset(offset, cached.scrollbackLength)
       : Math.max(0, offset);
     setScrollOffset(ptyId, clampedOffset);
     // Update cache optimistically with clamped value
@@ -510,7 +509,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
       scrollStatesCache.current.set(ptyId, {
         ...cached,
         viewportOffset: clampedOffset,
-        isAtBottom: clampedOffset <= 0,
+        isAtBottom: isAtBottom(clampedOffset),
       });
     }
   }, []);
