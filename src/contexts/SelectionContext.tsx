@@ -37,12 +37,15 @@ interface SelectionPoint {
 
 /**
  * Normalized selection range (start is always before end)
+ * The focus cell is excluded from selection (Zellij-style)
  */
 interface SelectionRange {
   startX: number;
   startY: number;  // Absolute Y
   endX: number;
   endY: number;    // Absolute Y
+  /** True if focus is at end position (forward selection), false if at start (backward) */
+  focusAtEnd: boolean;
 }
 
 /**
@@ -159,6 +162,7 @@ function toAbsoluteY(y: number, scrollbackLength: number, scrollOffset: number):
 
 /**
  * Normalize selection so start is always before end
+ * Tracks whether focus is at end (forward) or start (backward) for exclusion
  */
 function normalizeSelection(
   anchor: SelectionPoint,
@@ -169,31 +173,36 @@ function normalizeSelection(
     (anchor.absoluteY === focus.absoluteY && anchor.x <= focus.x);
 
   if (anchorBefore) {
+    // Forward selection: focus is at end
     return {
       startX: anchor.x,
       startY: anchor.absoluteY,
       endX: focus.x,
       endY: focus.absoluteY,
+      focusAtEnd: true,
     };
   } else {
+    // Backward selection: focus is at start
     return {
       startX: focus.x,
       startY: focus.absoluteY,
       endX: anchor.x,
       endY: anchor.absoluteY,
+      focusAtEnd: false,
     };
   }
 }
 
 /**
  * Check if a cell at (x, absoluteY) is within the selection range
+ * The focus cell is excluded (Zellij-style selection)
  */
 function isCellInRange(
   x: number,
   absoluteY: number,
   range: SelectionRange
 ): boolean {
-  const { startX, startY, endX, endY } = range;
+  const { startX, startY, endX, endY, focusAtEnd } = range;
 
   // Outside vertical bounds
   if (absoluteY < startY || absoluteY > endY) {
@@ -202,16 +211,33 @@ function isCellInRange(
 
   // Single line selection
   if (startY === endY) {
-    return x >= startX && x <= endX;
+    // Exclude the focus cell
+    if (focusAtEnd) {
+      // Forward: exclude end (focus), so x < endX
+      return x >= startX && x < endX;
+    } else {
+      // Backward: exclude start (focus), so x > startX
+      return x > startX && x <= endX;
+    }
   }
 
   // Multi-line selection
   if (absoluteY === startY) {
-    // First line: from startX to end of line
+    // First line
+    if (!focusAtEnd) {
+      // Backward selection: focus is at start, exclude startX
+      return x > startX;
+    }
+    // Forward selection: include from startX to end of line
     return x >= startX;
   }
   if (absoluteY === endY) {
-    // Last line: from start of line to endX
+    // Last line
+    if (focusAtEnd) {
+      // Forward selection: focus is at end, exclude endX
+      return x < endX;
+    }
+    // Backward selection: include from start of line to endX
     return x <= endX;
   }
 
@@ -221,27 +247,67 @@ function isCellInRange(
 
 /**
  * Extract text from the selected range
+ * Respects focusAtEnd to exclude the focus cell (Zellij-style)
  */
 function extractSelectedText(
   range: SelectionRange,
   scrollbackLength: number,
   getLine: LineGetter
 ): string {
+  const { startX, startY, endX, endY, focusAtEnd } = range;
   const lines: string[] = [];
 
-  for (let absY = range.startY; absY <= range.endY; absY++) {
+  for (let absY = startY; absY <= endY; absY++) {
     const row = getLine(absY);
     if (!row) continue;
 
-    // Determine start/end X for this row
-    const isFirstRow = absY === range.startY;
-    const isLastRow = absY === range.endY;
-    const startX = isFirstRow ? range.startX : 0;
-    const endX = isLastRow ? range.endX : row.length - 1;
+    const isFirstRow = absY === startY;
+    const isLastRow = absY === endY;
+    const isSingleLine = startY === endY;
+
+    // Determine start/end X for this row, respecting focus exclusion
+    let rowStartX: number;
+    let rowEndX: number;
+
+    if (isSingleLine) {
+      // Single line: exclude focus cell
+      if (focusAtEnd) {
+        rowStartX = startX;
+        rowEndX = endX - 1;  // Exclude focus at end
+      } else {
+        rowStartX = startX + 1;  // Exclude focus at start
+        rowEndX = endX;
+      }
+    } else if (isFirstRow) {
+      // First row of multi-line
+      if (!focusAtEnd) {
+        // Backward: focus at start, exclude it
+        rowStartX = startX + 1;
+      } else {
+        rowStartX = startX;
+      }
+      rowEndX = row.length - 1;
+    } else if (isLastRow) {
+      // Last row of multi-line
+      rowStartX = 0;
+      if (focusAtEnd) {
+        // Forward: focus at end, exclude it
+        rowEndX = endX - 1;
+      } else {
+        rowEndX = endX;
+      }
+    } else {
+      // Middle row: entire line
+      rowStartX = 0;
+      rowEndX = row.length - 1;
+    }
+
+    // Skip if invalid range (can happen when focus == anchor)
+    if (rowStartX > rowEndX) continue;
 
     // Extract text from row
     let rowText = '';
-    for (let x = startX; x <= Math.min(endX, row.length - 1); x++) {
+    for (let x = rowStartX; x <= Math.min(rowEndX, row.length - 1); x++) {
       const cell = row[x];
       if (!cell) continue;
 
@@ -328,6 +394,7 @@ export function SelectionProvider({ children }: SelectionProviderProps) {
           startY: absoluteY,
           endX: x,
           endY: absoluteY,
+          focusAtEnd: true,  // Default to forward
         },
       });
 
@@ -378,7 +445,7 @@ export function SelectionProvider({ children }: SelectionProviderProps) {
         return;
       }
 
-      // Extract text
+      // Extract text (focus cell is already excluded by extractSelectedText)
       const text = extractSelectedText(
         selection.normalizedRange,
         scrollbackLength,
