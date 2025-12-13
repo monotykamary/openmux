@@ -38,6 +38,15 @@ const PREFIX_MODE_HINTS: KeyHint[] = [
   { key: 'Esc', description: 'Exit prefix mode' },
 ];
 
+const SEARCH_MODE_HINTS: KeyHint[] = [
+  { key: 'Type', description: 'Enter search query' },
+  { key: 'Ctrl+n', description: 'Next match' },
+  { key: 'Ctrl+p', description: 'Previous match' },
+  { key: 'Enter', description: 'Confirm and exit' },
+  { key: 'Esc', description: 'Cancel and restore' },
+  { key: 'Backspace', description: 'Delete character' },
+];
+
 interface KeyboardHintsProps {
   width: number;
   height: number;
@@ -48,7 +57,12 @@ export function KeyboardHints({ width, height }: KeyboardHintsProps) {
 
   if (!state.showHints) return null;
 
-  const hints = state.mode === 'normal' ? NORMAL_MODE_HINTS : PREFIX_MODE_HINTS;
+  const hints =
+    state.mode === 'normal'
+      ? NORMAL_MODE_HINTS
+      : state.mode === 'search'
+        ? SEARCH_MODE_HINTS
+        : PREFIX_MODE_HINTS;
 
   // Center the hints overlay
   const overlayWidth = 40;
