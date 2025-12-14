@@ -379,10 +379,11 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         const SYNC_TIMEOUT_MS = 100 // Safety flush after 100ms
 
         // Helper to schedule notification (extracted for reuse)
+        // Uses queueMicrotask for tighter timing - runs before next event loop tick
         const scheduleNotify = () => {
           if (!session.pendingNotify) {
             session.pendingNotify = true
-            setImmediate(() => {
+            queueMicrotask(() => {
               // Write all pending data at once
               if (pendingData.length > 0) {
                 // Capture scrollback length before write to detect new lines
