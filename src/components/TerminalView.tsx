@@ -76,9 +76,9 @@ export const TerminalView = memo(function TerminalView({
   offsetY = 0,
 }: TerminalViewProps) {
   // Get selection state
-  const { isCellSelected, selectionVersion } = useSelection();
+  const { isCellSelected, getSelection, selectionVersion } = useSelection();
   // Get search state
-  const { isSearchMatch, isCurrentMatch, searchVersion } = useSearch();
+  const { isSearchMatch, isCurrentMatch, searchState, searchVersion } = useSearch();
   // Get scroll state from context cache (synchronous, already updated by scroll events)
   const { getScrollState: getScrollStateFromCache } = useTerminal();
 
@@ -222,6 +222,10 @@ export const TerminalView = memo(function TerminalView({
       }
     }
 
+    // Pre-check if selection/search is active for this pane (avoid 5760 function calls per frame)
+    const hasSelection = !!getSelection(ptyId)?.normalizedRange;
+    const hasSearch = searchState?.ptyId === ptyId && searchState.matches.length > 0;
+
     for (let y = 0; y < rows; y++) {
       const row = rowCache[y];
       // Calculate absolute Y for selection check (accounts for scrollback)
@@ -240,12 +244,12 @@ export const TerminalView = memo(function TerminalView({
         const isCursor = isAtBottom && isFocused && state.cursor.visible &&
                          state.cursor.y === y && state.cursor.x === x;
 
-        // Check if cell is selected
-        const isSelected = isCellSelected(ptyId, x, absoluteY);
+        // Check if cell is selected (skip function call if no active selection)
+        const isSelected = hasSelection && isCellSelected(ptyId, x, absoluteY);
 
-        // Check if cell is a search match
-        const isMatch = isSearchMatch(ptyId, x, absoluteY);
-        const isCurrent = isCurrentMatch(ptyId, x, absoluteY);
+        // Check if cell is a search match (skip function calls if no active search)
+        const isMatch = hasSearch && isSearchMatch(ptyId, x, absoluteY);
+        const isCurrent = hasSearch && isCurrentMatch(ptyId, x, absoluteY);
 
         // Determine cell colors
         let fgR = cell.fg.r, fgG = cell.fg.g, fgB = cell.fg.b;
@@ -332,7 +336,7 @@ export const TerminalView = memo(function TerminalView({
       }
     }
 
-    }, [width, height, isFocused, offsetX, offsetY, ptyId, isCellSelected, selectionVersion, isSearchMatch, isCurrentMatch, searchVersion, getScrollStateFromCache]);
+    }, [width, height, isFocused, offsetX, offsetY, ptyId, isCellSelected, getSelection, selectionVersion, isSearchMatch, isCurrentMatch, searchState, searchVersion, getScrollStateFromCache]);
 
   const terminalState = terminalStateRef.current;
 
