@@ -387,8 +387,21 @@ export class Pty extends Context.Tag("@openmux/Pty")<
             setImmediate(() => {
               // Write all pending data at once
               if (pendingData.length > 0) {
+                // Capture scrollback length before write to detect new lines
+                const scrollbackBefore = session.emulator.getScrollbackLength()
+
                 session.emulator.write(pendingData)
                 pendingData = ''
+
+                // If user is scrolled back, adjust offset to maintain view position
+                // when new lines are added to scrollback (prevents content from shifting up)
+                if (session.scrollState.viewportOffset > 0) {
+                  const scrollbackAfter = session.emulator.getScrollbackLength()
+                  const scrollbackDelta = scrollbackAfter - scrollbackBefore
+                  if (scrollbackDelta > 0) {
+                    session.scrollState.viewportOffset += scrollbackDelta
+                  }
+                }
               }
               notifySubscribers(session)
               session.pendingNotify = false
