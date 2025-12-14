@@ -59,6 +59,8 @@ function resolveLibPath(): string {
   const platform = process.platform;
   const arch = process.arch;
 
+  // Library filename based on platform/arch
+  const ext = platform === "darwin" ? "dylib" : platform === "win32" ? "dll" : "so";
   const filenames =
     platform === "darwin"
       ? arch === "arm64"
@@ -70,12 +72,20 @@ function resolveLibPath(): string {
           ? ["libzig_pty_arm64.so", "libzig_pty.so"]
           : ["libzig_pty.so"];
 
+  // For compiled binaries, check next to the executable first
+  // process.execPath points to the actual binary location
+  const execDir = dirname(process.execPath);
+
+  // For development, check relative to source
   const base = Bun.fileURLToPath(import.meta.url);
   const fileDir = dirname(base);
   const dirName = basename(fileDir);
   const here = dirName === "src" || dirName === "dist" ? dirname(fileDir) : fileDir;
 
   const basePaths = [
+    // Compiled binary: library next to executable (set by wrapper or manual)
+    execDir,
+    // Development: zig-pty/zig-out/lib/
     join(here, "zig-out", "lib"),
     join(here, "..", "zig-pty", "zig-out", "lib"),
     join(process.cwd(), "zig-pty", "zig-out", "lib"),
@@ -86,6 +96,8 @@ function resolveLibPath(): string {
     for (const filename of filenames) {
       fallbackPaths.push(join(basePath, filename));
     }
+    // Also check for generic name (libzig_pty.ext)
+    fallbackPaths.push(join(basePath, `libzig_pty.${ext}`));
   }
 
   for (const path of fallbackPaths) {
