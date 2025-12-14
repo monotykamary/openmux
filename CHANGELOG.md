@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.31](https://github.com/monotykamary/openmux/compare/v0.1.30...v0.1.31) (2025-12-14)
+
+
+### Bug Fixes
+
+* **pty:** patch bun-pty to fix UTF-8 boundary smearing artifacts ([7b794e8](https://github.com/monotykamary/openmux/commit/7b794e830da0a6736070831b0bf5d472f954bf49))
+
+
+### Documentation
+
+* add screenshot to README ([20fe9c2](https://github.com/monotykamary/openmux/commit/20fe9c25efa71310621e8c07db20a3b68306b1b2))
+* document bun-pty's smearing issue ([9a712fe](https://github.com/monotykamary/openmux/commit/9a712fea10b3f65231c272af92b7f1a4ce14a3c4))
+
 ### [0.1.30](https://github.com/monotykamary/openmux/compare/v0.1.29...v0.1.30) (2025-12-13)
 
 
