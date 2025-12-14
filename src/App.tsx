@@ -67,6 +67,11 @@ function AppContent() {
     togglePicker();
   }, [togglePicker]);
 
+  // Toggle debug console
+  const handleToggleConsole = useCallback(() => {
+    renderer.console.toggle();
+  }, [renderer]);
+
   // Search mode enter handler
   const handleEnterSearch = useCallback(async () => {
     // Clear any existing selection so it doesn't hide search highlights
@@ -122,6 +127,7 @@ function AppContent() {
     onQuit: handleQuit,
     onToggleSessionPicker: handleToggleSessionPicker,
     onEnterSearch: handleEnterSearch,
+    onToggleConsole: handleToggleConsole,
   });
 
   // Track which panes have PTYs created

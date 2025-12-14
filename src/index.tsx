@@ -2,7 +2,7 @@
  * Terminal multiplexer with master-stack layout
  */
 
-import { createCliRenderer } from '@opentui/core';
+import { createCliRenderer, ConsolePosition } from '@opentui/core';
 import { createRoot } from '@opentui/react';
 import { App } from './App';
 import { detectHostCapabilities } from './terminal';
@@ -18,6 +18,11 @@ async function main() {
       exitSignals: ['SIGTERM', 'SIGQUIT', 'SIGABRT'], // No SIGINT
       useMouse: true, // Enable mouse tracking to properly consume mouse escape sequences
       enableMouseMovement: true, // Track mouse movement for drag and hover events
+      useConsole: true, // Enable debug console (toggle with prefix + `)
+      consoleOptions: {
+        position: ConsolePosition.BOTTOM,
+        sizePercent: 30,
+      },
     });
 
     // Enable kitty keyboard protocol AFTER renderer setup

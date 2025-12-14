@@ -117,6 +117,7 @@ interface KeyboardHandlerOptions {
   onQuit?: () => void;
   onToggleSessionPicker?: () => void;
   onEnterSearch?: () => void;
+  onToggleConsole?: () => void;
 }
 
 /**
@@ -125,7 +126,7 @@ interface KeyboardHandlerOptions {
 export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
   const { state: kbState, dispatch: kbDispatch } = useKeyboardState();
   const { dispatch: layoutDispatch, activeWorkspace } = useLayout();
-  const { onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch } = options;
+  const { onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch, onToggleConsole } = options;
 
   const handleKeyDown = useCallback((event: {
     key: string;
@@ -163,12 +164,12 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
 
     // Prefix mode commands
     if (kbState.mode === 'prefix') {
-      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch);
+      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch, onToggleConsole);
     }
 
     // Normal mode - pass through to terminal
     return false;
-  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch]);
+  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch, onToggleConsole]);
 
   return { handleKeyDown, mode: kbState.mode };
 }
@@ -265,7 +266,8 @@ function handlePrefixModeKey(
   onNewPane?: () => void,
   onQuit?: () => void,
   onToggleSessionPicker?: () => void,
-  onEnterSearch?: () => void
+  onEnterSearch?: () => void,
+  onToggleConsole?: () => void
 ): boolean {
   const exitPrefix = () => kbDispatch({ type: 'EXIT_PREFIX_MODE' });
 
@@ -348,6 +350,12 @@ function handlePrefixModeKey(
     // Quit openmux
     case 'q':
       onQuit?.();
+      return true;
+
+    // Toggle debug console
+    case '`':
+      onToggleConsole?.();
+      exitPrefix();
       return true;
 
     // Search mode (vim-style)
