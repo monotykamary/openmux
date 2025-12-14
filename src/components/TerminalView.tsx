@@ -102,8 +102,9 @@ export const TerminalView = memo(function TerminalView({
     const requestRender = () => {
       if (!renderRequestedRef.current && mounted) {
         renderRequestedRef.current = true;
-        // Use setImmediate to batch all updates within the same event loop tick
-        setImmediate(() => {
+        // Use queueMicrotask for tighter timing than setImmediate
+        // Microtasks run before the next event loop tick, reducing frame latency
+        queueMicrotask(() => {
           if (mounted) {
             renderRequestedRef.current = false;
             setVersion(v => v + 1);
