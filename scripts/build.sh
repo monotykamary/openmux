@@ -38,24 +38,53 @@ get_lib_info() {
         darwin)
             LIB_EXT="dylib"
             if [[ "$ARCH" == "arm64" ]]; then
-                LIB_NAME="librust_pty_arm64.dylib"
+                LIB_NAME="libzig_pty_arm64.dylib"
+                LIB_NAME_FALLBACK="libzig_pty.dylib"
             else
-                LIB_NAME="librust_pty.dylib"
+                LIB_NAME="libzig_pty.dylib"
+                LIB_NAME_FALLBACK="libzig_pty.dylib"
             fi
             ;;
         linux)
             LIB_EXT="so"
             if [[ "$ARCH" == "arm64" ]]; then
-                LIB_NAME="librust_pty_arm64.so"
+                LIB_NAME="libzig_pty_arm64.so"
+                LIB_NAME_FALLBACK="libzig_pty.so"
             else
-                LIB_NAME="librust_pty.so"
+                LIB_NAME="libzig_pty.so"
+                LIB_NAME_FALLBACK="libzig_pty.so"
             fi
             ;;
         windows)
             LIB_EXT="dll"
-            LIB_NAME="rust_pty.dll"
+            LIB_NAME="zig_pty.dll"
+            LIB_NAME_FALLBACK="zig_pty.dll"
             ;;
     esac
+}
+
+# Build zig-pty native library
+build_zig_pty() {
+    echo "Building zig-pty native library..."
+
+    local zig_pty_dir="$PROJECT_DIR/zig-pty"
+
+    if [[ ! -d "$zig_pty_dir" ]]; then
+        echo "Error: zig-pty directory not found at $zig_pty_dir"
+        exit 1
+    fi
+
+    # Check if zig is available
+    if ! command -v zig &> /dev/null; then
+        echo "Error: zig compiler not found. Please install Zig: https://ziglang.org/download/"
+        exit 1
+    fi
+
+    cd "$zig_pty_dir"
+    zig build -Doptimize=ReleaseFast
+    cd "$PROJECT_DIR"
+
+    echo "Built zig-pty native library"
 }
 
 cleanup() {
@@ -82,25 +111,26 @@ build() {
     cleanup
     mkdir -p "$DIST_DIR"
 
+    # Build zig-pty native library first
+    build_zig_pty
+
     # Build the binary
     bun build --compile --minify src/index.tsx --outfile "$DIST_DIR/$BINARY_NAME-bin"
 
-    # Find and copy native library
-    local pty_lib="$PROJECT_DIR/node_modules/bun-pty/rust-pty/target/release/$LIB_NAME"
+    # Find and copy native library from zig-pty
+    local pty_lib="$PROJECT_DIR/zig-pty/zig-out/lib/$LIB_NAME"
 
     # Fallback to non-arch-specific name if needed
     if [[ ! -f "$pty_lib" ]]; then
-        case "$OS" in
-            darwin) pty_lib="$PROJECT_DIR/node_modules/bun-pty/rust-pty/target/release/librust_pty.dylib" ;;
-            linux) pty_lib="$PROJECT_DIR/node_modules/bun-pty/rust-pty/target/release/librust_pty.so" ;;
-        esac
+        pty_lib="$PROJECT_DIR/zig-pty/zig-out/lib/$LIB_NAME_FALLBACK"
     fi
 
     if [[ -f "$pty_lib" ]]; then
-        cp "$pty_lib" "$DIST_DIR/librust_pty.$LIB_EXT"
-        echo "Copied: $(basename "$pty_lib") -> $DIST_DIR/librust_pty.$LIB_EXT"
+        cp "$pty_lib" "$DIST_DIR/libzig_pty.$LIB_EXT"
+        echo "Copied: $(basename "$pty_lib") -> $DIST_DIR/libzig_pty.$LIB_EXT"
     else
-        echo "Warning: Could not find native PTY library at $pty_lib"
+        echo "Error: Could not find native PTY library at $pty_lib"
+        exit 1
     fi
 
     # Create wrapper script
@@ -118,7 +148,7 @@ create_wrapper() {
         cat > "${wrapper_path}.cmd" << 'WRAPPER'
 @echo off
 set "SCRIPT_DIR=%~dp0"
-set "BUN_PTY_LIB=%SCRIPT_DIR%rust_pty.dll"
+set "ZIG_PTY_LIB=%SCRIPT_DIR%zig_pty.dll"
 "%SCRIPT_DIR%openmux-bin.exe" %*
 WRAPPER
     else
@@ -126,7 +156,7 @@ WRAPPER
         cat > "$wrapper_path" << WRAPPER
 #!/usr/bin/env bash
 SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-export BUN_PTY_LIB="\${BUN_PTY_LIB:-\$SCRIPT_DIR/librust_pty.$LIB_EXT}"
+export ZIG_PTY_LIB="\${ZIG_PTY_LIB:-\$SCRIPT_DIR/libzig_pty.$LIB_EXT}"
 exec "\$SCRIPT_DIR/openmux-bin" "\$@"
 WRAPPER
         chmod +x "$wrapper_path"
@@ -146,7 +176,7 @@ create_release() {
     tar -czf "$tarball_path" -C "$DIST_DIR" \
         "$BINARY_NAME" \
         "$BINARY_NAME-bin" \
-        "librust_pty.$LIB_EXT"
+        "libzig_pty.$LIB_EXT"
 
     echo "Created: $tarball_path"
 
@@ -167,21 +197,21 @@ install_binary() {
     chmod +x "$LIB_INSTALL_DIR/$BINARY_NAME-bin"
 
     # Copy native library
-    if [[ -f "$DIST_DIR/librust_pty.$LIB_EXT" ]]; then
-        cp "$DIST_DIR/librust_pty.$LIB_EXT" "$LIB_INSTALL_DIR/librust_pty.$LIB_EXT"
+    if [[ -f "$DIST_DIR/libzig_pty.$LIB_EXT" ]]; then
+        cp "$DIST_DIR/libzig_pty.$LIB_EXT" "$LIB_INSTALL_DIR/libzig_pty.$LIB_EXT"
     fi
 
     # Create wrapper in bin directory
     if [[ "$OS" == "windows" ]]; then
         cat > "$INSTALL_DIR/$BINARY_NAME.cmd" << WRAPPER
 @echo off
-set "BUN_PTY_LIB=$LIB_INSTALL_DIR\\rust_pty.dll"
+set "ZIG_PTY_LIB=$LIB_INSTALL_DIR\\zig_pty.dll"
 "$LIB_INSTALL_DIR\\$BINARY_NAME-bin.exe" %*
 WRAPPER
     else
         cat > "$INSTALL_DIR/$BINARY_NAME" << WRAPPER
 #!/usr/bin/env bash
-export BUN_PTY_LIB="\${BUN_PTY_LIB:-$LIB_INSTALL_DIR/librust_pty.$LIB_EXT}"
+export ZIG_PTY_LIB="\${ZIG_PTY_LIB:-$LIB_INSTALL_DIR/libzig_pty.$LIB_EXT}"
 exec "$LIB_INSTALL_DIR/$BINARY_NAME-bin" "\$@"
 WRAPPER
         chmod +x "$INSTALL_DIR/$BINARY_NAME"
