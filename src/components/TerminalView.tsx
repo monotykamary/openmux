@@ -45,8 +45,17 @@ const SEARCH_CURRENT_BG = RGBA.fromInts(255, 50, 150); // Bright magenta/pink fo
 const SEARCH_CURRENT_FG = RGBA.fromInts(255, 255, 255); // White text
 
 // RGBA cache to avoid per-cell allocations (pack RGB into single number as key)
+// Pre-cache common colors to skip Map lookup entirely
 const rgbaCache = new Map<number, RGBA>();
+rgbaCache.set(0x000000, BLACK);  // Pre-cache black
+rgbaCache.set(0xFFFFFF, WHITE);  // Pre-cache white
+
 function getCachedRGBA(r: number, g: number, b: number): RGBA {
+  // Fast path for black (most common background)
+  if ((r | g | b) === 0) return BLACK;
+  // Fast path for white
+  if (r === 255 && g === 255 && b === 255) return WHITE;
+
   const key = (r << 16) | (g << 8) | b;
   let cached = rgbaCache.get(key);
   if (!cached) {
@@ -262,11 +271,11 @@ export const TerminalView = memo(function TerminalView({
           fgB = Math.floor(fgB * 0.5);
         }
 
-        // Apply inverse
+        // Apply inverse (avoid array destructuring for performance)
         if (cell.inverse) {
-          [fgR, bgR] = [bgR, fgR];
-          [fgG, bgG] = [bgG, fgG];
-          [fgB, bgB] = [bgB, fgB];
+          const tmpR = fgR; fgR = bgR; bgR = tmpR;
+          const tmpG = fgG; fgG = bgG; bgG = tmpG;
+          const tmpB = fgB; fgB = bgB; bgB = tmpB;
         }
 
         let fg = getCachedRGBA(fgR, fgG, fgB);
