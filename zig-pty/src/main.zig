@@ -55,20 +55,35 @@ const MAX_HANDLES: usize = 256;
 const RING_BUFFER_SIZE: usize = 256 * 1024; // 256KB ring buffer
 
 // ============================================================================
-// Ring Buffer - Lock-free single producer single consumer
+// Ring Buffer - Single producer single consumer with backpressure
+// Lock-free on fast path; uses condition variable when buffer is full
 // ============================================================================
 
 const RingBuffer = struct {
     data: [RING_BUFFER_SIZE]u8,
     write_pos: std.atomic.Value(usize),
     read_pos: std.atomic.Value(usize),
+    // Condition variable for producer to wait when buffer is full
+    mutex: std.Thread.Mutex,
+    not_full: std.Thread.Condition,
 
     fn init() RingBuffer {
         return .{
             .data = undefined,
             .write_pos = std.atomic.Value(usize).init(0),
             .read_pos = std.atomic.Value(usize).init(0),
+            .mutex = .{},
+            .not_full = .{},
         };
+    }
+
+    fn availableSpace(self: *RingBuffer) usize {
+        const w = self.write_pos.load(.acquire);
+        const r = self.read_pos.load(.acquire);
+        return if (w >= r)
+            RING_BUFFER_SIZE - 1 - (w - r)
+        else
+            r - w - 1;
     }
 
     // Producer: write data to buffer, returns amount written
@@ -194,8 +209,14 @@ const Pty = struct {
                 while (written < @as(usize, @intCast(n))) {
                     const w = self.ring.write(buf[written..@intCast(n)]);
                     if (w == 0) {
-                        // Buffer full - wait a tiny bit for consumer
-                        std.Thread.sleep(100 * std.time.ns_per_us); // 100µs
+                        // Buffer full - wait for consumer to signal space available
+                        self.ring.mutex.lock();
+                        while (self.ring.availableSpace() == 0 and !self.stopping.load(.acquire)) {
+                            // Wait with timeout so we can check stopping flag
+                            self.ring.not_full.timedWait(&self.ring.mutex, 100 * std.time.ns_per_ms) catch {};
+                        }
+                        self.ring.mutex.unlock();
+                        if (self.stopping.load(.acquire)) break;
                     } else {
                         written += w;
                     }
@@ -241,6 +262,8 @@ const Pty = struct {
         const n = self.ring.read(buf[0..len]);
 
         if (n > 0) {
+            // Signal producer that space is available
+            self.ring.not_full.signal();
             return @intCast(n);
         } else if (self.exited.load(.acquire) and self.ring.available() == 0) {
             return CHILD_EXITED;
@@ -296,6 +319,8 @@ const Pty = struct {
     fn deinit(self: *Pty) void {
         // Signal thread to stop
         self.stopping.store(true, .release);
+        // Wake up producer if waiting on condition
+        self.ring.not_full.signal();
 
         // Wait for reader thread
         if (self.reader_thread) |thread| {
