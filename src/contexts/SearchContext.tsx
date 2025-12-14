@@ -225,6 +225,9 @@ interface SearchProviderProps {
   children: ReactNode;
 }
 
+// Search debounce delay in ms
+const SEARCH_DEBOUNCE_MS = 150;
+
 export function SearchProvider({ children }: SearchProviderProps) {
   // Get setScrollOffset from TerminalContext (updates cache for immediate rendering)
   const { setScrollOffset } = useTerminal();
@@ -237,11 +240,30 @@ export function SearchProvider({ children }: SearchProviderProps) {
   // Version counter to trigger re-renders when search state changes
   const [searchVersion, setSearchVersion] = useState(0);
 
-  // Update both state and ref
+  // Debounce timer for search
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Pending query for debounced search
+  const pendingQueryRef = useRef<string>('');
+
+  // Spatial index for O(1) match lookup by line
+  // Map<lineIndex, Array<{startCol, endCol}>>
+  const matchLookupRef = useRef<Map<number, Array<{ startCol: number; endCol: number }>>>(new Map());
+
+  // Update both state and ref, and rebuild spatial index
   const updateSearchState = useCallback((newState: SearchState | null) => {
     searchStateRef.current = newState;
     setSearchState(newState);
     setSearchVersion((v) => v + 1);
+
+    // Rebuild spatial index for fast lookup
+    matchLookupRef.current.clear();
+    if (newState?.matches) {
+      for (const match of newState.matches) {
+        const existing = matchLookupRef.current.get(match.lineIndex) ?? [];
+        existing.push({ startCol: match.startCol, endCol: match.endCol });
+        matchLookupRef.current.set(match.lineIndex, existing);
+      }
+    }
   }, []);
 
   // Enter search mode
@@ -272,45 +294,71 @@ export function SearchProvider({ children }: SearchProviderProps) {
     const state = searchStateRef.current;
     if (!state) return;
 
+    // Clear any pending debounced search
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+
     // Restore original scroll position if requested (on Escape)
     if (restorePosition && state.originalScrollOffset !== undefined) {
       setScrollOffset(state.ptyId, state.originalScrollOffset);
     }
 
     updateSearchState(null);
-  }, [updateSearchState]);
+  }, [updateSearchState, setScrollOffset]);
 
-  // Update search query
+  // Update search query (debounced)
   const setSearchQuery = useCallback((query: string) => {
     const state = searchStateRef.current;
     if (!state || !state.emulator || !state.terminalState) return;
 
-    // Perform search
-    const matches = performSearch(query, state.emulator, state.terminalState);
+    pendingQueryRef.current = query;
 
-    // Start at the most recent match (last in array = closest to bottom of terminal)
-    const initialIndex = matches.length > 0 ? matches.length - 1 : -1;
+    // Clear existing debounce timer
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
 
-    // Update state
-    const newState = {
+    // Update query immediately for display (show typing instantly)
+    updateSearchState({
       ...state,
       query,
-      matches,
-      currentMatchIndex: initialIndex,
-    };
-    updateSearchState(newState);
+      // Keep previous matches while debouncing (reduces flicker)
+    });
 
-    // Auto-scroll to the initial match (most recent)
-    if (matches.length > 0) {
-      const match = matches[initialIndex];
-      const offset = calculateScrollOffset(
-        match.lineIndex,
-        state.scrollbackLength,
-        state.terminalState.rows
-      );
-      setScrollOffset(state.ptyId, offset);
-    }
-  }, [updateSearchState]);
+    // Debounce the actual search
+    searchDebounceRef.current = setTimeout(() => {
+      const currentState = searchStateRef.current;
+      if (!currentState || !currentState.emulator || !currentState.terminalState) return;
+      if (pendingQueryRef.current !== query) return; // Query changed, skip
+
+      // Perform search
+      const matches = performSearch(query, currentState.emulator, currentState.terminalState);
+
+      // Start at the most recent match (last in array = closest to bottom of terminal)
+      const initialIndex = matches.length > 0 ? matches.length - 1 : -1;
+
+      // Update state with matches
+      updateSearchState({
+        ...currentState,
+        query,
+        matches,
+        currentMatchIndex: initialIndex,
+      });
+
+      // Auto-scroll to the initial match (most recent)
+      if (matches.length > 0) {
+        const match = matches[initialIndex];
+        const offset = calculateScrollOffset(
+          match.lineIndex,
+          currentState.scrollbackLength,
+          currentState.terminalState.rows
+        );
+        setScrollOffset(currentState.ptyId, offset);
+      }
+    }, SEARCH_DEBOUNCE_MS);
+  }, [updateSearchState, setScrollOffset]);
 
   // Navigate to next match
   const nextMatch = useCallback(() => {
@@ -358,19 +406,21 @@ export function SearchProvider({ children }: SearchProviderProps) {
     setScrollOffset(state.ptyId, offset);
   }, [updateSearchState]);
 
-  // Check if cell is any search match
+  // Check if cell is any search match (optimized with spatial index)
   const isSearchMatch = useCallback(
     (ptyId: string, x: number, absoluteY: number): boolean => {
       const state = searchStateRef.current;
-      if (!state || state.ptyId !== ptyId || state.matches.length === 0) {
+      if (!state || state.ptyId !== ptyId) {
         return false;
       }
 
-      // Check all matches
-      for (const match of state.matches) {
-        if (isCellInMatch(x, absoluteY, match)) {
-          return true;
-        }
+      // O(1) lookup by line using spatial index
+      const lineMatches = matchLookupRef.current.get(absoluteY);
+      if (!lineMatches) return false;
+
+      // Check matches on this line (usually very few per line)
+      for (const { startCol, endCol } of lineMatches) {
+        if (x >= startCol && x < endCol) return true;
       }
       return false;
     },

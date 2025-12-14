@@ -5,12 +5,11 @@
 
 import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { RGBA, type OptimizedBuffer } from '@opentui/core';
-import type { TerminalState, TerminalCell, TerminalScrollState } from '../core/types';
+import type { TerminalState, TerminalCell, TerminalScrollState, UnifiedTerminalUpdate } from '../core/types';
 import type { GhosttyEmulator } from '../terminal/ghostty-emulator';
 import {
   getTerminalState,
-  subscribeToPty,
-  subscribeToScroll,
+  subscribeUnifiedToPty,
   getEmulator,
 } from '../effect/bridge';
 import { useSelection } from '../contexts/SelectionContext';
@@ -93,9 +92,11 @@ export const TerminalView = memo(function TerminalView({
   const renderRequestedRef = useRef(false);
 
   useEffect(() => {
-    let unsubscribeState: (() => void) | null = null;
-    let unsubscribeScroll: (() => void) | null = null;
+    let unsubscribe: (() => void) | null = null;
     let mounted = true;
+
+    // Cache for terminal rows (structural sharing)
+    let cachedRows: TerminalCell[][] = [];
 
     // Batched render request - coalesces multiple updates into one render
     const requestRender = () => {
@@ -113,26 +114,44 @@ export const TerminalView = memo(function TerminalView({
 
     // Initialize async resources
     const init = async () => {
-      // Get initial terminal state
-      const initialState = await getTerminalState(ptyId);
-      if (!mounted) return;
-      terminalStateRef.current = initialState;
-
       // Get emulator for scrollback access
       const emulator = await getEmulator(ptyId);
       if (!mounted) return;
       emulatorRef.current = emulator;
 
-      // Subscribe to terminal state updates
-      unsubscribeState = await subscribeToPty(ptyId, (state) => {
-        terminalStateRef.current = state;
-        // Request batched render instead of immediate re-render
-        requestRender();
-      });
+      // Subscribe to unified updates (terminal + scroll combined)
+      // This replaces separate subscribeToPty + subscribeToScroll with single subscription
+      unsubscribe = await subscribeUnifiedToPty(ptyId, (update: UnifiedTerminalUpdate) => {
+        if (!mounted) return;
 
-      // Subscribe to scroll changes - just trigger re-render, scroll state comes from context cache
-      unsubscribeScroll = await subscribeToScroll(ptyId, () => {
-        // Request batched render (scroll state read from context cache in render)
+        const { terminalUpdate } = update;
+
+        // Update terminal state
+        if (terminalUpdate.isFull && terminalUpdate.fullState) {
+          // Full refresh: store complete state
+          terminalStateRef.current = terminalUpdate.fullState;
+          cachedRows = [...terminalUpdate.fullState.cells];
+        } else {
+          // Delta update: merge dirty rows into cached state
+          const existingState = terminalStateRef.current;
+          if (existingState) {
+            // Apply dirty rows to cached rows
+            for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
+              cachedRows[rowIdx] = newRow;
+            }
+            // Update state with merged cells and new cursor/modes
+            terminalStateRef.current = {
+              ...existingState,
+              cells: cachedRows,
+              cursor: terminalUpdate.cursor,
+              alternateScreen: terminalUpdate.alternateScreen,
+              mouseTracking: terminalUpdate.mouseTracking,
+              cursorKeyMode: terminalUpdate.cursorKeyMode,
+            };
+          }
+        }
+
+        // Request batched render (scroll state comes from context cache)
         requestRender();
       });
 
@@ -144,11 +163,8 @@ export const TerminalView = memo(function TerminalView({
 
     return () => {
       mounted = false;
-      if (unsubscribeState) {
-        unsubscribeState();
-      }
-      if (unsubscribeScroll) {
-        unsubscribeScroll();
+      if (unsubscribe) {
+        unsubscribe();
       }
     };
   }, [ptyId]);

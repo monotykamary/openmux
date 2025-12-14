@@ -4,7 +4,7 @@
  */
 import { Context, Effect, Layer, Stream, Queue, Ref, HashMap, Option } from "effect"
 import { spawn, type IPty } from "../../../zig-pty/src/index"
-import type { TerminalState } from "../../core/types"
+import type { TerminalState, UnifiedTerminalUpdate, TerminalScrollState } from "../../core/types"
 import { GhosttyEmulator } from "../../terminal/ghostty-emulator"
 import { GraphicsPassthrough } from "../../terminal/graphics-passthrough"
 import { TerminalQueryPassthrough } from "../../terminal/terminal-query-passthrough"
@@ -31,6 +31,8 @@ interface InternalPtySession {
   shell: string
   subscribers: Set<(state: TerminalState) => void>
   scrollSubscribers: Set<() => void>
+  /** Unified subscribers receive both terminal and scroll updates in one callback */
+  unifiedSubscribers: Set<(update: UnifiedTerminalUpdate) => void>
   exitCallbacks: Set<(exitCode: number) => void>
   pendingNotify: boolean
   scrollState: {
@@ -133,6 +135,16 @@ export class Pty extends Context.Tag("@openmux/Pty")<
       callback: () => void
     ) => Effect.Effect<() => void, PtyNotFoundError>
 
+    /**
+     * Subscribe to unified updates (terminal + scroll combined).
+     * More efficient than separate subscriptions - eliminates race conditions
+     * and reduces render cycles.
+     */
+    readonly subscribeUnified: (
+      id: PtyId,
+      callback: (update: UnifiedTerminalUpdate) => void
+    ) => Effect.Effect<() => void, PtyNotFoundError>
+
     /** Subscribe to PTY exit events */
     readonly onExit: (
       id: PtyId,
@@ -187,16 +199,57 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           return session.value
         })
 
+      // Helper to get current scroll state
+      const getCurrentScrollState = (session: InternalPtySession): TerminalScrollState => {
+        const scrollbackLength = session.emulator.getScrollbackLength()
+        return {
+          viewportOffset: session.scrollState.viewportOffset,
+          scrollbackLength,
+          isAtBottom: session.scrollState.viewportOffset === 0,
+        }
+      }
+
       // Helper to notify subscribers (for terminal state changes)
       const notifySubscribers = (session: InternalPtySession) => {
-        const state = session.emulator.getTerminalState()
-        for (const callback of session.subscribers) {
-          callback(state)
+        // Notify unified subscribers first (uses dirty delta for efficiency)
+        if (session.unifiedSubscribers.size > 0) {
+          const scrollState = getCurrentScrollState(session)
+          const dirtyUpdate = session.emulator.getDirtyUpdate(scrollState)
+          const unifiedUpdate: UnifiedTerminalUpdate = {
+            terminalUpdate: dirtyUpdate,
+            scrollState,
+          }
+          for (const callback of session.unifiedSubscribers) {
+            callback(unifiedUpdate)
+          }
+        }
+
+        // Legacy subscribers still get full state
+        if (session.subscribers.size > 0) {
+          const state = session.emulator.getTerminalState()
+          for (const callback of session.subscribers) {
+            callback(state)
+          }
         }
       }
 
       // Helper to notify scroll subscribers (lightweight - no state rebuild)
       const notifyScrollSubscribers = (session: InternalPtySession) => {
+        // Notify unified subscribers with scroll-only update
+        if (session.unifiedSubscribers.size > 0) {
+          const scrollState = getCurrentScrollState(session)
+          // For scroll-only updates, we can create a minimal dirty update
+          const dirtyUpdate = session.emulator.getDirtyUpdate(scrollState)
+          const unifiedUpdate: UnifiedTerminalUpdate = {
+            terminalUpdate: dirtyUpdate,
+            scrollState,
+          }
+          for (const callback of session.unifiedSubscribers) {
+            callback(unifiedUpdate)
+          }
+        }
+
+        // Legacy scroll subscribers
         for (const callback of session.scrollSubscribers) {
           callback()
         }
@@ -265,6 +318,7 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           shell,
           subscribers: new Set(),
           scrollSubscribers: new Set(),
+          unifiedSubscribers: new Set(),
           exitCallbacks: new Set(),
           pendingNotify: false,
           scrollState: { viewportOffset: 0 },
@@ -513,6 +567,38 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         }
       })
 
+      const subscribeUnified = Effect.fn("Pty.subscribeUnified")(function* (
+        id: PtyId,
+        callback: (update: UnifiedTerminalUpdate) => void
+      ) {
+        const session = yield* getSessionOrFail(id)
+        session.unifiedSubscribers.add(callback)
+
+        // Send initial full state
+        const scrollState = getCurrentScrollState(session)
+        const fullState = session.emulator.getTerminalState()
+        const initialUpdate: UnifiedTerminalUpdate = {
+          terminalUpdate: {
+            dirtyRows: new Map(),
+            cursor: fullState.cursor,
+            scrollState,
+            cols: fullState.cols,
+            rows: fullState.rows,
+            isFull: true,
+            fullState,
+            alternateScreen: fullState.alternateScreen,
+            mouseTracking: fullState.mouseTracking,
+            cursorKeyMode: fullState.cursorKeyMode ?? 'normal',
+          },
+          scrollState,
+        }
+        callback(initialUpdate)
+
+        return () => {
+          session.unifiedSubscribers.delete(callback)
+        }
+      })
+
       const getEmulator = Effect.fn("Pty.getEmulator")(function* (id: PtyId) {
         const session = yield* getSessionOrFail(id)
         return session.emulator
@@ -537,6 +623,7 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         getTerminalState,
         subscribe,
         subscribeToScroll,
+        subscribeUnified,
         onExit,
         setPanePosition,
         getScrollState,
@@ -574,6 +661,7 @@ export class Pty extends Context.Tag("@openmux/Pty")<
       } as unknown as TerminalState),
     subscribe: () => Effect.succeed(() => {}),
     subscribeToScroll: () => Effect.succeed(() => {}),
+    subscribeUnified: () => Effect.succeed(() => {}),
     onExit: () => Effect.succeed(() => {}),
     setPanePosition: () => Effect.void,
     getScrollState: () =>

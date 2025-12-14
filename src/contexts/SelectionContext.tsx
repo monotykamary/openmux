@@ -16,7 +16,7 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import type { TerminalCell } from '../core/types';
+import type { TerminalCell, SelectionBounds } from '../core/types';
 import { copyToClipboard } from '../effect/bridge';
 
 // =============================================================================
@@ -60,6 +60,8 @@ interface PaneSelection {
   focus: SelectionPoint | null;
   /** Normalized range for efficient cell checking */
   normalizedRange: SelectionRange | null;
+  /** Bounding box for O(1) spatial rejection in isCellSelected */
+  bounds: SelectionBounds | null;
 }
 
 /**
@@ -191,6 +193,19 @@ function normalizeSelection(
       focusAtEnd: false,
     };
   }
+}
+
+/**
+ * Calculate bounding box from normalized selection range
+ * Enables O(1) spatial rejection in isCellSelected instead of per-cell checks
+ */
+function calculateBounds(range: SelectionRange): SelectionBounds {
+  return {
+    minX: Math.min(range.startX, range.endX),
+    maxX: Math.max(range.startX, range.endX),
+    minY: range.startY,
+    maxY: range.endY,
+  };
 }
 
 /**
@@ -384,18 +399,20 @@ export function SelectionProvider({ children }: SelectionProviderProps) {
     ) => {
       const absoluteY = toAbsoluteY(y, scrollbackLength, scrollOffset);
       const point: SelectionPoint = { x, y, absoluteY };
+      const normalizedRange: SelectionRange = {
+        startX: x,
+        startY: absoluteY,
+        endX: x,
+        endY: absoluteY,
+        focusAtEnd: true,  // Default to forward
+      };
 
       selectionsRef.current.set(ptyId, {
         isSelecting: true,
         anchor: point,
         focus: point,
-        normalizedRange: {
-          startX: x,
-          startY: absoluteY,
-          endX: x,
-          endY: absoluteY,
-          focusAtEnd: true,  // Default to forward
-        },
+        normalizedRange,
+        bounds: calculateBounds(normalizedRange),
       });
 
       notifyChange();
@@ -423,6 +440,7 @@ export function SelectionProvider({ children }: SelectionProviderProps) {
         ...selection,
         focus,
         normalizedRange,
+        bounds: calculateBounds(normalizedRange),
       });
 
       notifyChange();
@@ -485,11 +503,21 @@ export function SelectionProvider({ children }: SelectionProviderProps) {
     }
   }, [notifyChange]);
 
-  // Check if cell is selected
+  // Check if cell is selected (optimized with bounding box)
   const isCellSelected = useCallback(
     (ptyId: string, x: number, absoluteY: number): boolean => {
       const selection = selectionsRef.current.get(ptyId);
-      if (!selection?.normalizedRange) return false;
+      if (!selection?.normalizedRange || !selection.bounds) return false;
+
+      // Fast O(1) spatial rejection using bounding box
+      const { bounds } = selection;
+      if (absoluteY < bounds.minY || absoluteY > bounds.maxY) return false;
+      if (absoluteY === bounds.minY && absoluteY === bounds.maxY) {
+        // Single line: check X bounds
+        if (x < bounds.minX || x > bounds.maxX) return false;
+      }
+
+      // Full check only for cells within bounds
       return isCellInRange(x, absoluteY, selection.normalizedRange);
     },
     []

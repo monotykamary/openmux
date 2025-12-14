@@ -22,6 +22,7 @@ import type {
   WorkspaceId,
   PaneData,
   TerminalState,
+  UnifiedTerminalUpdate,
 } from "../core/types"
 
 // =============================================================================
@@ -278,6 +279,28 @@ export async function subscribeToScroll(
       Effect.gen(function* () {
         const pty = yield* Pty
         return yield* pty.subscribeToScroll(PtyId.make(ptyId), callback)
+      })
+    )
+  } catch {
+    return () => {}
+  }
+}
+
+/**
+ * Subscribe to unified terminal + scroll updates.
+ * More efficient than separate subscriptions - eliminates race conditions
+ * and reduces render cycles by delivering both state changes in one callback.
+ * Returns an unsubscribe function.
+ */
+export async function subscribeUnifiedToPty(
+  ptyId: string,
+  callback: (update: UnifiedTerminalUpdate) => void
+): Promise<() => void> {
+  try {
+    return await runEffect(
+      Effect.gen(function* () {
+        const pty = yield* Pty
+        return yield* pty.subscribeUnified(PtyId.make(ptyId), callback)
       })
     )
   } catch {

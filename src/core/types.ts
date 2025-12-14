@@ -160,6 +160,52 @@ export interface TerminalScrollState {
 }
 
 /**
+ * Dirty terminal update - delivers only changed data for efficient rendering.
+ * Instead of rebuilding full TerminalState, subscribers receive only what changed.
+ */
+export interface DirtyTerminalUpdate {
+  /** Map of row index -> new row cells (only dirty rows included) */
+  dirtyRows: Map<number, TerminalCell[]>;
+  /** Current cursor state (always included - cheap) */
+  cursor: TerminalCursor;
+  /** Scroll state (always included - cheap) */
+  scrollState: TerminalScrollState;
+  /** Terminal dimensions */
+  cols: number;
+  rows: number;
+  /** If true, fullState contains complete terminal state (resize, alt screen switch) */
+  isFull: boolean;
+  /** Complete state when isFull=true; otherwise undefined */
+  fullState?: TerminalState;
+  /** Terminal mode flags */
+  alternateScreen: boolean;
+  mouseTracking: boolean;
+  cursorKeyMode: 'normal' | 'application';
+}
+
+/**
+ * Unified update combining terminal and scroll state.
+ * Eliminates race conditions from separate subscriptions.
+ */
+export interface UnifiedTerminalUpdate {
+  terminalUpdate: DirtyTerminalUpdate;
+  scrollState: TerminalScrollState;
+}
+
+/**
+ * Selection bounding box for spatial optimization.
+ * Enables O(1) rejection in isCellSelected() instead of per-cell checks.
+ */
+export interface SelectionBounds {
+  minX: number;
+  maxX: number;
+  /** Absolute Y coordinate (includes scrollback offset) */
+  minY: number;
+  /** Absolute Y coordinate (includes scrollback offset) */
+  maxY: number;
+}
+
+/**
  * Keyboard mode for prefix key system
  */
 export type KeyMode = 'normal' | 'prefix' | 'search';

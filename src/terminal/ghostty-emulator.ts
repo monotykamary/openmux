@@ -3,7 +3,7 @@
  */
 
 import { Ghostty, GhosttyTerminal, CellFlags, type GhosttyCell, type Cursor } from 'ghostty-web';
-import type { TerminalState, TerminalCell, TerminalCursor } from '../core/types';
+import type { TerminalState, TerminalCell, TerminalCursor, DirtyTerminalUpdate, TerminalScrollState } from '../core/types';
 import { getDefaultColors, extractRgb, type TerminalColors } from './terminal-colors';
 
 /**
@@ -70,6 +70,18 @@ export class GhosttyEmulator {
   private cachedEmptyCell: TerminalCell | null = null;
   // Scrollback line cache - avoids re-converting cells on each scroll
   private scrollbackCache: Map<number, TerminalCell[]> = new Map();
+  // LRU tracking for scrollback cache (stores insertion order)
+  private scrollbackCacheOrder: number[] = [];
+  private static readonly SCROLLBACK_CACHE_MAX = 1000;
+  private static readonly SCROLLBACK_CACHE_TRIM = 500;
+
+  // Structural sharing: stable row references for efficient React updates
+  private stableRows: TerminalCell[][] = [];
+  // Track last dimensions for detecting resize (triggers full refresh)
+  private lastCols: number = 0;
+  private lastRows: number = 0;
+  // Track last alternate screen state (triggers full refresh on switch)
+  private lastAlternateScreen: boolean = false;
 
   constructor(options: GhosttyEmulatorOptions = {}) {
     const { cols = 80, rows = 24, colors } = options;
@@ -92,6 +104,12 @@ export class GhosttyEmulator {
 
     // Initialize cached cells
     this.initializeCachedCells();
+
+    // Initialize structural sharing tracking
+    this.lastCols = cols;
+    this.lastRows = rows;
+    this.lastAlternateScreen = false;
+    this.stableRows = [...this.cachedCells];
   }
 
   /**
@@ -134,8 +152,23 @@ export class GhosttyEmulator {
    */
   write(data: string | Uint8Array): void {
     this.terminal.write(data);
-    // Clear scrollback cache - new data may have shifted scrollback
-    this.scrollbackCache.clear();
+    // LRU eviction for scrollback cache - only trim when exceeding max
+    // This is more efficient than clearing all on every write
+    this.trimScrollbackCache();
+  }
+
+  /**
+   * Trim scrollback cache using LRU eviction when it exceeds max size
+   */
+  private trimScrollbackCache(): void {
+    if (this.scrollbackCache.size > GhosttyEmulator.SCROLLBACK_CACHE_MAX) {
+      // Remove oldest entries (first N entries in order array)
+      const toRemove = this.scrollbackCache.size - GhosttyEmulator.SCROLLBACK_CACHE_TRIM;
+      const keysToRemove = this.scrollbackCacheOrder.splice(0, toRemove);
+      for (const key of keysToRemove) {
+        this.scrollbackCache.delete(key);
+      }
+    }
   }
 
   /**
@@ -153,9 +186,13 @@ export class GhosttyEmulator {
 
     // Clear scrollback cache - resize may reflow lines
     this.scrollbackCache.clear();
+    this.scrollbackCacheOrder = [];
 
     // Force full refresh after resize
     this.updateAllCells();
+
+    // Update stableRows for structural sharing
+    this.stableRows = [...this.cachedCells];
   }
 
   /**
@@ -276,8 +313,9 @@ export class GhosttyEmulator {
 
     const converted = line.map(cell => this.convertCell(cell));
 
-    // Cache the converted line
+    // Cache the converted line and track LRU order
     this.scrollbackCache.set(offset, converted);
+    this.scrollbackCacheOrder.push(offset);
 
     return converted;
   }
@@ -391,6 +429,181 @@ export class GhosttyEmulator {
       mouseTracking: this.isMouseTrackingEnabled(),
       cursorKeyMode: this.getCursorKeyMode(),
     };
+  }
+
+  /**
+   * Get dirty terminal update with structural sharing.
+   * This is the key optimization - only returns changed rows instead of full state.
+   *
+   * Returns isFull=true when:
+   * - Terminal dimensions changed (resize)
+   * - Alternate screen state changed (vim, htop, etc.)
+   *
+   * When isFull=false, only dirtyRows contains the changed rows.
+   * Unchanged rows can be reused from previous state (structural sharing).
+   */
+  getDirtyUpdate(scrollState: TerminalScrollState): DirtyTerminalUpdate {
+    const cursor = this.getCursor();
+    const alternateScreen = this.isAlternateScreen();
+    const scrollbackLength = this.getScrollbackLength();
+
+    // Detect if full refresh is needed
+    const needsFullRefresh =
+      this._cols !== this.lastCols ||
+      this._rows !== this.lastRows ||
+      alternateScreen !== this.lastAlternateScreen;
+
+    // Update tracking state
+    this.lastCols = this._cols;
+    this.lastRows = this._rows;
+    this.lastAlternateScreen = alternateScreen;
+
+    const terminalCursor: TerminalCursor = {
+      x: cursor.x,
+      y: cursor.y,
+      visible: cursor.visible,
+      style: 'block',
+    };
+
+    if (needsFullRefresh) {
+      // Full refresh: rebuild all rows and return complete state
+      this.rebuildAllStableRows();
+      const fullState = this.getTerminalState();
+
+      return {
+        dirtyRows: new Map(), // Empty - use fullState instead
+        cursor: terminalCursor,
+        scrollState: {
+          viewportOffset: scrollState.viewportOffset,
+          scrollbackLength,
+          isAtBottom: scrollState.isAtBottom,
+        },
+        cols: this._cols,
+        rows: this._rows,
+        isFull: true,
+        fullState,
+        alternateScreen,
+        mouseTracking: this.isMouseTrackingEnabled(),
+        cursorKeyMode: this.getCursorKeyMode(),
+      };
+    }
+
+    // Delta update: get only dirty lines from ghostty
+    const ghosttyDirty = this.terminal.getDirtyLines();
+    const dirtyRows = new Map<number, TerminalCell[]>();
+
+    for (const [y, line] of ghosttyDirty) {
+      if (y >= 0 && y < this._rows) {
+        // Convert line to TerminalCell array
+        const newRow = this.convertLine(line);
+        // Update stable row reference (structural sharing: new reference = changed)
+        this.stableRows[y] = newRow;
+        this.rowVersions[y]++;
+        dirtyRows.set(y, newRow);
+      }
+    }
+
+    this.globalVersion++;
+    this.terminal.clearDirty();
+
+    return {
+      dirtyRows,
+      cursor: terminalCursor,
+      scrollState: {
+        viewportOffset: scrollState.viewportOffset,
+        scrollbackLength,
+        isAtBottom: scrollState.isAtBottom,
+      },
+      cols: this._cols,
+      rows: this._rows,
+      isFull: false,
+      alternateScreen,
+      mouseTracking: this.isMouseTrackingEnabled(),
+      cursorKeyMode: this.getCursorKeyMode(),
+    };
+  }
+
+  /**
+   * Rebuild all stable rows (used after resize or alternate screen switch)
+   */
+  private rebuildAllStableRows(): void {
+    this.stableRows = [];
+    for (let y = 0; y < this._rows; y++) {
+      const line = this.terminal.getLine(y);
+      this.stableRows[y] = line ? this.convertLine(line) : this.createEmptyRow();
+      this.rowVersions[y]++;
+    }
+    this.globalVersion++;
+    this.terminal.clearDirty();
+  }
+
+  /**
+   * Convert a GhosttyCell line to TerminalCell array with EOL fill
+   */
+  private convertLine(line: GhosttyCell[]): TerminalCell[] {
+    const row: TerminalCell[] = [];
+    const lineLength = Math.min(line.length, this._cols);
+
+    for (let x = 0; x < lineLength; x++) {
+      row.push(this.convertCell(line[x]));
+    }
+
+    // Fill remaining cells with last cell's background color (terminal EOL behavior)
+    if (lineLength < this._cols) {
+      const lastCell = lineLength > 0 ? line[lineLength - 1] : null;
+      const fillBg = lastCell
+        ? this.safeRgb(lastCell.bg_r, lastCell.bg_g, lastCell.bg_b)
+        : extractRgb(this.colors.background);
+      const fillFg = lastCell
+        ? this.safeRgb(lastCell.fg_r, lastCell.fg_g, lastCell.fg_b)
+        : extractRgb(this.colors.foreground);
+
+      const fillCell: TerminalCell = {
+        char: ' ',
+        fg: fillFg,
+        bg: fillBg,
+        bold: false,
+        italic: false,
+        underline: false,
+        strikethrough: false,
+        inverse: false,
+        blink: false,
+        dim: false,
+        width: 1,
+      };
+
+      for (let x = lineLength; x < this._cols; x++) {
+        row.push(fillCell);
+      }
+    }
+
+    return row;
+  }
+
+  /**
+   * Create an empty row using the terminal's default colors
+   */
+  private createEmptyRow(): TerminalCell[] {
+    const row: TerminalCell[] = [];
+    for (let x = 0; x < this._cols; x++) {
+      row.push(this.createEmptyCell());
+    }
+    return row;
+  }
+
+  /**
+   * Get stable row reference for structural sharing
+   * Returns the row array that will maintain reference equality if unchanged
+   */
+  getStableRow(y: number): TerminalCell[] | null {
+    return this.stableRows[y] ?? null;
+  }
+
+  /**
+   * Get all stable rows for full state reconstruction
+   */
+  getStableRows(): TerminalCell[][] {
+    return this.stableRows;
   }
 
   /**

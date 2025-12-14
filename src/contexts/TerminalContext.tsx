@@ -29,10 +29,11 @@ import {
   getScrollState,
   setScrollOffset,
   scrollToBottom,
-  subscribeToPty,
+  subscribeUnifiedToPty,
   readFromClipboard,
   getEmulator,
 } from '../effect/bridge';
+import type { UnifiedTerminalUpdate, TerminalCell } from '../core/types';
 import type { GhosttyEmulator } from '../terminal/ghostty-emulator';
 
 interface TerminalContextValue {
@@ -156,36 +157,48 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
       }
     });
 
-    // Subscribe to terminal state updates for caching
-    const unsubState = await subscribeToPty(ptyId, (state) => {
-      terminalStatesCache.current.set(ptyId, state);
-      // Also update scroll state cache - scrollbackLength changes as content grows
-      getScrollState(ptyId).then((scrollState) => {
-        if (scrollState) {
-          scrollStatesCache.current.set(ptyId, {
-            viewportOffset: scrollState.viewportOffset,
-            scrollbackLength: scrollState.scrollbackLength,
-            isAtBottom: scrollState.isAtBottom,
-          });
-        }
-      });
-    });
-
     // Cache the emulator for synchronous access (selection text extraction)
     const emulator = await getEmulator(ptyId);
     if (emulator) {
       emulatorsCache.current.set(ptyId, emulator);
     }
 
-    // Initialize scroll state cache (required for scrolling and selection to work immediately)
-    const initialScrollState = await getScrollState(ptyId);
-    if (initialScrollState) {
-      scrollStatesCache.current.set(ptyId, {
-        viewportOffset: initialScrollState.viewportOffset,
-        scrollbackLength: initialScrollState.scrollbackLength,
-        isAtBottom: initialScrollState.isAtBottom,
-      });
-    }
+    // Cache for terminal rows (structural sharing)
+    let cachedRows: TerminalCell[][] = [];
+
+    // Subscribe to unified updates (terminal + scroll combined)
+    // This eliminates race conditions from separate subscriptions
+    const unsubState = await subscribeUnifiedToPty(ptyId, (update: UnifiedTerminalUpdate) => {
+      const { terminalUpdate, scrollState } = update;
+
+      // Update terminal state cache
+      if (terminalUpdate.isFull && terminalUpdate.fullState) {
+        // Full refresh: store complete state
+        terminalStatesCache.current.set(ptyId, terminalUpdate.fullState);
+        cachedRows = [...terminalUpdate.fullState.cells];
+      } else {
+        // Delta update: merge dirty rows into cached state
+        const existingState = terminalStatesCache.current.get(ptyId);
+        if (existingState) {
+          // Apply dirty rows to cached rows
+          for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
+            cachedRows[rowIdx] = newRow;
+          }
+          // Update state with merged cells and new cursor/modes
+          terminalStatesCache.current.set(ptyId, {
+            ...existingState,
+            cells: cachedRows,
+            cursor: terminalUpdate.cursor,
+            alternateScreen: terminalUpdate.alternateScreen,
+            mouseTracking: terminalUpdate.mouseTracking,
+            cursorKeyMode: terminalUpdate.cursorKeyMode,
+          });
+        }
+      }
+
+      // Update scroll state cache synchronously (no more race conditions!)
+      scrollStatesCache.current.set(ptyId, scrollState);
+    });
 
     // Store unsubscribe functions
     unsubscribeFns.current.set(ptyId, () => {
@@ -280,36 +293,47 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
           }
         });
 
-        // Subscribe to terminal state updates
-        const unsubState = await subscribeToPty(ptyId, (state) => {
-          terminalStatesCache.current.set(ptyId, state);
-          // Also update scroll state cache - scrollbackLength changes as content grows
-          getScrollState(ptyId).then((scrollState) => {
-            if (scrollState) {
-              scrollStatesCache.current.set(ptyId, {
-                viewportOffset: scrollState.viewportOffset,
-                scrollbackLength: scrollState.scrollbackLength,
-                isAtBottom: scrollState.isAtBottom,
-              });
-            }
-          });
-        });
-
         // Cache the emulator for synchronous access
         const emulator = await getEmulator(ptyId);
         if (emulator) {
           emulatorsCache.current.set(ptyId, emulator);
         }
 
-        // Initialize scroll state cache
-        const initialScrollState = await getScrollState(ptyId);
-        if (initialScrollState) {
-          scrollStatesCache.current.set(ptyId, {
-            viewportOffset: initialScrollState.viewportOffset,
-            scrollbackLength: initialScrollState.scrollbackLength,
-            isAtBottom: initialScrollState.isAtBottom,
-          });
-        }
+        // Cache for terminal rows (structural sharing)
+        let cachedRows: TerminalCell[][] = [];
+
+        // Subscribe to unified updates (terminal + scroll combined)
+        const unsubState = await subscribeUnifiedToPty(ptyId, (update: UnifiedTerminalUpdate) => {
+          const { terminalUpdate, scrollState } = update;
+
+          // Update terminal state cache
+          if (terminalUpdate.isFull && terminalUpdate.fullState) {
+            // Full refresh: store complete state
+            terminalStatesCache.current.set(ptyId, terminalUpdate.fullState);
+            cachedRows = [...terminalUpdate.fullState.cells];
+          } else {
+            // Delta update: merge dirty rows into cached state
+            const existingState = terminalStatesCache.current.get(ptyId);
+            if (existingState) {
+              // Apply dirty rows to cached rows
+              for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
+                cachedRows[rowIdx] = newRow;
+              }
+              // Update state with merged cells and new cursor/modes
+              terminalStatesCache.current.set(ptyId, {
+                ...existingState,
+                cells: cachedRows,
+                cursor: terminalUpdate.cursor,
+                alternateScreen: terminalUpdate.alternateScreen,
+                mouseTracking: terminalUpdate.mouseTracking,
+                cursorKeyMode: terminalUpdate.cursorKeyMode,
+              });
+            }
+          }
+
+          // Update scroll state cache synchronously
+          scrollStatesCache.current.set(ptyId, scrollState);
+        });
 
         // Store unsubscribe functions
         unsubscribeFns.current.set(ptyId, () => {
