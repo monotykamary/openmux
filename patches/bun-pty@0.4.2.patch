@@ -1,0 +1,50 @@
+diff --git a/dist/index.js b/dist/index.js
+index 53ed0ce81471bc7e86ec891affc7bb0d77d6460b..48c0796509dce043d742af20cf9d0d669dc5334b 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -109,6 +109,8 @@ class Terminal {
+   _closing = false;
+   _onData = new EventEmitter;
+   _onExit = new EventEmitter;
++  // Streaming TextDecoder handles incomplete UTF-8 sequences across reads
++  _decoder = new TextDecoder("utf-8", { fatal: false });
+   constructor(file = DEFAULT_FILE, args = [], opts = { name: DEFAULT_NAME }) {
+     this._cols = opts.cols ?? DEFAULT_COLS;
+     this._rows = opts.rows ?? DEFAULT_ROWS;
+@@ -168,19 +170,33 @@ class Terminal {
+     if (this._readLoop)
+       return;
+     this._readLoop = true;
+-    const buf = Buffer.allocUnsafe(4096);
++    const buf = Buffer.alloc(65536); // 64KB buffer
++
+     while (this._readLoop && !this._closing) {
+       const n = lib.symbols.bun_pty_read(this.handle, ptr(buf), buf.length);
+       if (n > 0) {
+-        this._onData.fire(buf.subarray(0, n).toString("utf8"));
++        // Use streaming TextDecoder to handle incomplete UTF-8 sequences
++        const data = this._decoder.decode(buf.subarray(0, n), { stream: true });
++        if (data.length > 0) {
++          this._onData.fire(data);
++        }
++        // Yield to let event loop process UI updates
++        await new Promise((r) => setImmediate(r));
+       } else if (n === -2) {
++        // Child exited - flush remaining buffered data
++        const remaining = this._decoder.decode();
++        if (remaining.length > 0) {
++          this._onData.fire(remaining);
++        }
+         const exitCode = lib.symbols.bun_pty_get_exit_code(this.handle);
+         this._onExit.fire({ exitCode });
+         break;
+       } else if (n < 0) {
++        // Error
+         break;
+       } else {
+-        await new Promise((r) => setTimeout(r, 8));
++        // No data - yield before retry
++        await new Promise((r) => setImmediate(r));
+       }
+     }
+   }

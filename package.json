@@ -71,5 +71,8 @@
     "effect": "^3.19.11",
     "ghostty-web": "^0.3.0",
     "react": "^19.2.3"
+  },
+  "patchedDependencies": {
+    "bun-pty@0.4.2": "patches/bun-pty@0.4.2.patch"
   }
 }
