@@ -8,3 +8,4 @@ export * from './StatusBar';
 export * from './KeyboardHints';
 export * from './TerminalView';
 export * from './CopyNotification';
+export * from './ConfirmationDialog';

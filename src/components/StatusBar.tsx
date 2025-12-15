@@ -67,6 +67,7 @@ function ModeIndicator({ mode }: ModeIndicatorProps) {
     prefix: '[PREFIX]',
     search: '[SEARCH]',
     aggregate: '[GLOBAL]',
+    confirm: '[CONFIRM]',
   };
 
   return (

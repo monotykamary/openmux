@@ -19,7 +19,8 @@ import { SelectionProvider, useSelection } from './contexts/SelectionContext';
 import { SearchProvider, useSearch } from './contexts/SearchContext';
 import { SessionProvider, useSession } from './contexts/SessionContext';
 import { AggregateViewProvider, useAggregateView } from './contexts/AggregateViewContext';
-import { PaneContainer, StatusBar, KeyboardHints, CopyNotification } from './components';
+import { PaneContainer, StatusBar, KeyboardHints, CopyNotification, ConfirmationDialog } from './components';
+import type { ConfirmationType } from './core/types';
 import { SessionPicker } from './components/SessionPicker';
 import { SearchOverlay } from './components/SearchOverlay';
 import { AggregateView } from './components/AggregateView';
@@ -43,6 +44,12 @@ function AppContent() {
 
   // Session management (for quit handler)
   const { saveSession } = useSession();
+
+  // Confirmation dialog state
+  const [confirmationState, setConfirmationState] = useState<{
+    visible: boolean;
+    type: ConfirmationType;
+  }>({ visible: false, type: 'close_pane' });
 
   // Create new pane handler that captures CWD first
   const handleNewPane = useCallback(async () => {
@@ -93,6 +100,38 @@ function AppContent() {
     openAggregateView();
   }, [openAggregateView]);
 
+  // Request close pane (show confirmation)
+  const handleRequestClosePane = useCallback(() => {
+    kbDispatch({ type: 'ENTER_CONFIRM_MODE', confirmationType: 'close_pane' });
+    setConfirmationState({ visible: true, type: 'close_pane' });
+  }, [kbDispatch]);
+
+  // Request quit (show confirmation)
+  const handleRequestQuit = useCallback(() => {
+    kbDispatch({ type: 'ENTER_CONFIRM_MODE', confirmationType: 'exit' });
+    setConfirmationState({ visible: true, type: 'exit' });
+  }, [kbDispatch]);
+
+  // Confirmation dialog handlers
+  const handleConfirmAction = useCallback(async () => {
+    const { type } = confirmationState;
+    kbDispatch({ type: 'EXIT_CONFIRM_MODE' });
+    setConfirmationState({ visible: false, type: 'close_pane' });
+
+    if (type === 'close_pane') {
+      dispatch({ type: 'CLOSE_PANE' });
+    } else if (type === 'exit') {
+      await saveSession();
+      renderer.destroy();
+      process.exit(0);
+    }
+  }, [confirmationState, kbDispatch, dispatch, saveSession, renderer]);
+
+  const handleCancelConfirmation = useCallback(() => {
+    kbDispatch({ type: 'EXIT_CONFIRM_MODE' });
+    setConfirmationState({ visible: false, type: 'close_pane' });
+  }, [kbDispatch]);
+
   // Handle bracketed paste from host terminal (Cmd+V sends this)
   useEffect(() => {
     const handleBracketedPaste = (event: PasteEvent) => {
@@ -113,6 +152,8 @@ function AppContent() {
     onPaste: handlePaste,
     onNewPane: handleNewPane,
     onQuit: handleQuit,
+    onRequestQuit: handleRequestQuit,
+    onRequestClosePane: handleRequestClosePane,
     onToggleSessionPicker: handleToggleSessionPicker,
     onEnterSearch: handleEnterSearch,
     onToggleConsole: handleToggleConsole,
@@ -237,6 +278,21 @@ function AppContent() {
   useKeyboard(
     useCallback(
       (event: { name: string; ctrl?: boolean; shift?: boolean; option?: boolean; meta?: boolean; sequence?: string }) => {
+        // If confirmation dialog is open, route keys to it and block all other input
+        if (confirmationState.visible) {
+          const confirmationHandler = (globalThis as unknown as { __confirmationDialogKeyHandler?: (e: { key: string; ctrl?: boolean; alt?: boolean; shift?: boolean }) => boolean }).__confirmationDialogKeyHandler;
+          if (confirmationHandler) {
+            confirmationHandler({
+              key: event.name,
+              ctrl: event.ctrl,
+              alt: event.option,
+              shift: event.shift,
+            });
+          }
+          // Always return when confirmation is open - don't let keys fall through
+          return;
+        }
+
         // If session picker is open, route keys to it and block all other input
         // This prevents alt+ and prefix+ commands from working in the background
         if (sessionState.showSessionPicker) {
@@ -367,7 +423,7 @@ function AppContent() {
           }
         }
       },
-      [handleKeyDown, mode, writeToFocused, getFocusedCursorKeyMode, sessionState.showSessionPicker, aggregateState.showAggregateView, clearAllSelections, searchState, exitSearchMode, nextMatch, prevMatch, setSearchQuery, kbDispatch]
+      [handleKeyDown, mode, writeToFocused, getFocusedCursorKeyMode, confirmationState.visible, sessionState.showSessionPicker, aggregateState.showAggregateView, clearAllSelections, searchState, exitSearchMode, nextMatch, prevMatch, setSearchQuery, kbDispatch]
     )
   );
 
@@ -396,6 +452,16 @@ function AppContent() {
 
       {/* Aggregate view overlay */}
       <AggregateView width={width} height={height} />
+
+      {/* Confirmation dialog */}
+      <ConfirmationDialog
+        visible={confirmationState.visible}
+        type={confirmationState.type}
+        width={width}
+        height={height}
+        onConfirm={handleConfirmAction}
+        onCancel={handleCancelConfirmation}
+      />
 
       {/* Copy notification toast */}
       <CopyNotification

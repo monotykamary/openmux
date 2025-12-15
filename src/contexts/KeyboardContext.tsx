@@ -11,7 +11,7 @@ import {
   type ReactNode,
   type Dispatch,
 } from 'react';
-import type { KeyMode, KeyboardState, WorkspaceId } from '../core/types';
+import type { KeyMode, KeyboardState, WorkspaceId, ConfirmationType } from '../core/types';
 import { PREFIX_KEY, DEFAULT_CONFIG } from '../core/config';
 import { useLayout } from './LayoutContext';
 import { keyToDirection } from '../core/keyboard-utils';
@@ -23,6 +23,8 @@ type KeyboardAction =
   | { type: 'EXIT_SEARCH_MODE' }
   | { type: 'ENTER_AGGREGATE_MODE' }
   | { type: 'EXIT_AGGREGATE_MODE' }
+  | { type: 'ENTER_CONFIRM_MODE'; confirmationType: ConfirmationType }
+  | { type: 'EXIT_CONFIRM_MODE' }
   | { type: 'TOGGLE_HINTS' };
 
 function keyboardReducer(state: KeyboardState, action: KeyboardAction): KeyboardState {
@@ -65,6 +67,21 @@ function keyboardReducer(state: KeyboardState, action: KeyboardAction): Keyboard
       return {
         ...state,
         mode: 'normal',
+      };
+
+    case 'ENTER_CONFIRM_MODE':
+      return {
+        ...state,
+        mode: 'confirm',
+        prefixActivatedAt: undefined,
+        confirmationType: action.confirmationType,
+      };
+
+    case 'EXIT_CONFIRM_MODE':
+      return {
+        ...state,
+        mode: 'normal',
+        confirmationType: undefined,
       };
 
     case 'TOGGLE_HINTS':
@@ -130,6 +147,8 @@ interface KeyboardHandlerOptions {
   onPaste?: () => void;
   onNewPane?: () => void;
   onQuit?: () => void;
+  onRequestQuit?: () => void;
+  onRequestClosePane?: () => void;
   onToggleSessionPicker?: () => void;
   onEnterSearch?: () => void;
   onToggleConsole?: () => void;
@@ -142,7 +161,7 @@ interface KeyboardHandlerOptions {
 export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
   const { state: kbState, dispatch: kbDispatch } = useKeyboardState();
   const { dispatch: layoutDispatch, activeWorkspace } = useLayout();
-  const { onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch, onToggleConsole, onToggleAggregateView } = options;
+  const { onPaste, onNewPane, onQuit, onRequestQuit, onRequestClosePane, onToggleSessionPicker, onEnterSearch, onToggleConsole, onToggleAggregateView } = options;
 
   const handleKeyDown = useCallback((event: {
     key: string;
@@ -160,7 +179,7 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
 
     // Handle Alt keybindings (prefix-less actions) in normal mode
     if (kbState.mode === 'normal' && alt) {
-      return handleAltKey(key, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onNewPane, onToggleSessionPicker, onEnterSearch, onToggleAggregateView);
+      return handleAltKey(key, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onNewPane, onToggleSessionPicker, onEnterSearch, onToggleAggregateView, onRequestClosePane);
     }
 
     // Handle Ctrl+B to enter prefix mode (only in normal mode)
@@ -180,12 +199,12 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
 
     // Prefix mode commands
     if (kbState.mode === 'prefix') {
-      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch, onToggleConsole, onToggleAggregateView);
+      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste, onNewPane, onQuit, onRequestQuit, onRequestClosePane, onToggleSessionPicker, onEnterSearch, onToggleConsole, onToggleAggregateView);
     }
 
     // Normal mode - pass through to terminal
     return false;
-  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste, onNewPane, onQuit, onToggleSessionPicker, onEnterSearch, onToggleConsole, onToggleAggregateView]);
+  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste, onNewPane, onQuit, onRequestQuit, onRequestClosePane, onToggleSessionPicker, onEnterSearch, onToggleConsole, onToggleAggregateView]);
 
   return { handleKeyDown, mode: kbState.mode };
 }
@@ -201,7 +220,8 @@ function handleAltKey(
   onNewPane?: () => void,
   onToggleSessionPicker?: () => void,
   onEnterSearch?: () => void,
-  onToggleAggregateView?: () => void
+  onToggleAggregateView?: () => void,
+  onRequestClosePane?: () => void
 ): boolean {
   // Alt+hjkl for navigation
   const direction = keyToDirection(key);
@@ -246,9 +266,13 @@ function handleAltKey(
       }
       return true;
 
-    // Alt+x to close pane
+    // Alt+x to close pane (with confirmation)
     case 'x':
-      layoutDispatch({ type: 'CLOSE_PANE' });
+      if (onRequestClosePane) {
+        onRequestClosePane();
+      } else {
+        layoutDispatch({ type: 'CLOSE_PANE' });
+      }
       return true;
 
     // Alt+z to toggle zoom
@@ -291,6 +315,8 @@ function handlePrefixModeKey(
   onPaste?: () => void,
   onNewPane?: () => void,
   onQuit?: () => void,
+  onRequestQuit?: () => void,
+  onRequestClosePane?: () => void,
   onToggleSessionPicker?: () => void,
   onEnterSearch?: () => void,
   onToggleConsole?: () => void,
@@ -326,9 +352,13 @@ function handlePrefixModeKey(
       exitPrefix();
       return true;
 
-    // Close pane
+    // Close pane (with confirmation)
     case 'x':
-      layoutDispatch({ type: 'CLOSE_PANE' });
+      if (onRequestClosePane) {
+        onRequestClosePane();
+      } else {
+        layoutDispatch({ type: 'CLOSE_PANE' });
+      }
       exitPrefix();
       return true;
 
@@ -374,9 +404,13 @@ function handlePrefixModeKey(
       kbDispatch({ type: 'TOGGLE_HINTS' });
       return true;
 
-    // Quit openmux
+    // Quit openmux (with confirmation)
     case 'q':
-      onQuit?.();
+      if (onRequestQuit) {
+        onRequestQuit();
+      } else {
+        onQuit?.();
+      }
       return true;
 
     // Toggle debug console

@@ -208,7 +208,10 @@ export interface SelectionBounds {
 /**
  * Keyboard mode for prefix key system
  */
-export type KeyMode = 'normal' | 'prefix' | 'search' | 'aggregate';
+export type KeyMode = 'normal' | 'prefix' | 'search' | 'aggregate' | 'confirm';
+
+/** Confirmation dialog type */
+export type ConfirmationType = 'close_pane' | 'exit';
 
 /**
  * Keyboard state
@@ -217,6 +220,8 @@ export interface KeyboardState {
   mode: KeyMode;
   prefixActivatedAt?: number;
   showHints: boolean;
+  /** Type of action being confirmed (when mode is 'confirm') */
+  confirmationType?: ConfirmationType;
 }
 
 /**
