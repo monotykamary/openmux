@@ -1,13 +1,13 @@
 /**
  * Tests for Pty service types and testLayer behavior.
- * Note: Full PTY integration tests require bun runtime due to bun-pty.
+ * Note: Full PTY integration tests require bun runtime due to zig-pty.
  */
 import { Effect, Context, Layer } from "effect"
 import { describe, expect, it } from "@effect/vitest"
 import { Cols, Rows, makePtyId, PtyId } from "../../../src/effect/types"
 import { PtySession } from "../../../src/effect/models"
 
-// Create a mock Pty service for testing without bun-pty dependency
+// Create a mock Pty service for testing without zig-pty dependency
 class MockPty extends Context.Tag("@openmux/MockPty")<
   MockPty,
   {

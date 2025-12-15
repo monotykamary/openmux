@@ -4,7 +4,7 @@ A terminal multiplexer with master-stack layout (Zellij-style), built with:
 
 - **Bun** - Fast JavaScript runtime
 - **OpenTUI** - Terminal UI library with React reconciler
-- **bun-pty** - PTY support for Bun
+- **zig-pty** - PTY support for Bun (pure Zig implementation)
 - **ghostty-web** - Terminal emulation via WASM
 
 ![openmux screenshot](assets/openmux-screenshot.png)
@@ -157,7 +157,7 @@ src/
 │
 ├── terminal/                       # PTY and terminal emulation
 │   ├── index.ts                    # Terminal exports
-│   ├── pty-manager.ts              # PTY session lifecycle (bun-pty)
+│   ├── pty-manager.ts              # PTY session lifecycle (zig-pty)
 │   ├── ghostty-emulator.ts         # Terminal emulator (ghostty-web WASM)
 │   ├── input-handler.ts            # Key/mouse to escape sequence encoder
 │   ├── graphics-passthrough.ts     # Kitty Graphics/Sixel protocol

@@ -431,7 +431,7 @@ The most complex service - manages PTY lifecycle:
 
 ```typescript
 import { Context, Effect, Layer, Stream, Ref, HashMap } from "effect"
-import { spawn } from "bun-pty"
+import { spawn } from "zig-pty"
 import { PtySpawnError, PtyNotFoundError, PtyCwdError } from "../errors"
 import { PtyId, Cols, Rows } from "../types"
 import { PtySession } from "../models"

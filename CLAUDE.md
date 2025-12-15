@@ -19,7 +19,7 @@ bun run test:watch    # Run tests in watch mode
 
 - **Bun** - Runtime and package manager (use instead of Node.js)
 - **OpenTUI** - Terminal UI library with React reconciler (@opentui/core, @opentui/react)
-- **bun-pty** - PTY support for shell process management
+- **zig-pty** - PTY support for shell process management (pure Zig implementation)
 - **ghostty-web** - WASM-based terminal emulator (VT parsing)
 - **React 19** - UI components via OpenTUI's React reconciler
 - **Effect** - Typed functional programming for services (gradual migration in src/effect/)
@@ -58,7 +58,7 @@ ThemeProvider              // Styling/theming
 - `session/` - Session serialization and persistence to `~/.config/openmux/sessions/`
 
 **Terminal Layer (src/terminal/)**
-- `pty-manager.ts` - Singleton managing PTY sessions via bun-pty, coordinates with ghostty emulator
+- `pty-manager.ts` - Singleton managing PTY sessions via zig-pty, coordinates with ghostty emulator
 - `ghostty-emulator.ts` - WASM terminal emulator wrapper, handles VT parsing and scrollback
 - `input-handler.ts` - Converts keyboard events to escape sequences (handles DECCKM mode)
 - `graphics-passthrough.ts` - Kitty Graphics and Sixel protocol passthrough to host terminal
