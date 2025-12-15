@@ -378,12 +378,23 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         let syncTimeout: ReturnType<typeof setTimeout> | null = null
         const SYNC_TIMEOUT_MS = 100 // Safety flush after 100ms
 
+        // Track DECSET 2048 state for initial notification (in-band resize mode)
+        // When mode 2048 is enabled, apps like Neovim expect CSI 48 notifications
+        // instead of relying on SIGWINCH signals for resize detection
+        let lastInBandResizeMode = false
+        // Track if pending data might contain DECSET 2048 enable sequence
+        let pendingMightEnable2048 = false
+
         // Helper to schedule notification (extracted for reuse)
         // Uses queueMicrotask for tighter timing - runs before next event loop tick
         const scheduleNotify = () => {
           if (!session.pendingNotify) {
             session.pendingNotify = true
             queueMicrotask(() => {
+              // Capture whether we need to check for DECSET 2048 mode transition
+              const checkFor2048 = pendingMightEnable2048
+              pendingMightEnable2048 = false
+
               // Write all pending data at once
               if (pendingData.length > 0) {
                 // Capture scrollback length before write to detect new lines
@@ -402,6 +413,28 @@ export class Pty extends Context.Tag("@openmux/Pty")<
                   }
                 }
               }
+
+              // Check for DECSET 2048 mode transition AFTER data is written to emulator
+              // Per the spec, when mode 2048 is enabled, we must immediately send
+              // a report of the current terminal size (CSI 48 notification)
+              if (checkFor2048) {
+                try {
+                  const currentInBandMode = session.emulator.getMode(2048)
+                  if (currentInBandMode && !lastInBandResizeMode) {
+                    // Mode just got enabled - send initial size notification
+                    const cellWidth = 8
+                    const cellHeight = 16
+                    const pixelWidth = session.cols * cellWidth
+                    const pixelHeight = session.rows * cellHeight
+                    const resizeNotification = `\x1b[48;${session.rows};${session.cols};${pixelHeight};${pixelWidth}t`
+                    pty.write(resizeNotification)
+                  }
+                  lastInBandResizeMode = currentInBandMode
+                } catch {
+                  // Mode query may fail, ignore
+                }
+              }
+
               notifySubscribers(session)
               session.pendingNotify = false
             })
@@ -410,6 +443,13 @@ export class Pty extends Context.Tag("@openmux/Pty")<
 
         // Wire up PTY data handler - batch both writes AND notifications
         pty.onData((data: string) => {
+          // Check if this data contains DECSET 2048 (CSI ? 2048 h) - in-band resize enable
+          // We need to detect mode transitions to send the initial size report
+          const decset2048Pattern = /\x1b\[\?2048h/
+          if (decset2048Pattern.test(data)) {
+            pendingMightEnable2048 = true
+          }
+
           // First, handle terminal queries (cursor position, device attributes, colors, etc.)
           // This must happen before graphics passthrough to intercept queries
           const afterQueries = session.queryPassthrough.process(data)
@@ -491,6 +531,27 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         session.cols = cols
         session.rows = rows
         session.emulator.resize(cols, rows)
+
+        // Check if DECSET 2048 (in-band resize notifications) is enabled.
+        // When enabled, the terminal must send CSI 48 resize notifications
+        // instead of relying on SIGWINCH. This is used by Neovim and other
+        // applications that prefer escape sequence-based resize detection.
+        // Format: CSI 48 ; height ; width ; pixelHeight ; pixelWidth t
+        try {
+          const inBandResizeEnabled = session.emulator.getMode(2048)
+          if (inBandResizeEnabled) {
+            // Estimate cell size (typical terminal font is ~8x16 pixels)
+            const cellWidth = 8
+            const cellHeight = 16
+            const pixelWidth = cols * cellWidth
+            const pixelHeight = rows * cellHeight
+            const resizeNotification = `\x1b[48;${rows};${cols};${pixelHeight};${pixelWidth}t`
+            session.pty.write(resizeNotification)
+          }
+        } catch {
+          // Mode query may fail on some emulator configurations, ignore
+        }
+
         notifySubscribers(session)
       })
 

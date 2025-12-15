@@ -130,6 +130,7 @@ export const KNOWN_MODES: Record<number, 0 | 1 | 2 | 3 | 4> = {
   1049: 2,   // Alternate screen buffer (reset = normal)
   2004: 2,   // Bracketed paste (reset)
   2026: 2,   // Synchronized output (reset)
+  2048: 2,   // In-band resize notifications (reset) - sends CSI 48 on resize when enabled
 };
 
 // =============================================================================
