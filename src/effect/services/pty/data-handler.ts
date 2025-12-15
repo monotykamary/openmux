@@ -41,6 +41,13 @@ export function createDataHandler(options: DataHandlerOptions) {
     if (!session.pendingNotify) {
       session.pendingNotify = true
       queueMicrotask(() => {
+        // Guard: check if emulator was disposed before microtask ran
+        if (session.emulator.isDisposed) {
+          session.pendingNotify = false
+          state.pendingData = ""
+          return
+        }
+
         // Capture whether we need to check for DECSET 2048 mode transition
         const checkFor2048 = state.pendingMightEnable2048
         state.pendingMightEnable2048 = false

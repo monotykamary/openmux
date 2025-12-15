@@ -94,6 +94,9 @@ export class GhosttyEmulator {
   // Track last alternate screen state (triggers full refresh on switch)
   private lastAlternateScreen: boolean = false;
 
+  // Track if emulator has been disposed (prevents WASM errors)
+  private _disposed: boolean = false;
+
   constructor(options: GhosttyEmulatorOptions = {}) {
     const { cols = 80, rows = 24, colors } = options;
     const ghostty = getGhostty();
@@ -159,6 +162,13 @@ export class GhosttyEmulator {
   }
 
   /**
+   * Check if the emulator has been disposed
+   */
+  get isDisposed(): boolean {
+    return this._disposed;
+  }
+
+  /**
    * Get the terminal's color scheme
    */
   getColors(): TerminalColors {
@@ -171,6 +181,8 @@ export class GhosttyEmulator {
    * for calling getTerminalState() and notifying its own subscribers.
    */
   write(data: string | Uint8Array): void {
+    // Guard against writes after disposal (prevents WASM out-of-bounds errors)
+    if (this._disposed) return;
     this.terminal.write(data);
     this.scrollbackCache.trim();
   }
@@ -470,6 +482,7 @@ export class GhosttyEmulator {
    * Free resources
    */
   dispose(): void {
+    this._disposed = true;
     this.subscribers.clear();
     this.terminal.free();
   }
