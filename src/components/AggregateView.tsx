@@ -8,95 +8,30 @@
  */
 
 import { useCallback, useEffect, useState, useRef, useMemo } from 'react';
-import { RGBA, type MouseEvent as OpenTUIMouseEvent, type OptimizedBuffer } from '@opentui/core';
+import { type MouseEvent as OpenTUIMouseEvent, type OptimizedBuffer } from '@opentui/core';
 import { useAggregateView, type PtyInfo } from '../contexts/AggregateViewContext';
 import { useKeyboardState } from '../contexts/KeyboardContext';
 import { useLayout } from '../contexts/LayoutContext';
 import { useSession } from '../contexts/SessionContext';
 import { useTerminal } from '../contexts/TerminalContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { getHostBackgroundColor, resizePty, subscribeUnifiedToPty, writeToPty } from '../effect/bridge';
+import { getHostBackgroundColor, resizePty, subscribeUnifiedToPty, writeToPty, registerKeyboardHandler } from '../effect/bridge';
 import { inputHandler } from '../terminal/input-handler';
-import type { TerminalState, TerminalCell, UnifiedTerminalUpdate, WorkspaceId, Workspace } from '../core/types';
-
-// RGBA cache to avoid per-cell allocations
-const WHITE = RGBA.fromInts(255, 255, 255);
-const BLACK = RGBA.fromInts(0, 0, 0);
-const rgbaCache = new Map<number, RGBA>();
-rgbaCache.set(0x000000, BLACK);
-rgbaCache.set(0xFFFFFF, WHITE);
-
-function getCachedRGBA(r: number, g: number, b: number): RGBA {
-  if ((r | g | b) === 0) return BLACK;
-  if (r === 255 && g === 255 && b === 255) return WHITE;
-  const key = (r << 16) | (g << 8) | b;
-  let cached = rgbaCache.get(key);
-  if (!cached) {
-    cached = RGBA.fromInts(r, g, b);
-    rgbaCache.set(key, cached);
-  }
-  return cached;
-}
-
-// Text attributes
-const ATTR_BOLD = 1;
-const ATTR_ITALIC = 4;
-const ATTR_UNDERLINE = 8;
-const ATTR_STRIKETHROUGH = 128;
+import {
+  WHITE,
+  BLACK,
+  getCachedRGBA,
+  ATTR_BOLD,
+  ATTR_ITALIC,
+  ATTR_UNDERLINE,
+  ATTR_STRIKETHROUGH,
+} from '../terminal/rendering';
+import { getDirectoryName, findPtyLocation, findPaneLocation } from './aggregate/utils';
+import type { TerminalState, TerminalCell, UnifiedTerminalUpdate } from '../core/types';
 
 interface AggregateViewProps {
   width: number;
   height: number;
-}
-
-/**
- * Get the last segment of a path (directory name)
- */
-function getDirectoryName(path: string): string {
-  const parts = path.split('/').filter(Boolean);
-  return parts[parts.length - 1] ?? path;
-}
-
-/**
- * Find which workspace and pane contains a given PTY ID
- */
-function findPtyLocation(
-  ptyId: string,
-  workspaces: Map<WorkspaceId, Workspace>
-): { workspaceId: WorkspaceId; paneId: string } | null {
-  for (const [workspaceId, workspace] of workspaces) {
-    // Check main pane
-    if (workspace.mainPane?.ptyId === ptyId) {
-      return { workspaceId, paneId: workspace.mainPane.id };
-    }
-    // Check stack panes
-    for (const pane of workspace.stackPanes) {
-      if (pane.ptyId === ptyId) {
-        return { workspaceId, paneId: pane.id };
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * Find which workspace contains a given pane ID
- */
-function findPaneLocation(
-  paneId: string,
-  workspaces: Map<WorkspaceId, Workspace>
-): { workspaceId: WorkspaceId } | null {
-  for (const [workspaceId, workspace] of workspaces) {
-    if (workspace.mainPane?.id === paneId) {
-      return { workspaceId };
-    }
-    for (const pane of workspace.stackPanes) {
-      if (pane.id === paneId) {
-        return { workspaceId };
-      }
-    }
-  }
-  return null;
 }
 
 /**
@@ -576,11 +511,18 @@ export function AggregateView({ width, height }: AggregateViewProps) {
     ]
   );
 
-  // Expose keyboard handler for parent
+  // Register keyboard handler with KeyboardRouter
   useEffect(() => {
-    (globalThis as unknown as { __aggregateViewKeyHandler?: (e: { key: string; ctrl?: boolean; alt?: boolean; shift?: boolean; sequence?: string }) => boolean }).__aggregateViewKeyHandler = handleKeyDown;
+    let unsubscribe: (() => void) | null = null;
+
+    registerKeyboardHandler('aggregateView', handleKeyDown).then((unsub) => {
+      unsubscribe = unsub;
+    });
+
     return () => {
-      delete (globalThis as unknown as { __aggregateViewKeyHandler?: (e: { key: string; ctrl?: boolean; alt?: boolean; shift?: boolean; sequence?: string }) => boolean }).__aggregateViewKeyHandler;
+      if (unsubscribe) {
+        unsubscribe();
+      }
     };
   }, [handleKeyDown]);
 

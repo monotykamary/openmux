@@ -27,6 +27,14 @@ import { AggregateView } from './components/AggregateView';
 import { inputHandler } from './terminal';
 import type { Workspace, WorkspaceId } from './core/types';
 import { getFocusedPtyId } from './core/workspace-utils';
+import {
+  routeKeyboardEventSync,
+  clearPtyTracking,
+  markPtyCreated,
+  isPtyCreated,
+  setSessionCwdMap,
+  getSessionCwd as getSessionCwdFromCoordinator,
+} from './effect/bridge';
 
 function AppContent() {
   const { width, height } = useTerminalDimensions();
@@ -160,21 +168,8 @@ function AppContent() {
     onToggleAggregateView: handleToggleAggregateView,
   });
 
-  // Track which panes have PTYs created
-  const panesPtyCreated = useRef<Set<string>>(new Set());
-
   // Retry counter to trigger effect re-run when PTY creation fails
   const [ptyRetryCounter, setPtyRetryCounter] = useState(0);
-
-  // Register a function to clear PTY tracking (called when switching sessions)
-  useEffect(() => {
-    (globalThis as unknown as { __clearPtyTracking?: () => void }).__clearPtyTracking = () => {
-      panesPtyCreated.current.clear();
-    };
-    return () => {
-      delete (globalThis as unknown as { __clearPtyTracking?: () => void }).__clearPtyTracking;
-    };
-  }, []);
 
   // Update viewport when terminal resizes
   useEffect(() => {
@@ -201,40 +196,41 @@ function AppContent() {
 
     let hadFailure = false;
 
-    for (const pane of panes) {
-      if (!pane.ptyId && !panesPtyCreated.current.has(pane.id)) {
-        // Calculate pane dimensions (account for border)
-        const rect = pane.rectangle ?? { width: 80, height: 24 };
-        const cols = Math.max(1, rect.width - 2);
-        const rows = Math.max(1, rect.height - 2);
+    const createPtysForPanes = async () => {
+      for (const pane of panes) {
+        const alreadyCreated = await isPtyCreated(pane.id);
+        if (!pane.ptyId && !alreadyCreated) {
+          // Calculate pane dimensions (account for border)
+          const rect = pane.rectangle ?? { width: 80, height: 24 };
+          const cols = Math.max(1, rect.width - 2);
+          const rows = Math.max(1, rect.height - 2);
 
-        // Check for session-restored CWD first, then pending CWD from new pane
-        const sessionCwdMap = (globalThis as unknown as { __sessionCwdMap?: Map<string, string> }).__sessionCwdMap;
-        let cwd = sessionCwdMap?.get(pane.id) ?? pendingCwdRef.current ?? undefined;
-        pendingCwdRef.current = null; // Clear after use
+          // Check for session-restored CWD first, then pending CWD from new pane
+          const sessionCwd = await getSessionCwdFromCoordinator(pane.id);
+          let cwd = sessionCwd ?? pendingCwdRef.current ?? undefined;
+          pendingCwdRef.current = null; // Clear after use
 
-        // Clear the pane's entry from session map after use
-        sessionCwdMap?.delete(pane.id);
-
-        try {
-          createPTY(pane.id, cols, rows, cwd);
-          // Only mark as created AFTER successful PTY creation
-          // This allows retry on subsequent renders if creation fails
-          panesPtyCreated.current.add(pane.id);
-        } catch (err) {
-          console.error(`Failed to create PTY for pane ${pane.id}:`, err);
-          hadFailure = true;
+          try {
+            createPTY(pane.id, cols, rows, cwd);
+            // Only mark as created AFTER successful PTY creation
+            // This allows retry on subsequent renders if creation fails
+            await markPtyCreated(pane.id);
+          } catch (err) {
+            console.error(`Failed to create PTY for pane ${pane.id}:`, err);
+            hadFailure = true;
+          }
         }
       }
-    }
 
-    // Schedule a retry if any PTY creation failed
-    if (hadFailure) {
-      const timeoutId = setTimeout(() => {
-        setPtyRetryCounter(c => c + 1);
-      }, 100);
-      return () => clearTimeout(timeoutId);
-    }
+      // Schedule a retry if any PTY creation failed
+      if (hadFailure) {
+        setTimeout(() => {
+          setPtyRetryCounter(c => c + 1);
+        }, 100);
+      }
+    };
+
+    createPtysForPanes();
   }, [isInitialized, panes, createPTY, ptyRetryCounter]);
 
   // Resize PTYs and update positions when pane dimensions change
@@ -278,55 +274,23 @@ function AppContent() {
   useKeyboard(
     useCallback(
       (event: { name: string; ctrl?: boolean; shift?: boolean; option?: boolean; meta?: boolean; sequence?: string }) => {
-        // If confirmation dialog is open, route keys to it and block all other input
-        if (confirmationState.visible) {
-          const confirmationHandler = (globalThis as unknown as { __confirmationDialogKeyHandler?: (e: { key: string; ctrl?: boolean; alt?: boolean; shift?: boolean }) => boolean }).__confirmationDialogKeyHandler;
-          if (confirmationHandler) {
-            confirmationHandler({
-              key: event.name,
-              ctrl: event.ctrl,
-              alt: event.option,
-              shift: event.shift,
-            });
-          }
-          // Always return when confirmation is open - don't let keys fall through
-          return;
-        }
+        // Route to overlays via KeyboardRouter (handles confirmation, session picker, aggregate view)
+        // Use event.sequence for printable chars (handles shift for uppercase/symbols)
+        // Fall back to event.name for special keys
+        const charCode = event.sequence?.charCodeAt(0) ?? 0;
+        const isPrintableChar = event.sequence?.length === 1 && charCode >= 32 && charCode < 127;
+        const keyToPass = isPrintableChar ? event.sequence! : event.name;
 
-        // If session picker is open, route keys to it and block all other input
-        // This prevents alt+ and prefix+ commands from working in the background
-        if (sessionState.showSessionPicker) {
-          const sessionPickerHandler = (globalThis as unknown as { __sessionPickerKeyHandler?: (e: { key: string; ctrl?: boolean; alt?: boolean; shift?: boolean }) => boolean }).__sessionPickerKeyHandler;
-          if (sessionPickerHandler) {
-            sessionPickerHandler({
-              key: event.name,
-              ctrl: event.ctrl,
-              alt: event.option,
-              shift: event.shift,
-            });
-          }
-          // Always return when picker is open - don't let keys fall through to multiplexer
-          return;
-        }
+        const routeResult = routeKeyboardEventSync({
+          key: keyToPass,
+          ctrl: event.ctrl,
+          alt: event.option,
+          shift: event.shift,
+          sequence: event.sequence,
+        });
 
-        // If aggregate view is open, route keys to it
-        if (aggregateState.showAggregateView) {
-          const aggregateViewHandler = (globalThis as unknown as { __aggregateViewKeyHandler?: (e: { key: string; ctrl?: boolean; alt?: boolean; shift?: boolean; sequence?: string }) => boolean }).__aggregateViewKeyHandler;
-          if (aggregateViewHandler) {
-            // Use event.sequence for printable chars (handles shift for uppercase/symbols)
-            // Fall back to event.name for special keys
-            const charCode = event.sequence?.charCodeAt(0) ?? 0;
-            const isPrintable = event.sequence?.length === 1 && charCode >= 32 && charCode < 127;
-            const keyToPass = isPrintable ? event.sequence! : event.name;
-            aggregateViewHandler({
-              key: keyToPass,
-              ctrl: event.ctrl,
-              alt: event.option,
-              shift: event.shift,
-              sequence: event.sequence,
-            });
-          }
-          // Always return when aggregate view is open
+        // If an overlay handled the key, don't process further
+        if (routeResult.handled) {
           return;
         }
 
@@ -423,7 +387,7 @@ function AppContent() {
           }
         }
       },
-      [handleKeyDown, mode, writeToFocused, getFocusedCursorKeyMode, confirmationState.visible, sessionState.showSessionPicker, aggregateState.showAggregateView, clearAllSelections, searchState, exitSearchMode, nextMatch, prevMatch, setSearchQuery, kbDispatch]
+      [handleKeyDown, mode, writeToFocused, getFocusedCursorKeyMode, clearAllSelections, searchState, exitSearchMode, nextMatch, prevMatch, setSearchQuery, kbDispatch]
     )
   );
 
@@ -547,21 +511,21 @@ function SessionBridge({ children }: { children: React.ReactNode }) {
     }
 
     // Clear PTY tracking to allow new PTYs to be created for panes without restored PTYs
-    (globalThis as unknown as { __clearPtyTracking?: () => void }).__clearPtyTracking?.();
+    await clearPtyTracking();
 
     // Load workspaces into layout
     layoutDispatchRef.current({ type: 'LOAD_SESSION', workspaces, activeWorkspaceId });
 
-    // Store cwdMap in globalThis for AppContent to use (for panes without restored PTYs)
-    (globalThis as unknown as { __sessionCwdMap?: Map<string, string> }).__sessionCwdMap = cwdMap;
+    // Store cwdMap in AppCoordinator for AppContent to use (for panes without restored PTYs)
+    await setSessionCwdMap(cwdMap);
   }, []);
 
-  const onBeforeSwitch = useCallback((currentSessionId: string) => {
+  const onBeforeSwitch = useCallback(async (currentSessionId: string) => {
     // Suspend PTYs for current session (save mapping, unsubscribe but don't destroy)
     suspendSessionRef.current(currentSessionId);
     layoutDispatchRef.current({ type: 'CLEAR_ALL' });
     // Clear PTY tracking
-    (globalThis as unknown as { __clearPtyTracking?: () => void }).__clearPtyTracking?.();
+    await clearPtyTracking();
   }, []);
 
   const onDeleteSession = useCallback((sessionId: string) => {

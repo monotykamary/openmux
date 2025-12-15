@@ -26,151 +26,16 @@ import {
   switchToSession,
   getSessionSummary,
 } from '../effect/bridge';
+import {
+  type SessionState,
+  type SessionAction,
+  type SessionSummary,
+  sessionReducer,
+  createInitialState,
+} from '../core/operations/session-actions';
 
-export interface SessionSummary {
-  workspaceCount: number;
-  paneCount: number;
-}
-
-export interface SessionState {
-  /** List of all session metadata */
-  sessions: SessionMetadata[];
-  /** Currently active session ID */
-  activeSessionId: SessionId | null;
-  /** Currently active session metadata */
-  activeSession: SessionMetadata | null;
-  /** Whether the session picker is shown */
-  showSessionPicker: boolean;
-  /** Search query for filtering sessions */
-  searchQuery: string;
-  /** Currently selected index in picker */
-  selectedIndex: number;
-  /** Whether currently in rename mode */
-  isRenaming: boolean;
-  /** Rename input value */
-  renameValue: string;
-  /** Session ID being renamed */
-  renamingSessionId: SessionId | null;
-  /** Session summaries cache (workspace/pane counts) */
-  summaries: Map<SessionId, SessionSummary>;
-  /** Whether initial load is complete */
-  initialized: boolean;
-}
-
-type SessionAction =
-  | { type: 'SET_SESSIONS'; sessions: SessionMetadata[] }
-  | { type: 'SET_ACTIVE_SESSION'; id: SessionId; session: SessionMetadata }
-  | { type: 'SET_SUMMARIES'; summaries: Map<SessionId, SessionSummary> }
-  | { type: 'TOGGLE_SESSION_PICKER' }
-  | { type: 'CLOSE_SESSION_PICKER' }
-  | { type: 'SET_SEARCH_QUERY'; query: string }
-  | { type: 'NAVIGATE_UP' }
-  | { type: 'NAVIGATE_DOWN' }
-  | { type: 'SET_SELECTED_INDEX'; index: number }
-  | { type: 'START_RENAME'; sessionId: SessionId; currentName: string }
-  | { type: 'UPDATE_RENAME_VALUE'; value: string }
-  | { type: 'CANCEL_RENAME' }
-  | { type: 'SET_INITIALIZED' };
-
-function sessionReducer(state: SessionState, action: SessionAction): SessionState {
-  switch (action.type) {
-    case 'SET_SESSIONS':
-      return { ...state, sessions: action.sessions };
-
-    case 'SET_ACTIVE_SESSION':
-      return {
-        ...state,
-        activeSessionId: action.id,
-        activeSession: action.session,
-      };
-
-    case 'SET_SUMMARIES':
-      return { ...state, summaries: action.summaries };
-
-    case 'TOGGLE_SESSION_PICKER': {
-      // Alt+tab behavior: when opening, select the first session that is NOT the current one
-      // Sessions are sorted by lastSwitchedAt (most recent first), so we find the first different session
-      let newSelectedIndex = 0;
-      if (!state.showSessionPicker && state.sessions.length > 1) {
-        // Find the first session that is not the currently active one
-        const otherSessionIndex = state.sessions.findIndex(s => s.id !== state.activeSessionId);
-        newSelectedIndex = otherSessionIndex !== -1 ? otherSessionIndex : 0;
-      }
-      return {
-        ...state,
-        showSessionPicker: !state.showSessionPicker,
-        searchQuery: '',
-        selectedIndex: newSelectedIndex,
-        isRenaming: false,
-        renameValue: '',
-        renamingSessionId: null,
-      };
-    }
-
-    case 'CLOSE_SESSION_PICKER':
-      return {
-        ...state,
-        showSessionPicker: false,
-        searchQuery: '',
-        selectedIndex: 0,
-        isRenaming: false,
-        renameValue: '',
-        renamingSessionId: null,
-      };
-
-    case 'SET_SEARCH_QUERY': {
-      return {
-        ...state,
-        searchQuery: action.query,
-        selectedIndex: 0,
-      };
-    }
-
-    case 'NAVIGATE_UP':
-      return {
-        ...state,
-        selectedIndex: Math.max(0, state.selectedIndex - 1),
-      };
-
-    case 'NAVIGATE_DOWN': {
-      const filteredCount = state.sessions.filter(s =>
-        s.name.toLowerCase().includes(state.searchQuery.toLowerCase())
-      ).length;
-      return {
-        ...state,
-        selectedIndex: Math.min(filteredCount - 1, state.selectedIndex + 1),
-      };
-    }
-
-    case 'SET_SELECTED_INDEX':
-      return { ...state, selectedIndex: action.index };
-
-    case 'START_RENAME':
-      return {
-        ...state,
-        isRenaming: true,
-        renamingSessionId: action.sessionId,
-        renameValue: action.currentName,
-      };
-
-    case 'UPDATE_RENAME_VALUE':
-      return { ...state, renameValue: action.value };
-
-    case 'CANCEL_RENAME':
-      return {
-        ...state,
-        isRenaming: false,
-        renamingSessionId: null,
-        renameValue: '',
-      };
-
-    case 'SET_INITIALIZED':
-      return { ...state, initialized: true };
-
-    default:
-      return state;
-  }
-}
+// Re-export types for external consumers
+export type { SessionState, SessionSummary };
 
 interface SessionContextValue {
   state: SessionState;
@@ -230,21 +95,7 @@ export function SessionProvider({
   onDeleteSession,
   layoutVersion,
 }: SessionProviderProps) {
-  const initialState: SessionState = {
-    sessions: [],
-    activeSessionId: null,
-    activeSession: null,
-    showSessionPicker: false,
-    searchQuery: '',
-    selectedIndex: 0,
-    isRenaming: false,
-    renameValue: '',
-    renamingSessionId: null,
-    summaries: new Map(),
-    initialized: false,
-  };
-
-  const [state, dispatch] = useReducer(sessionReducer, initialState);
+  const [state, dispatch] = useReducer(sessionReducer, undefined, createInitialState);
 
   // Keep refs for callbacks to avoid stale closures
   const getCwdRef = useRef(getCwd);

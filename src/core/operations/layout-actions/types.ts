@@ -1,0 +1,30 @@
+/**
+ * Types for layout reducer
+ */
+
+import type { Direction, Rectangle, Workspace, WorkspaceId, LayoutMode, PaneData, NodeId } from '../../types';
+import type { LayoutConfig } from '../../config';
+
+export interface LayoutState {
+  workspaces: Map<WorkspaceId, Workspace>;
+  activeWorkspaceId: WorkspaceId;
+  viewport: Rectangle;
+  config: LayoutConfig;
+  /** Version counter that increments on save-worthy changes */
+  layoutVersion: number;
+}
+
+export type LayoutAction =
+  | { type: 'FOCUS_PANE'; paneId: NodeId }
+  | { type: 'NAVIGATE'; direction: Direction }
+  | { type: 'NEW_PANE'; ptyId?: string; title?: string }
+  | { type: 'CLOSE_PANE' }
+  | { type: 'CLOSE_PANE_BY_ID'; paneId: NodeId }
+  | { type: 'SET_VIEWPORT'; viewport: Rectangle }
+  | { type: 'SWITCH_WORKSPACE'; workspaceId: WorkspaceId }
+  | { type: 'SET_LAYOUT_MODE'; mode: LayoutMode }
+  | { type: 'SET_PANE_PTY'; paneId: NodeId; ptyId: string }
+  | { type: 'SWAP_MAIN' }
+  | { type: 'TOGGLE_ZOOM' }
+  | { type: 'LOAD_SESSION'; workspaces: Map<WorkspaceId, Workspace>; activeWorkspaceId: WorkspaceId }
+  | { type: 'CLEAR_ALL' };

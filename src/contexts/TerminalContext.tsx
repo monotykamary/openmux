@@ -25,16 +25,18 @@ import {
   destroyAllPtys,
   getPtyCwd,
   getTerminalState,
-  onPtyExit,
   setPanePosition,
   getScrollState,
   setScrollOffset,
   scrollToBottom,
-  subscribeUnifiedToPty,
   readFromClipboard,
-  getEmulator,
 } from '../effect/bridge';
-import type { UnifiedTerminalUpdate, TerminalCell } from '../core/types';
+import {
+  subscribeToPtyWithCaches,
+  clearPtyCaches,
+  clearAllPtyCaches,
+  type PtyCaches,
+} from '../hooks/usePtySubscription';
 import type { GhosttyEmulator } from '../terminal/ghostty-emulator';
 
 interface TerminalContextValue {
@@ -106,14 +108,12 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   // sessionId → Map<paneId, ptyId>
   const sessionPtyMapRef = useRef<Map<string, Map<string, string>>>(new Map());
 
-  // Cache terminal states for synchronous access (updated via subscription)
-  const terminalStatesCache = useRef<Map<string, TerminalState>>(new Map());
-
-  // Cache scroll states for synchronous access
-  const scrollStatesCache = useRef<Map<string, TerminalScrollState>>(new Map());
-
-  // Cache emulators for synchronous access (needed for selection text extraction)
-  const emulatorsCache = useRef<Map<string, GhosttyEmulator>>(new Map());
+  // Unified caches for PTY state (used by usePtySubscription)
+  const ptyCaches = useRef<PtyCaches>({
+    terminalStates: new Map<string, TerminalState>(),
+    scrollStates: new Map<string, TerminalScrollState>(),
+    emulators: new Map<string, GhosttyEmulator>(),
+  });
 
   // Track unsubscribe functions for cleanup
   const unsubscribeFns = useRef<Map<string, () => void>>(new Map());
@@ -134,6 +134,21 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
       });
   }, []);
 
+  // Handle PTY exit callback
+  const handlePtyExit = useCallback((ptyId: string, paneId: string) => {
+    const mappedPaneId = ptyToPaneMap.current.get(ptyId);
+    if (mappedPaneId) {
+      dispatch({ type: 'CLOSE_PANE_BY_ID', paneId: mappedPaneId });
+      ptyToPaneMap.current.delete(ptyId);
+    }
+    // Also remove from session mappings
+    for (const [, mapping] of sessionPtyMapRef.current) {
+      for (const [pid, ptid] of mapping) {
+        if (ptid === ptyId) mapping.delete(pid);
+      }
+    }
+  }, [dispatch]);
+
   // Create a PTY session
   const createPTY = useCallback(async (paneId: string, cols: number, rows: number, cwd?: string): Promise<string> => {
     if (!isGhosttyInitialized()) {
@@ -145,75 +160,22 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     // Track the mapping
     ptyToPaneMap.current.set(ptyId, paneId);
 
-    // Register exit callback to close pane when shell exits
-    const unsubExit = await onPtyExit(ptyId, () => {
-      const mappedPaneId = ptyToPaneMap.current.get(ptyId);
-      if (mappedPaneId) {
-        dispatch({ type: 'CLOSE_PANE_BY_ID', paneId: mappedPaneId });
-        ptyToPaneMap.current.delete(ptyId);
-      }
-      // Also remove from session mappings
-      for (const [, mapping] of sessionPtyMapRef.current) {
-        for (const [pid, ptid] of mapping) {
-          if (ptid === ptyId) mapping.delete(pid);
-        }
-      }
-    });
+    // Subscribe to PTY with unified caches
+    const unsub = await subscribeToPtyWithCaches(
+      ptyId,
+      paneId,
+      ptyCaches.current,
+      handlePtyExit
+    );
 
-    // Cache the emulator for synchronous access (selection text extraction)
-    const emulator = await getEmulator(ptyId);
-    if (emulator) {
-      emulatorsCache.current.set(ptyId, emulator);
-    }
-
-    // Cache for terminal rows (structural sharing)
-    let cachedRows: TerminalCell[][] = [];
-
-    // Subscribe to unified updates (terminal + scroll combined)
-    // This eliminates race conditions from separate subscriptions
-    const unsubState = await subscribeUnifiedToPty(ptyId, (update: UnifiedTerminalUpdate) => {
-      const { terminalUpdate, scrollState } = update;
-
-      // Update terminal state cache
-      if (terminalUpdate.isFull && terminalUpdate.fullState) {
-        // Full refresh: store complete state
-        terminalStatesCache.current.set(ptyId, terminalUpdate.fullState);
-        cachedRows = [...terminalUpdate.fullState.cells];
-      } else {
-        // Delta update: merge dirty rows into cached state
-        const existingState = terminalStatesCache.current.get(ptyId);
-        if (existingState) {
-          // Apply dirty rows to cached rows
-          for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
-            cachedRows[rowIdx] = newRow;
-          }
-          // Update state with merged cells and new cursor/modes
-          terminalStatesCache.current.set(ptyId, {
-            ...existingState,
-            cells: cachedRows,
-            cursor: terminalUpdate.cursor,
-            alternateScreen: terminalUpdate.alternateScreen,
-            mouseTracking: terminalUpdate.mouseTracking,
-            cursorKeyMode: terminalUpdate.cursorKeyMode,
-          });
-        }
-      }
-
-      // Update scroll state cache synchronously (no more race conditions!)
-      scrollStatesCache.current.set(ptyId, scrollState);
-    });
-
-    // Store unsubscribe functions
-    unsubscribeFns.current.set(ptyId, () => {
-      unsubExit();
-      unsubState();
-    });
+    // Store unsubscribe function
+    unsubscribeFns.current.set(ptyId, unsub);
 
     // Update the pane with the PTY ID
     dispatch({ type: 'SET_PANE_PTY', paneId, ptyId });
 
     return ptyId;
-  }, [dispatch]);
+  }, [dispatch, handlePtyExit]);
 
   // Destroy a PTY session
   const handleDestroyPTY = useCallback((ptyId: string) => {
@@ -225,9 +187,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     }
 
     // Clear caches
-    terminalStatesCache.current.delete(ptyId);
-    scrollStatesCache.current.delete(ptyId);
-    emulatorsCache.current.delete(ptyId);
+    clearPtyCaches(ptyId, ptyCaches.current);
     ptyToPaneMap.current.delete(ptyId);
 
     // Destroy the PTY (fire and forget)
@@ -241,9 +201,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
       unsub();
     }
     unsubscribeFns.current.clear();
-    terminalStatesCache.current.clear();
-    scrollStatesCache.current.clear();
-    emulatorsCache.current.clear();
+    clearAllPtyCaches(ptyCaches.current);
     ptyToPaneMap.current.clear();
 
     // Destroy all PTYs (fire and forget)
@@ -264,9 +222,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
       unsub();
     }
     unsubscribeFns.current.clear();
-    terminalStatesCache.current.clear();
-    scrollStatesCache.current.clear();
-    emulatorsCache.current.clear();
+    clearAllPtyCaches(ptyCaches.current);
     ptyToPaneMap.current.clear();
     // Note: DO NOT call destroyAllPtys() - PTYs stay alive
   }, []);
@@ -281,68 +237,16 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     // Resubscribe to each PTY
     for (const [paneId, ptyId] of savedMapping) {
       try {
-        // Register exit callback
-        const unsubExit = await onPtyExit(ptyId, () => {
-          const mappedPaneId = ptyToPaneMap.current.get(ptyId);
-          if (mappedPaneId) {
-            dispatch({ type: 'CLOSE_PANE_BY_ID', paneId: mappedPaneId });
-            ptyToPaneMap.current.delete(ptyId);
-          }
-          // Also remove from session mapping
-          for (const [, mapping] of sessionPtyMapRef.current) {
-            for (const [pid, ptid] of mapping) {
-              if (ptid === ptyId) mapping.delete(pid);
-            }
-          }
-        });
+        // Subscribe to PTY with unified caches
+        const unsub = await subscribeToPtyWithCaches(
+          ptyId,
+          paneId,
+          ptyCaches.current,
+          handlePtyExit
+        );
 
-        // Cache the emulator for synchronous access
-        const emulator = await getEmulator(ptyId);
-        if (emulator) {
-          emulatorsCache.current.set(ptyId, emulator);
-        }
-
-        // Cache for terminal rows (structural sharing)
-        let cachedRows: TerminalCell[][] = [];
-
-        // Subscribe to unified updates (terminal + scroll combined)
-        const unsubState = await subscribeUnifiedToPty(ptyId, (update: UnifiedTerminalUpdate) => {
-          const { terminalUpdate, scrollState } = update;
-
-          // Update terminal state cache
-          if (terminalUpdate.isFull && terminalUpdate.fullState) {
-            // Full refresh: store complete state
-            terminalStatesCache.current.set(ptyId, terminalUpdate.fullState);
-            cachedRows = [...terminalUpdate.fullState.cells];
-          } else {
-            // Delta update: merge dirty rows into cached state
-            const existingState = terminalStatesCache.current.get(ptyId);
-            if (existingState) {
-              // Apply dirty rows to cached rows
-              for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
-                cachedRows[rowIdx] = newRow;
-              }
-              // Update state with merged cells and new cursor/modes
-              terminalStatesCache.current.set(ptyId, {
-                ...existingState,
-                cells: cachedRows,
-                cursor: terminalUpdate.cursor,
-                alternateScreen: terminalUpdate.alternateScreen,
-                mouseTracking: terminalUpdate.mouseTracking,
-                cursorKeyMode: terminalUpdate.cursorKeyMode,
-              });
-            }
-          }
-
-          // Update scroll state cache synchronously
-          scrollStatesCache.current.set(ptyId, scrollState);
-        });
-
-        // Store unsubscribe functions
-        unsubscribeFns.current.set(ptyId, () => {
-          unsubExit();
-          unsubState();
-        });
+        // Store unsubscribe function
+        unsubscribeFns.current.set(ptyId, unsub);
 
         // Restore pty→pane mapping
         ptyToPaneMap.current.set(ptyId, paneId);
@@ -353,7 +257,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     }
 
     return savedMapping;
-  }, [dispatch]);
+  }, [handlePtyExit]);
 
   // Cleanup PTYs for a deleted session
   const handleCleanupSessionPtys = useCallback((sessionId: string) => {
@@ -388,9 +292,9 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     const focusedPtyId = getFocusedPtyId();
     if (focusedPtyId) {
       // Reset scroll cache to bottom (typing auto-scrolls)
-      const cached = scrollStatesCache.current.get(focusedPtyId);
+      const cached = ptyCaches.current.scrollStates.get(focusedPtyId);
       if (cached && cached.viewportOffset > 0) {
-        scrollStatesCache.current.set(focusedPtyId, {
+        ptyCaches.current.scrollStates.set(focusedPtyId, {
           ...cached,
           viewportOffset: 0,
           isAtBottom: true,
@@ -416,9 +320,9 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   // Write to a specific PTY
   const handleWriteToPTY = useCallback((ptyId: string, data: string) => {
     // Reset scroll cache to bottom (typing auto-scrolls)
-    const cached = scrollStatesCache.current.get(ptyId);
+    const cached = ptyCaches.current.scrollStates.get(ptyId);
     if (cached && cached.viewportOffset > 0) {
-      scrollStatesCache.current.set(ptyId, {
+      ptyCaches.current.scrollStates.set(ptyId, {
         ...cached,
         viewportOffset: 0,
         isAtBottom: true,
@@ -444,9 +348,9 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     if (!clipboardText) return false;
 
     // Reset scroll cache to bottom (pasting auto-scrolls)
-    const cached = scrollStatesCache.current.get(focusedPtyId);
+    const cached = ptyCaches.current.scrollStates.get(focusedPtyId);
     if (cached && cached.viewportOffset > 0) {
-      scrollStatesCache.current.set(focusedPtyId, {
+      ptyCaches.current.scrollStates.set(focusedPtyId, {
         ...cached,
         viewportOffset: 0,
         isAtBottom: true,
@@ -461,19 +365,19 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     const focusedPtyId = getFocusedPtyId();
     if (!focusedPtyId) return 'normal';
 
-    const terminalState = terminalStatesCache.current.get(focusedPtyId);
+    const terminalState = ptyCaches.current.terminalStates.get(focusedPtyId);
     return terminalState?.cursorKeyMode ?? 'normal';
   }, [getFocusedPtyId]);
 
   // Check if mouse tracking is enabled for a PTY (sync - uses cache)
   const handleIsMouseTrackingEnabled = useCallback((ptyId: string): boolean => {
-    const terminalState = terminalStatesCache.current.get(ptyId);
+    const terminalState = ptyCaches.current.terminalStates.get(ptyId);
     return terminalState?.mouseTracking ?? false;
   }, []);
 
   // Check if terminal is in alternate screen mode (sync - uses cache)
   const handleIsAlternateScreen = useCallback((ptyId: string): boolean => {
-    const terminalState = terminalStatesCache.current.get(ptyId);
+    const terminalState = ptyCaches.current.terminalStates.get(ptyId);
     return terminalState?.alternateScreen ?? false;
   }, []);
 
@@ -481,18 +385,18 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   // Cache is kept fresh by: optimistic updates in scrollTerminal/setScrollOffset,
   // and PTY subscription updates when terminal state changes
   const handleGetScrollState = useCallback((ptyId: string): TerminalScrollState | undefined => {
-    return scrollStatesCache.current.get(ptyId);
+    return ptyCaches.current.scrollStates.get(ptyId);
   }, []);
 
   // Scroll terminal by delta lines
   const scrollTerminal = useCallback((ptyId: string, delta: number): void => {
-    const cached = scrollStatesCache.current.get(ptyId);
+    const cached = ptyCaches.current.scrollStates.get(ptyId);
     if (cached) {
       // Use utility for clamped scroll calculation
       const clampedOffset = calculateScrollDelta(cached.viewportOffset, delta, cached.scrollbackLength);
       setScrollOffset(ptyId, clampedOffset);
       // Update cache optimistically with clamped value
-      scrollStatesCache.current.set(ptyId, {
+      ptyCaches.current.scrollStates.set(ptyId, {
         ...cached,
         viewportOffset: clampedOffset,
         isAtBottom: isAtBottom(clampedOffset),
@@ -505,7 +409,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
           const clampedOffset = calculateScrollDelta(state.viewportOffset, delta, state.scrollbackLength);
           setScrollOffset(ptyId, clampedOffset);
           // Populate cache with clamped value
-          scrollStatesCache.current.set(ptyId, {
+          ptyCaches.current.scrollStates.set(ptyId, {
             viewportOffset: clampedOffset,
             scrollbackLength: state.scrollbackLength,
             isAtBottom: isAtBottom(clampedOffset),
@@ -517,7 +421,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
 
   // Set absolute scroll offset
   const handleSetScrollOffset = useCallback((ptyId: string, offset: number): void => {
-    const cached = scrollStatesCache.current.get(ptyId);
+    const cached = ptyCaches.current.scrollStates.get(ptyId);
     // Use utility for clamping to valid range
     const clampedOffset = cached
       ? clampScrollOffset(offset, cached.scrollbackLength)
@@ -525,7 +429,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     setScrollOffset(ptyId, clampedOffset);
     // Update cache optimistically with clamped value
     if (cached) {
-      scrollStatesCache.current.set(ptyId, {
+      ptyCaches.current.scrollStates.set(ptyId, {
         ...cached,
         viewportOffset: clampedOffset,
         isAtBottom: isAtBottom(clampedOffset),
@@ -537,9 +441,9 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
   const handleScrollToBottom = useCallback((ptyId: string): void => {
     scrollToBottom(ptyId);
     // Update cache optimistically
-    const cached = scrollStatesCache.current.get(ptyId);
+    const cached = ptyCaches.current.scrollStates.get(ptyId);
     if (cached) {
-      scrollStatesCache.current.set(ptyId, {
+      ptyCaches.current.scrollStates.set(ptyId, {
         ...cached,
         viewportOffset: 0,
         isAtBottom: true,
@@ -549,12 +453,12 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
 
   // Get cached emulator synchronously (for selection text extraction)
   const getEmulatorSync = useCallback((ptyId: string): GhosttyEmulator | null => {
-    return emulatorsCache.current.get(ptyId) ?? null;
+    return ptyCaches.current.emulators.get(ptyId) ?? null;
   }, []);
 
   // Get cached terminal state synchronously (for selection text extraction)
   const getTerminalStateSync = useCallback((ptyId: string): TerminalState | null => {
-    return terminalStatesCache.current.get(ptyId) ?? null;
+    return ptyCaches.current.terminalStates.get(ptyId) ?? null;
   }, []);
 
   // Find which session owns a PTY

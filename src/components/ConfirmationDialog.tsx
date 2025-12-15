@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { ConfirmationType } from '../core/types';
+import { registerKeyboardHandler } from '../effect/bridge';
 
 export type { ConfirmationType };
 
@@ -92,19 +93,14 @@ export function ConfirmationDialog({
     [visible, focusedButton, onConfirm, onCancel]
   );
 
-  // Expose keyboard handler for App.tsx to access
+  // Register keyboard handler with KeyboardRouter
   useEffect(() => {
-    (
-      globalThis as unknown as {
-        __confirmationDialogKeyHandler?: typeof handleKeyDown;
-      }
-    ).__confirmationDialogKeyHandler = handleKeyDown;
+    let unsubscribe: (() => void) | null = null;
+    registerKeyboardHandler('confirmationDialog', handleKeyDown).then((unsub) => {
+      unsubscribe = unsub;
+    });
     return () => {
-      delete (
-        globalThis as unknown as {
-          __confirmationDialogKeyHandler?: typeof handleKeyDown;
-        }
-      ).__confirmationDialogKeyHandler;
+      if (unsubscribe) unsubscribe();
     };
   }, [handleKeyDown]);
 

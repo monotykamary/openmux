@@ -6,6 +6,7 @@ import { useCallback, useEffect } from 'react';
 import { useSession, type SessionSummary } from '../contexts/SessionContext';
 import type { SessionMetadata } from '../core/types';
 import { useTheme } from '../contexts/ThemeContext';
+import { registerKeyboardHandler } from '../effect/bridge';
 
 interface SessionPickerProps {
   width: number;
@@ -182,12 +183,14 @@ export function SessionPicker({ width, height }: SessionPickerProps) {
     deleteSession,
   ]);
 
-  // Expose keyboard handler for parent
+  // Register keyboard handler with KeyboardRouter
   useEffect(() => {
-    // Store handler on globalThis for App.tsx to access
-    (globalThis as unknown as { __sessionPickerKeyHandler?: typeof handleKeyDown }).__sessionPickerKeyHandler = handleKeyDown;
+    let unsubscribe: (() => void) | null = null;
+    registerKeyboardHandler('sessionPicker', handleKeyDown).then((unsub) => {
+      unsubscribe = unsub;
+    });
     return () => {
-      delete (globalThis as unknown as { __sessionPickerKeyHandler?: typeof handleKeyDown }).__sessionPickerKeyHandler;
+      if (unsubscribe) unsubscribe();
     };
   }, [handleKeyDown]);
 

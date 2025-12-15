@@ -4,15 +4,9 @@
  */
 import { Context, Effect, Layer, Ref } from "effect"
 import { SessionStorage } from "./SessionStorage"
-import {
-  SessionStorageError,
-  SessionNotFoundError,
-  SessionCorruptedError,
-} from "../errors"
+import { SessionStorageError, SessionNotFoundError } from "../errors"
 import {
   SerializedSession,
-  SerializedWorkspace,
-  SerializedPaneData,
   SessionMetadata,
   SessionIndex,
 } from "../models"
@@ -22,14 +16,13 @@ import {
   makeSessionId,
 } from "../types"
 
-// =============================================================================
-// Types
-// =============================================================================
-
-type SessionError =
-  | SessionStorageError
-  | SessionNotFoundError
-  | SessionCorruptedError
+// Import extracted modules
+import type { SessionError, WorkspaceState } from "./session-manager/types"
+import {
+  getAutoName,
+  collectCwdMap,
+  serializeSession,
+} from "./session-manager/serialization"
 
 // =============================================================================
 // SessionManager Service
@@ -127,12 +120,6 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
       const index = yield* storage.loadIndex()
       if (index.activeSessionId) {
         yield* Ref.set(activeSessionRef, index.activeSessionId)
-      }
-
-      /** Extract auto-name from path (last directory component) */
-      const getAutoName = (cwd: string): string => {
-        const parts = cwd.split("/").filter(Boolean)
-        return parts[parts.length - 1] ?? "untitled"
       }
 
       const createSession = Effect.fn("SessionManager.createSession")(
@@ -403,72 +390,10 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
         activeWorkspaceId: number,
         getCwd: (ptyId: string) => Promise<string>
       ) {
-        // Collect all CWDs
-        const cwdMap = new Map<string, string>()
-        for (const workspace of workspaces.values()) {
-          const mainPane = workspace.mainPane
-          if (mainPane?.ptyId) {
-            const ptyId = mainPane.ptyId
-            const cwd = yield* Effect.promise(() =>
-              getCwd(ptyId).catch(() => process.cwd())
-            )
-            cwdMap.set(ptyId, cwd)
-          }
-          for (const pane of workspace.stackPanes) {
-            if (pane.ptyId) {
-              const ptyId = pane.ptyId
-              const cwd = yield* Effect.promise(() =>
-                getCwd(ptyId).catch(() => process.cwd())
-              )
-              cwdMap.set(ptyId, cwd)
-            }
-          }
-        }
-
-        // Serialize workspaces
-        const serializedWorkspaces: SerializedWorkspace[] = []
-        for (const [id, workspace] of workspaces) {
-          // Only serialize workspaces with panes
-          if (!workspace.mainPane && workspace.stackPanes.length === 0) continue
-
-          const mainPane = workspace.mainPane
-            ? SerializedPaneData.make({
-                id: workspace.mainPane.id,
-                title: workspace.mainPane.title,
-                cwd: workspace.mainPane.ptyId
-                  ? cwdMap.get(workspace.mainPane.ptyId) ?? process.cwd()
-                  : process.cwd(),
-              })
-            : null
-
-          const stackPanes = workspace.stackPanes.map((pane) =>
-            SerializedPaneData.make({
-              id: pane.id,
-              title: pane.title,
-              cwd: pane.ptyId
-                ? cwdMap.get(pane.ptyId) ?? process.cwd()
-                : process.cwd(),
-            })
-          )
-
-          serializedWorkspaces.push(
-            SerializedWorkspace.make({
-              id: WorkspaceId.make(id),
-              mainPane,
-              stackPanes,
-              focusedPaneId: workspace.focusedPaneId ?? null,
-              layoutMode: workspace.layoutMode,
-              activeStackIndex: workspace.activeStackIndex,
-              zoomed: workspace.zoomed,
-            })
-          )
-        }
-
-        return SerializedSession.make({
-          metadata,
-          workspaces: serializedWorkspaces,
-          activeWorkspaceId: WorkspaceId.make(activeWorkspaceId),
-        })
+        // Collect all CWDs using extracted helper
+        const cwdMap = yield* collectCwdMap(workspaces, getCwd)
+        // Serialize using extracted helper
+        return serializeSession(metadata, workspaces, activeWorkspaceId, cwdMap)
       })
 
       const quickSave = Effect.fn("SessionManager.quickSave")(function* (
@@ -685,17 +610,4 @@ export class SessionManager extends Context.Tag("@openmux/SessionManager")<
       })
     })
   )
-}
-
-// =============================================================================
-// Helper Types (for serialization)
-// =============================================================================
-
-interface WorkspaceState {
-  mainPane: { id: string; ptyId?: string; title?: string } | null
-  stackPanes: Array<{ id: string; ptyId?: string; title?: string }>
-  focusedPaneId?: string
-  layoutMode: "vertical" | "horizontal" | "stacked"
-  activeStackIndex: number
-  zoomed: boolean
 }

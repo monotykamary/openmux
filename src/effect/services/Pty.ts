@@ -2,13 +2,13 @@
  * PTY service for managing terminal pseudo-terminal sessions.
  * Wraps zig-pty with ghostty-web VT parsing.
  */
-import { Context, Effect, Layer, Stream, Queue, Ref, HashMap, Option } from "effect"
-import { spawn, type IPty } from "../../../zig-pty/src/index"
-import type { TerminalState, UnifiedTerminalUpdate, TerminalScrollState } from "../../core/types"
+import { Context, Effect, Layer, Ref, HashMap, Option } from "effect"
+import { spawn } from "../../../zig-pty/src/index"
+import type { TerminalState, UnifiedTerminalUpdate } from "../../core/types"
 import { GhosttyEmulator } from "../../terminal/ghostty-emulator"
 import { GraphicsPassthrough } from "../../terminal/graphics-passthrough"
 import { TerminalQueryPassthrough } from "../../terminal/terminal-query-passthrough"
-import { createSyncModeParser, type SyncModeParser } from "../../terminal/sync-mode-parser"
+import { createSyncModeParser } from "../../terminal/sync-mode-parser"
 import { getCapabilityEnvironment } from "../../terminal/capabilities"
 import { getHostColors } from "../../terminal/terminal-colors"
 import { PtySpawnError, PtyNotFoundError, PtyCwdError } from "../errors"
@@ -16,160 +16,10 @@ import { PtyId, Cols, Rows, makePtyId } from "../types"
 import { PtySession } from "../models"
 import { AppConfig } from "../Config"
 
-// =============================================================================
-// Internal Types
-// =============================================================================
-
-interface InternalPtySession {
-  id: PtyId
-  pty: IPty
-  emulator: GhosttyEmulator
-  graphicsPassthrough: GraphicsPassthrough
-  queryPassthrough: TerminalQueryPassthrough
-  cols: number
-  rows: number
-  cwd: string
-  shell: string
-  subscribers: Set<(state: TerminalState) => void>
-  scrollSubscribers: Set<() => void>
-  /** Unified subscribers receive both terminal and scroll updates in one callback */
-  unifiedSubscribers: Set<(update: UnifiedTerminalUpdate) => void>
-  exitCallbacks: Set<(exitCode: number) => void>
-  pendingNotify: boolean
-  scrollState: {
-    viewportOffset: number
-  }
-}
-
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-/** Get the foreground process name for a PTY's shell */
-const getForegroundProcess = (shellPid: number): Effect.Effect<string | undefined> =>
-  Effect.tryPromise({
-    try: async () => {
-      const platform = process.platform
-
-      if (platform === "darwin") {
-        // On macOS, get the foreground process group and find its name
-        // First, get child processes of the shell
-        const pgrepProc = Bun.spawn(
-          ["pgrep", "-P", String(shellPid)],
-          { stdout: "pipe", stderr: "pipe" }
-        )
-        const pgrepOutput = await new Response(pgrepProc.stdout).text()
-        await pgrepProc.exited
-
-        const childPids = pgrepOutput.trim().split("\n").filter(Boolean)
-        if (childPids.length === 0) {
-          // No child processes, return the shell name
-          const psProc = Bun.spawn(
-            ["ps", "-o", "comm=", "-p", String(shellPid)],
-            { stdout: "pipe", stderr: "pipe" }
-          )
-          const name = (await new Response(psProc.stdout).text()).trim()
-          await psProc.exited
-          // Get just the basename
-          return name.split("/").pop() || undefined
-        }
-
-        // Get the most recent child's name (likely the foreground process)
-        const lastPid = childPids[childPids.length - 1]
-        const psProc = Bun.spawn(
-          ["ps", "-o", "comm=", "-p", lastPid],
-          { stdout: "pipe", stderr: "pipe" }
-        )
-        const name = (await new Response(psProc.stdout).text()).trim()
-        await psProc.exited
-        // Get just the basename
-        return name.split("/").pop() || undefined
-      } else if (platform === "linux") {
-        // On Linux, get the foreground process using /proc
-        const statProc = Bun.spawn(
-          ["cat", `/proc/${shellPid}/stat`],
-          { stdout: "pipe", stderr: "pipe" }
-        )
-        const statOutput = await new Response(statProc.stdout).text()
-        await statProc.exited
-
-        // Parse the stat file to get the process group ID
-        const parts = statOutput.split(" ")
-        const pgrp = parts[4] // Process group ID
-
-        // Find the process leading the group
-        const psProc = Bun.spawn(
-          ["ps", "-o", "comm=", "--pid", pgrp],
-          { stdout: "pipe", stderr: "pipe" }
-        )
-        const name = (await new Response(psProc.stdout).text()).trim()
-        await psProc.exited
-        return name.split("/").pop() || undefined
-      }
-
-      return undefined
-    },
-    catch: () => undefined as string | undefined,
-  }).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
-
-/** Get the git branch for a directory */
-const getGitBranch = (cwd: string): Effect.Effect<string | undefined> =>
-  Effect.tryPromise({
-    try: async () => {
-      const proc = Bun.spawn(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        { stdout: "pipe", stderr: "pipe", cwd }
-      )
-      const output = await new Response(proc.stdout).text()
-      const exitCode = await proc.exited
-      if (exitCode !== 0) return undefined
-      const branch = output.trim()
-      return branch || undefined
-    },
-    catch: () => undefined as string | undefined,
-  }).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
-
-/** Get the current working directory of a process by PID */
-const getProcessCwd = (pid: number): Effect.Effect<string, PtyCwdError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const platform = process.platform
-
-      if (platform === "darwin") {
-        const proc = Bun.spawn(
-          ["lsof", "-a", "-d", "cwd", "-p", String(pid), "-Fn"],
-          { stdout: "pipe", stderr: "pipe" }
-        )
-        const output = await new Response(proc.stdout).text()
-        await proc.exited
-
-        const lines = output.split("\n")
-        for (const line of lines) {
-          if (line.startsWith("n/")) {
-            return line.slice(1)
-          }
-        }
-        throw new Error("Could not parse lsof output")
-      } else if (platform === "linux") {
-        const proc = Bun.spawn(["readlink", "-f", `/proc/${pid}/cwd`], {
-          stdout: "pipe",
-          stderr: "pipe",
-        })
-        const output = await new Response(proc.stdout).text()
-        await proc.exited
-        const result = output.trim()
-        if (!result) throw new Error("Empty readlink result")
-        return result
-      }
-
-      throw new Error(`Unsupported platform: ${platform}`)
-    },
-    catch: (error) =>
-      PtyCwdError.make({
-        ptyId: PtyId.make(`pid-${pid}`),
-        cause: error,
-      }),
-  })
+// Import extracted modules
+import type { InternalPtySession } from "./pty/types"
+import { getForegroundProcess, getGitBranch, getProcessCwd } from "./pty/helpers"
+import { getCurrentScrollState, notifySubscribers, notifyScrollSubscribers } from "./pty/notification"
 
 // =============================================================================
 // PTY Service
@@ -292,62 +142,6 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           }
           return session.value
         })
-
-      // Helper to get current scroll state
-      const getCurrentScrollState = (session: InternalPtySession): TerminalScrollState => {
-        const scrollbackLength = session.emulator.getScrollbackLength()
-        return {
-          viewportOffset: session.scrollState.viewportOffset,
-          scrollbackLength,
-          isAtBottom: session.scrollState.viewportOffset === 0,
-        }
-      }
-
-      // Helper to notify subscribers (for terminal state changes)
-      const notifySubscribers = (session: InternalPtySession) => {
-        // Notify unified subscribers first (uses dirty delta for efficiency)
-        if (session.unifiedSubscribers.size > 0) {
-          const scrollState = getCurrentScrollState(session)
-          const dirtyUpdate = session.emulator.getDirtyUpdate(scrollState)
-          const unifiedUpdate: UnifiedTerminalUpdate = {
-            terminalUpdate: dirtyUpdate,
-            scrollState,
-          }
-          for (const callback of session.unifiedSubscribers) {
-            callback(unifiedUpdate)
-          }
-        }
-
-        // Legacy subscribers still get full state
-        if (session.subscribers.size > 0) {
-          const state = session.emulator.getTerminalState()
-          for (const callback of session.subscribers) {
-            callback(state)
-          }
-        }
-      }
-
-      // Helper to notify scroll subscribers (lightweight - no state rebuild)
-      const notifyScrollSubscribers = (session: InternalPtySession) => {
-        // Notify unified subscribers with scroll-only update
-        if (session.unifiedSubscribers.size > 0) {
-          const scrollState = getCurrentScrollState(session)
-          // For scroll-only updates, we can create a minimal dirty update
-          const dirtyUpdate = session.emulator.getDirtyUpdate(scrollState)
-          const unifiedUpdate: UnifiedTerminalUpdate = {
-            terminalUpdate: dirtyUpdate,
-            scrollState,
-          }
-          for (const callback of session.unifiedSubscribers) {
-            callback(unifiedUpdate)
-          }
-        }
-
-        // Legacy scroll subscribers
-        for (const callback of session.scrollSubscribers) {
-          callback()
-        }
-      }
 
       const create = Effect.fn("Pty.create")(function* (options: {
         cols: Cols
