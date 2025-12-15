@@ -24,6 +24,10 @@ export interface PtyInfo {
   cwd: string;
   gitBranch: string | undefined;
   foregroundProcess: string | undefined;
+  /** Workspace ID where this PTY is located (if found in current session) */
+  workspaceId: number | undefined;
+  /** Pane ID where this PTY is located (if found in current session) */
+  paneId: string | undefined;
 }
 
 interface AggregateViewState {

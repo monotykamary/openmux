@@ -10,17 +10,21 @@ The aggregate view is a fullscreen overlay that provides a simple, efficient way
 
 - **Card-style PTY list** - Shows directory name, foreground process, and git branch
 - **Interactive terminal preview** - Full terminal rendering with keyboard and mouse support
+- **Jump to PTY** - Press Tab to jump directly to a PTY's workspace and pane (works across sessions!)
+- **Cross-session navigation** - Jump to terminals in other sessions - the session switches automatically
 - **Simple text filtering** - Filter PTYs by typing (matches process, cwd, git branch)
 - **Direct buffer rendering** - 60fps performance using the same approach as normal panes
 
 ### Usage
 
-1. Press `Alt+a` or `Ctrl+b a` to open the aggregate view
+1. Press `Alt+g` or `Ctrl+b g` to open the aggregate view
 2. Navigate the PTY list with `j/k` or arrow keys
 3. Type to filter by process name, directory, or git branch
-4. Press `Enter` or `Tab` to enter interactive mode (control the terminal)
-5. Press `Prefix+Esc` (Ctrl+b then Esc) to return to list mode
-6. Press `Esc` to close the aggregate view
+4. Press `Enter` to enter interactive mode (control the terminal)
+5. Press `Tab` to jump to the PTY's workspace and pane (closes aggregate view)
+   - If the PTY is in another session, the session switches automatically
+6. Press `Prefix+Esc` (Ctrl+b then Esc) to return to list mode
+7. Press `Esc` to close the aggregate view
 
 ### Architecture
 

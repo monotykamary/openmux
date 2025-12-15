@@ -11,10 +11,13 @@ import { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import { RGBA, type MouseEvent as OpenTUIMouseEvent, type OptimizedBuffer } from '@opentui/core';
 import { useAggregateView, type PtyInfo } from '../contexts/AggregateViewContext';
 import { useKeyboardState } from '../contexts/KeyboardContext';
+import { useLayout } from '../contexts/LayoutContext';
+import { useSession } from '../contexts/SessionContext';
+import { useTerminal } from '../contexts/TerminalContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { getHostBackgroundColor, resizePty, subscribeUnifiedToPty, writeToPty } from '../effect/bridge';
 import { inputHandler } from '../terminal/input-handler';
-import type { TerminalState, TerminalCell, UnifiedTerminalUpdate } from '../core/types';
+import type { TerminalState, TerminalCell, UnifiedTerminalUpdate, WorkspaceId, Workspace } from '../core/types';
 
 // RGBA cache to avoid per-cell allocations
 const WHITE = RGBA.fromInts(255, 255, 255);
@@ -52,6 +55,48 @@ interface AggregateViewProps {
 function getDirectoryName(path: string): string {
   const parts = path.split('/').filter(Boolean);
   return parts[parts.length - 1] ?? path;
+}
+
+/**
+ * Find which workspace and pane contains a given PTY ID
+ */
+function findPtyLocation(
+  ptyId: string,
+  workspaces: Map<WorkspaceId, Workspace>
+): { workspaceId: WorkspaceId; paneId: string } | null {
+  for (const [workspaceId, workspace] of workspaces) {
+    // Check main pane
+    if (workspace.mainPane?.ptyId === ptyId) {
+      return { workspaceId, paneId: workspace.mainPane.id };
+    }
+    // Check stack panes
+    for (const pane of workspace.stackPanes) {
+      if (pane.ptyId === ptyId) {
+        return { workspaceId, paneId: pane.id };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Find which workspace contains a given pane ID
+ */
+function findPaneLocation(
+  paneId: string,
+  workspaces: Map<WorkspaceId, Workspace>
+): { workspaceId: WorkspaceId } | null {
+  for (const [workspaceId, workspace] of workspaces) {
+    if (workspace.mainPane?.id === paneId) {
+      return { workspaceId };
+    }
+    for (const pane of workspace.stackPanes) {
+      if (pane.id === paneId) {
+        return { workspaceId };
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -334,6 +379,9 @@ export function AggregateView({ width, height }: AggregateViewProps) {
     exitPreviewMode,
   } = useAggregateView();
   const { dispatch: kbDispatch } = useKeyboardState();
+  const { state: layoutState, dispatch: layoutDispatch } = useLayout();
+  const { state: sessionState, switchSession } = useSession();
+  const { findSessionForPty } = useTerminal();
   const theme = useTheme();
 
   const {
@@ -349,6 +397,9 @@ export function AggregateView({ width, height }: AggregateViewProps) {
   const [prefixActive, setPrefixActive] = useState(false);
   const prefixTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Track pending navigation after session switch
+  const pendingPaneNavigationRef = useRef<string | null>(null);
+
   // Clear prefix timeout on unmount
   useEffect(() => {
     return () => {
@@ -357,6 +408,56 @@ export function AggregateView({ width, height }: AggregateViewProps) {
       }
     };
   }, []);
+
+  // Handle pending navigation after session switch
+  useEffect(() => {
+    const pendingPaneId = pendingPaneNavigationRef.current;
+    if (!pendingPaneId) return;
+
+    // Clear the pending navigation
+    pendingPaneNavigationRef.current = null;
+
+    // Find the workspace containing this pane in the current (newly loaded) workspaces
+    const paneLocation = findPaneLocation(pendingPaneId, layoutState.workspaces);
+    if (paneLocation) {
+      layoutDispatch({ type: 'SWITCH_WORKSPACE', workspaceId: paneLocation.workspaceId });
+    }
+    layoutDispatch({ type: 'FOCUS_PANE', paneId: pendingPaneId });
+  }, [sessionState.activeSessionId, layoutState.workspaces, layoutDispatch]);
+
+  // Jump to the selected PTY's workspace and pane (supports cross-session jumps)
+  const handleJumpToPty = useCallback(async () => {
+    if (!selectedPtyId) return false;
+
+    // Close aggregate view first
+    closeAggregateView();
+    kbDispatch({ type: 'EXIT_AGGREGATE_MODE' });
+
+    // First, check if PTY is in the current session
+    const location = findPtyLocation(selectedPtyId, layoutState.workspaces);
+    if (location) {
+      // PTY is in current session - navigate to it
+      if (layoutState.activeWorkspaceId !== location.workspaceId) {
+        layoutDispatch({ type: 'SWITCH_WORKSPACE', workspaceId: location.workspaceId });
+      }
+      layoutDispatch({ type: 'FOCUS_PANE', paneId: location.paneId });
+      return true;
+    }
+
+    // PTY not in current session - check if it's in another session
+    const sessionLocation = findSessionForPty(selectedPtyId);
+    if (sessionLocation && sessionLocation.sessionId !== sessionState.activeSessionId) {
+      // Store the target pane ID for navigation after session loads
+      pendingPaneNavigationRef.current = sessionLocation.paneId;
+
+      // Switch to the other session - the effect will handle navigation after load
+      await switchSession(sessionLocation.sessionId);
+
+      return true;
+    }
+
+    return false;
+  }, [selectedPtyId, layoutState.workspaces, layoutState.activeWorkspaceId, sessionState.activeSessionId, closeAggregateView, kbDispatch, layoutDispatch, findSessionForPty, switchSession]);
 
   // Handle keyboard input when aggregate view is open
   const handleKeyDown = useCallback(
@@ -439,11 +540,9 @@ export function AggregateView({ width, height }: AggregateViewProps) {
         return true;
       }
 
-      // Tab also enters preview mode
+      // Tab jumps to the PTY's workspace/pane
       if (normalizedKey === 'tab') {
-        if (selectedPtyId) {
-          enterPreviewMode();
-        }
+        handleJumpToPty();
         return true;
       }
 
@@ -472,6 +571,7 @@ export function AggregateView({ width, height }: AggregateViewProps) {
       navigateDown,
       enterPreviewMode,
       exitPreviewMode,
+      handleJumpToPty,
       kbDispatch,
     ]
   );
@@ -584,7 +684,7 @@ export function AggregateView({ width, height }: AggregateViewProps) {
   // Build hints text based on mode
   const hintsText = previewMode
     ? 'Prefix+Esc: back to list'
-    : '↑↓/jk: navigate | Enter/Tab: interact | Esc: close';
+    : '↑↓/jk: navigate | Enter: interact | Tab: jump | Esc: close';
 
   // Build search/filter text
   const filterText = `Filter: ${filterQuery}_`;

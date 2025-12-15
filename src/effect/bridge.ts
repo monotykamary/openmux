@@ -741,6 +741,8 @@ export async function listAllPtysWithMetadata(): Promise<Array<{
   cwd: string
   gitBranch: string | undefined
   foregroundProcess: string | undefined
+  workspaceId: number | undefined
+  paneId: string | undefined
 }>> {
   try {
     return await runEffect(
@@ -753,6 +755,8 @@ export async function listAllPtysWithMetadata(): Promise<Array<{
           cwd: string
           gitBranch: string | undefined
           foregroundProcess: string | undefined
+          workspaceId: number | undefined
+          paneId: string | undefined
         }> = []
 
         for (const ptyId of ptyIds) {
@@ -784,6 +788,8 @@ export async function listAllPtysWithMetadata(): Promise<Array<{
             cwd,
             gitBranch,
             foregroundProcess,
+            workspaceId: undefined, // Will be enriched by AggregateView
+            paneId: undefined,      // Will be enriched by AggregateView
           })
         }
 

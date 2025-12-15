@@ -84,6 +84,8 @@ interface TerminalContextValue {
   getTerminalStateSync: (ptyId: string) => TerminalState | null;
   /** Check if ghostty is initialized */
   isInitialized: boolean;
+  /** Find which session owns a PTY (returns sessionId and paneId, or null if not found) */
+  findSessionForPty: (ptyId: string) => { sessionId: string; paneId: string } | null;
 }
 
 const TerminalContext = createContext<TerminalContextValue | null>(null);
@@ -555,6 +557,37 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     return terminalStatesCache.current.get(ptyId) ?? null;
   }, []);
 
+  // Find which session owns a PTY
+  const findSessionForPty = useCallback((ptyId: string): { sessionId: string; paneId: string } | null => {
+    // First check current session's ptyToPaneMap (active PTYs)
+    const currentPaneId = ptyToPaneMap.current.get(ptyId);
+    if (currentPaneId) {
+      // PTY is in the current session - find which session that is
+      // by checking sessionPtyMapRef for a session that has this mapping
+      for (const [sessionId, mapping] of sessionPtyMapRef.current) {
+        for (const [paneId, mappedPtyId] of mapping) {
+          if (mappedPtyId === ptyId) {
+            return { sessionId, paneId };
+          }
+        }
+      }
+      // If not found in sessionPtyMapRef, it's in the current unsaved session
+      // Return null for now - the caller should handle current session separately
+      return null;
+    }
+
+    // Search through all session PTY mappings
+    for (const [sessionId, mapping] of sessionPtyMapRef.current) {
+      for (const [paneId, mappedPtyId] of mapping) {
+        if (mappedPtyId === ptyId) {
+          return { sessionId, paneId };
+        }
+      }
+    }
+
+    return null;
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -590,6 +623,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     getEmulatorSync,
     getTerminalStateSync,
     isInitialized,
+    findSessionForPty,
   };
 
   return (
