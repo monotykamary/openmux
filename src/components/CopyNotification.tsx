@@ -3,7 +3,7 @@
  * Positioned at the top-right of the pane where copy occurred
  */
 
-import { memo } from 'react';
+import { Show, type Accessor } from 'solid-js';
 import { RGBA } from '@opentui/core';
 
 interface PaneRectangle {
@@ -35,42 +35,42 @@ const BG_COLOR = RGBA.fromInts(34, 36, 46, 204);
  * Styled with left/right partial borders matching the pane focus color
  * Uses semi-transparent dark background
  */
-export const CopyNotification = memo(function CopyNotification({
-  visible,
-  charCount,
-  paneRect,
-}: CopyNotificationProps) {
-  if (!visible || !paneRect) return null;
-
-  // Position at top-right of pane, with some padding from edges
-  const leftPosition = Math.max(0, paneRect.x + paneRect.width - TOAST_WIDTH - 2);
-  const topPosition = paneRect.y + 1;
-
+export function CopyNotification(props: CopyNotificationProps) {
   return (
-    <box
-      style={{
-        position: 'absolute',
-        left: leftPosition,
-        top: topPosition,
-        width: TOAST_WIDTH,
-        height: TOAST_HEIGHT,
-        backgroundColor: BG_COLOR,
-        zIndex: 1000,
-        border: ['left', 'right'],
-        borderStyle: 'single',
-        borderColor: BORDER_COLOR,
-        alignItems: 'center',
-        justifyContent: 'center',
+    <Show when={props.visible && props.paneRect}>
+      {(paneRect: Accessor<PaneRectangle>) => {
+        // Position at top-right of pane, with some padding from edges
+        const leftPosition = () => Math.max(0, paneRect().x + paneRect().width - TOAST_WIDTH - 2);
+        const topPosition = () => paneRect().y + 1;
+
+        return (
+          <box
+            style={{
+              position: 'absolute',
+              left: leftPosition(),
+              top: topPosition(),
+              width: TOAST_WIDTH,
+              height: TOAST_HEIGHT,
+              backgroundColor: BG_COLOR,
+              zIndex: 1000,
+              border: ['left', 'right'],
+              borderStyle: 'single',
+              borderColor: BORDER_COLOR,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <text
+              style={{
+                fg: TEXT_COLOR,
+              }}
+              content="Copied to clipboard"
+            />
+          </box>
+        );
       }}
-    >
-      <text
-        style={{
-          fg: TEXT_COLOR,
-        }}
-        content="Copied to clipboard"
-      />
-    </box>
+    </Show>
   );
-});
+}
 
 export default CopyNotification;

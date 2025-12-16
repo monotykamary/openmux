@@ -2,7 +2,7 @@
  * SessionPicker - modal overlay for session selection and management
  */
 
-import { useCallback, useEffect } from 'react';
+import { Show, For, createEffect, onCleanup } from 'solid-js';
 import { useSession, type SessionSummary } from '../contexts/SessionContext';
 import type { SessionMetadata } from '../core/types';
 import { useTheme } from '../contexts/ThemeContext';
@@ -33,61 +33,58 @@ function formatRelativeTime(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
-export function SessionPicker({ width, height }: SessionPickerProps) {
+export function SessionPicker(props: SessionPickerProps) {
   const theme = useTheme();
+  // Keep session context to access filteredSessions reactively (it's a getter)
+  const session = useSession();
   const {
     state,
-    dispatch,
-    filteredSessions,
     createSession,
     switchSession,
     renameSession,
     deleteSession,
     saveSession,
     closePicker,
-  } = useSession();
-
-  const {
-    showSessionPicker,
-    selectedIndex,
-    isRenaming,
-    renameValue,
-    renamingSessionId,
-    summaries,
-  } = state;
+    setSearchQuery,
+    startRename,
+    cancelRename,
+    updateRenameValue,
+    navigateUp,
+    navigateDown,
+  } = session;
 
   // Handle keyboard input when picker is open
-  const handleKeyDown = useCallback((event: {
+  const handleKeyDown = (event: {
     key: string;
     ctrl?: boolean;
     alt?: boolean;
     shift?: boolean;
   }) => {
-    if (!showSessionPicker) return false;
+    if (!state.showSessionPicker) return false;
 
     const { key } = event;
     // Normalize key names (OpenTUI uses lowercase for special keys)
     const normalizedKey = key.toLowerCase();
 
     // If renaming, handle rename-specific keys
-    if (isRenaming) {
+    if (state.isRenaming) {
       if (normalizedKey === 'escape') {
-        dispatch({ type: 'CANCEL_RENAME' });
+        cancelRename();
         return true;
       }
       if (normalizedKey === 'return' || normalizedKey === 'enter') {
-        if (renamingSessionId && renameValue.trim()) {
-          renameSession(renamingSessionId, renameValue.trim());
+        if (state.renamingSessionId && state.renameValue.trim()) {
+          renameSession(state.renamingSessionId, state.renameValue.trim());
         }
         return true;
       }
       if (normalizedKey === 'backspace') {
-        dispatch({ type: 'UPDATE_RENAME_VALUE', value: renameValue.slice(0, -1) });
+        updateRenameValue(state.renameValue.slice(0, -1));
         return true;
       }
       // Single printable character
       if (key.length === 1 && !event.ctrl && !event.alt) {
-        dispatch({ type: 'UPDATE_RENAME_VALUE', value: renameValue + key });
+        updateRenameValue(state.renameValue + key);
         return true;
       }
       return true; // Consume all keys while renaming
@@ -105,9 +102,9 @@ export function SessionPicker({ width, height }: SessionPickerProps) {
 
         case 'r': {
           // Start rename
-          const selected = filteredSessions[selectedIndex];
+          const selected = session.filteredSessions[state.selectedIndex];
           if (selected) {
-            dispatch({ type: 'START_RENAME', sessionId: selected.id, currentName: selected.name });
+            startRename(selected.id, selected.name);
           }
           return true;
         }
@@ -115,8 +112,8 @@ export function SessionPicker({ width, height }: SessionPickerProps) {
         case 'x':
         case 'd': {
           // Delete session
-          const selected = filteredSessions[selectedIndex];
-          if (selected && filteredSessions.length > 1) {
+          const selected = session.filteredSessions[state.selectedIndex];
+          if (selected && session.filteredSessions.length > 1) {
             deleteSession(selected.id);
           }
           return true;
@@ -132,16 +129,16 @@ export function SessionPicker({ width, height }: SessionPickerProps) {
         return true;
 
       case 'down':
-        dispatch({ type: 'NAVIGATE_DOWN' });
+        navigateDown();
         return true;
 
       case 'up':
-        dispatch({ type: 'NAVIGATE_UP' });
+        navigateUp();
         return true;
 
       case 'return':
       case 'enter': {
-        const selected = filteredSessions[selectedIndex];
+        const selected = session.filteredSessions[state.selectedIndex];
         if (selected) {
           // If selecting the already-active session, just close the picker
           if (selected.id === state.activeSessionId) {
@@ -155,118 +152,108 @@ export function SessionPicker({ width, height }: SessionPickerProps) {
 
       case 'backspace':
         // Remove last character from search
-        dispatch({ type: 'SET_SEARCH_QUERY', query: state.searchQuery.slice(0, -1) });
+        setSearchQuery(state.searchQuery.slice(0, -1));
         return true;
 
       default:
         // Single printable character - add to search
         if (key.length === 1 && !event.ctrl && !event.alt) {
-          dispatch({ type: 'SET_SEARCH_QUERY', query: state.searchQuery + key });
+          setSearchQuery(state.searchQuery + key);
           return true;
         }
         return false;
     }
-  }, [
-    showSessionPicker,
-    isRenaming,
-    renameValue,
-    renamingSessionId,
-    filteredSessions,
-    selectedIndex,
-    state.searchQuery,
-    dispatch,
-    closePicker,
-    saveSession,
-    switchSession,
-    createSession,
-    renameSession,
-    deleteSession,
-  ]);
+  };
 
   // Register keyboard handler with KeyboardRouter
-  useEffect(() => {
+  createEffect(() => {
     let unsubscribe: (() => void) | null = null;
     registerKeyboardHandler('sessionPicker', handleKeyDown).then((unsub) => {
       unsubscribe = unsub;
     });
-    return () => {
+    onCleanup(() => {
       if (unsubscribe) unsubscribe();
-    };
-  }, [handleKeyDown]);
-
-  if (!showSessionPicker) return null;
+    });
+  });
 
   // Calculate overlay dimensions
-  const overlayWidth = Math.min(60, width - 4);
+  const overlayWidth = () => Math.min(60, props.width - 4);
   // Height: search(1) + separator(1) + sessions/empty(max 1) + separator(1) + footer(1) + border(2) + padding(2) = 9 minimum
-  const sessionRowCount = Math.max(1, filteredSessions.length); // At least 1 for "No sessions found"
-  const overlayHeight = Math.min(sessionRowCount + 7, height - 4);
-  const overlayX = Math.floor((width - overlayWidth) / 2);
-  const overlayY = Math.floor((height - overlayHeight) / 2);
+  const sessionRowCount = () => Math.max(1, session.filteredSessions.length); // At least 1 for "No sessions found"
+  const overlayHeight = () => Math.min(sessionRowCount() + 7, props.height - 4);
+  const overlayX = () => Math.floor((props.width - overlayWidth()) / 2);
+  const overlayY = () => Math.floor((props.height - overlayHeight()) / 2);
 
   return (
-    <box
-      style={{
-        position: 'absolute',
-        left: overlayX,
-        top: overlayY,
-        width: overlayWidth,
-        height: overlayHeight,
-        border: true,
-        borderStyle: 'rounded',
-        borderColor: '#00AAFF',
-        padding: 1,
-      }}
-      backgroundColor="#1a1a1a"
-      title=" Sessions "
-      titleAlignment="center"
-    >
-      <box style={{ flexDirection: 'column' }}>
-        {/* Search bar */}
-        <box style={{ flexDirection: 'row', height: 1 }}>
-          <text fg="#888888">{isRenaming ? 'Rename: ' : 'Search: '}</text>
-          <text fg="#FFFFFF">
-            {(isRenaming ? renameValue : state.searchQuery) + '_'}
-          </text>
-        </box>
-
-        {/* Separator */}
-        <box style={{ height: 1 }}>
-          <text fg="#444444">{'─'.repeat(overlayWidth - 4)}</text>
-        </box>
-
-        {/* Session list */}
-        {filteredSessions.length > 0 ? (
-          filteredSessions.map((session, index) => (
-            <box key={session.id} style={{ height: 1 }}>
-              <SessionRow
-                session={session}
-                isSelected={index === selectedIndex}
-                isActive={session.id === state.activeSessionId}
-                isRenaming={isRenaming && session.id === renamingSessionId}
-                renameValue={renameValue}
-                summary={summaries.get(session.id)}
-                maxWidth={overlayWidth - 4}
-              />
-            </box>
-          ))
-        ) : (
-          <box style={{ height: 1 }}>
-            <text fg="#666666">  No sessions found</text>
+    <Show when={state.showSessionPicker}>
+      <box
+        style={{
+          position: 'absolute',
+          left: overlayX(),
+          top: overlayY(),
+          width: overlayWidth(),
+          height: overlayHeight(),
+          border: true,
+          borderStyle: 'rounded',
+          borderColor: '#00AAFF',
+          padding: 1,
+        }}
+        backgroundColor="#1a1a1a"
+        title=" Sessions "
+        titleAlignment="center"
+      >
+        <box style={{ flexDirection: 'column' }}>
+          {/* Search bar */}
+          <box style={{ flexDirection: 'row', height: 1 }}>
+            <text fg="#888888">{state.isRenaming ? 'Rename: ' : 'Search: '}</text>
+            <text fg="#FFFFFF">
+              {(state.isRenaming ? state.renameValue : state.searchQuery) + '_'}
+            </text>
           </box>
-        )}
 
-        {/* Footer with hints */}
-        <box style={{ height: 1 }}>
-          <text fg="#444444">{'─'.repeat(overlayWidth - 4)}</text>
-        </box>
-        <box style={{ height: 1 }}>
-          <text fg="#666666">
-            ↑↓:nav Enter:select ^n:new ^r:rename ^x:del Esc:close
-          </text>
+          {/* Separator */}
+          <box style={{ height: 1 }}>
+            <text fg="#444444">{'─'.repeat(overlayWidth() - 4)}</text>
+          </box>
+
+          {/* Session list */}
+          <Show
+            when={session.filteredSessions.length > 0}
+            fallback={
+              <box style={{ height: 1 }}>
+                <text fg="#666666">  No sessions found</text>
+              </box>
+            }
+          >
+            <For each={session.filteredSessions}>
+              {(sess, index) => (
+                <box style={{ height: 1 }}>
+                  <SessionRow
+                    session={sess}
+                    isSelected={index() === state.selectedIndex}
+                    isActive={sess.id === state.activeSessionId}
+                    isRenaming={state.isRenaming && sess.id === state.renamingSessionId}
+                    renameValue={state.renameValue}
+                    summary={state.summaries.get(sess.id)}
+                    maxWidth={overlayWidth() - 4}
+                  />
+                </box>
+              )}
+            </For>
+          </Show>
+
+          {/* Footer with hints */}
+          <box style={{ height: 1 }}>
+            <text fg="#444444">{'─'.repeat(overlayWidth() - 4)}</text>
+          </box>
+          <box style={{ height: 1 }}>
+            <text fg="#666666">
+              ↑↓:nav Enter:select ^n:new ^r:rename ^x:del Esc:close
+            </text>
+          </box>
         </box>
       </box>
-    </box>
+    </Show>
   );
 }
 
@@ -280,40 +267,36 @@ interface SessionRowProps {
   maxWidth: number;
 }
 
-function SessionRow({
-  session,
-  isSelected,
-  isActive,
-  isRenaming,
-  renameValue,
-  summary,
-  maxWidth,
-}: SessionRowProps) {
+function SessionRow(props: SessionRowProps) {
   // Build the row content
-  const activeMarker = isActive ? '*' : ' ';
-  const selectMarker = isSelected ? '>' : ' ';
+  const activeMarker = () => props.isActive ? '*' : ' ';
+  const selectMarker = () => props.isSelected ? '>' : ' ';
 
   // Name (possibly being renamed)
-  const displayName = isRenaming ? renameValue : session.name;
-  const nameWidth = Math.min(20, maxWidth - 30);
-  const truncatedName = displayName.length > nameWidth
-    ? displayName.slice(0, nameWidth - 1) + '…'
-    : displayName.padEnd(nameWidth);
+  const displayName = () => props.isRenaming ? props.renameValue : props.session.name;
+  const nameWidth = () => Math.min(20, props.maxWidth - 30);
+  const truncatedName = () => {
+    const name = displayName();
+    const width = nameWidth();
+    return name.length > width
+      ? name.slice(0, width - 1) + '…'
+      : name.padEnd(width);
+  };
 
   // Summary info
-  const workspaceInfo = summary ? `${summary.workspaceCount}ws` : '   ';
-  const paneInfo = summary ? `${summary.paneCount}p` : '  ';
+  const workspaceInfo = () => props.summary ? `${props.summary.workspaceCount}ws` : '   ';
+  const paneInfo = () => props.summary ? `${props.summary.paneCount}p` : '  ';
 
   // Time
-  const timeStr = formatRelativeTime(session.lastSwitchedAt);
+  const timeStr = () => formatRelativeTime(props.session.lastSwitchedAt);
 
   // Colors - use brighter color for selection
-  const nameColor = isSelected ? '#FFFFFF' : (isActive ? '#00AAFF' : '#CCCCCC');
+  const nameColor = () => props.isSelected ? '#FFFFFF' : (props.isActive ? '#00AAFF' : '#CCCCCC');
 
   // Build the line as a single string with proper formatting
-  const line = `${selectMarker}${activeMarker} ${truncatedName} ${workspaceInfo} ${paneInfo} ${timeStr}`;
+  const line = () => `${selectMarker()}${activeMarker()} ${truncatedName()} ${workspaceInfo()} ${paneInfo()} ${timeStr()}`;
 
   return (
-    <text fg={nameColor}>{line}</text>
+    <text fg={nameColor()}>{line()}</text>
   );
 }

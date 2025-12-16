@@ -4,7 +4,7 @@
  * Uses the same approach as the main TerminalView (renderAfter callback)
  */
 
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { Show, createSignal, createEffect, onCleanup } from 'solid-js';
 import { type OptimizedBuffer } from '@opentui/core';
 import { resizePty, subscribeUnifiedToPty } from '../../effect/bridge';
 import {
@@ -27,60 +27,57 @@ interface InteractivePreviewProps {
   offsetY?: number;
 }
 
-export function InteractivePreview({
-  ptyId,
-  width,
-  height,
-  isInteractive,
-  offsetX = 0,
-  offsetY = 0,
-}: InteractivePreviewProps) {
-  const lastResizeRef = useRef<{ ptyId: string; width: number; height: number } | null>(null);
-  const terminalStateRef = useRef<TerminalState | null>(null);
-  const renderRequestedRef = useRef(false);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-  const [version, setVersion] = useState(0);
+export function InteractivePreview(props: InteractivePreviewProps) {
+  // Plain variables (in Solid, no stale closure issues)
+  let lastResize: { ptyId: string; width: number; height: number } | null = null;
+  let terminalState: TerminalState | null = null;
+  let renderRequested = false;
+  let unsubscribe: (() => void) | null = null;
+  let cachedRows: TerminalCell[][] = [];
+
+  const [version, setVersion] = createSignal(0);
 
   // Resize PTY when previewing to match preview dimensions
-  useEffect(() => {
+  createEffect(() => {
+    const ptyId = props.ptyId;
     if (!ptyId) return;
 
     // Only resize if dimensions actually changed
-    const lastResize = lastResizeRef.current;
-    if (lastResize && lastResize.ptyId === ptyId && lastResize.width === width && lastResize.height === height) {
+    if (lastResize && lastResize.ptyId === ptyId && lastResize.width === props.width && lastResize.height === props.height) {
       return;
     }
 
     // Resize the PTY to match the preview dimensions
     // When aggregate view closes, App.tsx will restore the original pane dimensions
-    resizePty(ptyId, width, height);
-    lastResizeRef.current = { ptyId, width, height };
-  }, [ptyId, width, height]);
+    resizePty(ptyId, props.width, props.height);
+    lastResize = { ptyId, width: props.width, height: props.height };
+  });
 
   // Subscribe to terminal updates
-  useEffect(() => {
+  createEffect(() => {
     // Clean up previous subscription first
-    if (unsubscribeRef.current) {
-      unsubscribeRef.current();
-      unsubscribeRef.current = null;
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
     }
 
+    const ptyId = props.ptyId;
     if (!ptyId) {
-      terminalStateRef.current = null;
+      terminalState = null;
       setVersion(v => v + 1);
       return;
     }
 
     let mounted = true;
-    let cachedRows: TerminalCell[][] = [];
+    cachedRows = [];
 
     // Batched render request
     const requestRender = () => {
-      if (!renderRequestedRef.current && mounted) {
-        renderRequestedRef.current = true;
+      if (!renderRequested && mounted) {
+        renderRequested = true;
         queueMicrotask(() => {
           if (mounted) {
-            renderRequestedRef.current = false;
+            renderRequested = false;
             setVersion(v => v + 1);
           }
         });
@@ -94,15 +91,15 @@ export function InteractivePreview({
         const { terminalUpdate } = update;
 
         if (terminalUpdate.isFull && terminalUpdate.fullState) {
-          terminalStateRef.current = terminalUpdate.fullState;
+          terminalState = terminalUpdate.fullState;
           cachedRows = [...terminalUpdate.fullState.cells];
         } else {
-          const existingState = terminalStateRef.current;
+          const existingState = terminalState;
           if (existingState) {
             for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
               cachedRows[rowIdx] = newRow;
             }
-            terminalStateRef.current = {
+            terminalState = {
               ...existingState,
               cells: cachedRows,
               cursor: terminalUpdate.cursor,
@@ -117,7 +114,7 @@ export function InteractivePreview({
       });
 
       if (mounted) {
-        unsubscribeRef.current = unsub;
+        unsubscribe = unsub;
       } else {
         unsub();
       }
@@ -129,20 +126,26 @@ export function InteractivePreview({
 
     init();
 
-    return () => {
+    onCleanup(() => {
       mounted = false;
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-        unsubscribeRef.current = null;
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
       }
-      terminalStateRef.current = null;
+      terminalState = null;
       cachedRows = [];
-    };
-  }, [ptyId]);
+    });
+  });
 
   // Direct buffer render callback (same approach as TerminalView)
-  const renderTerminal = useCallback((buffer: OptimizedBuffer) => {
-    const state = terminalStateRef.current;
+  const renderTerminal = (buffer: OptimizedBuffer) => {
+    const state = terminalState;
+    const width = props.width;
+    const height = props.height;
+    const offsetX = props.offsetX ?? 0;
+    const offsetY = props.offsetY ?? 0;
+    const isInteractive = props.isInteractive;
+
     if (!state) {
       // Clear buffer when no state
       for (let y = 0; y < height; y++) {
@@ -221,25 +224,30 @@ export function InteractivePreview({
         }
       }
     }
-  }, [width, height, isInteractive, offsetX, offsetY]);
+  };
 
-  if (!ptyId) {
-    return (
-      <box style={{ width, height, alignItems: 'center', justifyContent: 'center' }}>
-        <text fg="#666666">No terminal selected</text>
-      </box>
-    );
-  }
-
-  if (!terminalStateRef.current) {
-    return (
-      <box style={{ width, height, alignItems: 'center', justifyContent: 'center' }}>
-        <text fg="#666666">Loading...</text>
-      </box>
-    );
-  }
+  // For Solid reactivity - version() triggers re-render
+  const _v = () => version();
 
   return (
-    <box style={{ width, height }} renderAfter={renderTerminal} />
+    <Show
+      when={props.ptyId}
+      fallback={
+        <box style={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center' }}>
+          <text fg="#666666">No terminal selected</text>
+        </box>
+      }
+    >
+      <Show
+        when={terminalState || _v() >= 0}
+        fallback={
+          <box style={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center' }}>
+            <text fg="#666666">Loading...</text>
+          </box>
+        }
+      >
+        <box style={{ width: props.width, height: props.height }} renderAfter={renderTerminal} />
+      </Show>
+    </Show>
   );
 }

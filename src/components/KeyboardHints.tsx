@@ -2,6 +2,7 @@
  * KeyboardHints - overlay showing available keyboard shortcuts
  */
 
+import { Show, For } from 'solid-js';
 import { useKeyboardState } from '../contexts/KeyboardContext';
 import type { KeyMode } from '../core/types';
 
@@ -56,53 +57,57 @@ interface KeyboardHintsProps {
   height: number;
 }
 
-export function KeyboardHints({ width, height }: KeyboardHintsProps) {
+export function KeyboardHints(props: KeyboardHintsProps) {
   const { state } = useKeyboardState();
 
-  if (!state.showHints) return null;
-
-  const hints =
-    state.mode === 'normal'
+  const hints = () => {
+    const mode = state.mode;
+    return mode === 'normal'
       ? NORMAL_MODE_HINTS
-      : state.mode === 'search'
+      : mode === 'search'
         ? SEARCH_MODE_HINTS
         : PREFIX_MODE_HINTS;
+  };
 
   // Center the hints overlay
   const overlayWidth = 40;
-  const overlayHeight = hints.length + 4;
-  const overlayX = Math.floor((width - overlayWidth) / 2);
-  const overlayY = Math.floor((height - overlayHeight) / 2);
+  const overlayHeight = () => hints().length + 4;
+  const overlayX = () => Math.floor((props.width - overlayWidth) / 2);
+  const overlayY = () => Math.floor((props.height - overlayHeight()) / 2);
 
   return (
-    <box
-      style={{
-        position: 'absolute',
-        left: overlayX,
-        top: overlayY,
-        width: overlayWidth,
-        height: overlayHeight,
-        border: true,
-        borderStyle: 'rounded',
-        borderColor: '#FFD700',
-        padding: 1,
-      }}
-      backgroundColor="#1a1a1a"
-      title={` ${state.mode.toUpperCase()} Mode `}
-      titleAlignment="center"
-    >
-      <box style={{ flexDirection: 'column' }}>
-        {hints.map((hint, i) => (
-          <box key={i} style={{ flexDirection: 'row' }}>
-            <text fg="#FFD700" style={{ width: 12 }}>
-              {hint.key}
-            </text>
-            <text fg="#CCCCCC">
-              {hint.description}
-            </text>
-          </box>
-        ))}
+    <Show when={state.showHints}>
+      <box
+        style={{
+          position: 'absolute',
+          left: overlayX(),
+          top: overlayY(),
+          width: overlayWidth,
+          height: overlayHeight(),
+          border: true,
+          borderStyle: 'rounded',
+          borderColor: '#FFD700',
+          padding: 1,
+        }}
+        backgroundColor="#1a1a1a"
+        title={` ${state.mode.toUpperCase()} Mode `}
+        titleAlignment="center"
+      >
+        <box style={{ flexDirection: 'column' }}>
+          <For each={hints()}>
+            {(hint) => (
+              <box style={{ flexDirection: 'row' }}>
+                <text fg="#FFD700" style={{ width: 12 }}>
+                  {hint.key}
+                </text>
+                <text fg="#CCCCCC">
+                  {hint.description}
+                </text>
+              </box>
+            )}
+          </For>
+        </box>
       </box>
-    </box>
+    </Show>
   );
 }

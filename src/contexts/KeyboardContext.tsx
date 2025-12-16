@@ -5,132 +5,142 @@
 import {
   createContext,
   useContext,
-  useReducer,
-  useEffect,
-  useCallback,
-  type ReactNode,
-  type Dispatch,
-} from 'react';
+  createEffect,
+  onCleanup,
+  type ParentProps,
+} from 'solid-js';
+import { createStore, produce } from 'solid-js/store';
 import type { KeyMode, KeyboardState, WorkspaceId, ConfirmationType } from '../core/types';
 import { PREFIX_KEY, DEFAULT_CONFIG } from '../core/config';
 import { useLayout } from './LayoutContext';
 import { keyToDirection } from '../core/keyboard-utils';
 
-type KeyboardAction =
-  | { type: 'ENTER_PREFIX_MODE' }
-  | { type: 'EXIT_PREFIX_MODE' }
-  | { type: 'ENTER_SEARCH_MODE' }
-  | { type: 'EXIT_SEARCH_MODE' }
-  | { type: 'ENTER_AGGREGATE_MODE' }
-  | { type: 'EXIT_AGGREGATE_MODE' }
-  | { type: 'ENTER_CONFIRM_MODE'; confirmationType: ConfirmationType }
-  | { type: 'EXIT_CONFIRM_MODE' }
-  | { type: 'TOGGLE_HINTS' };
-
-function keyboardReducer(state: KeyboardState, action: KeyboardAction): KeyboardState {
-  switch (action.type) {
-    case 'ENTER_PREFIX_MODE':
-      return {
-        ...state,
-        mode: 'prefix',
-        prefixActivatedAt: Date.now(),
-      };
-
-    case 'EXIT_PREFIX_MODE':
-      return {
-        ...state,
-        mode: 'normal',
-        prefixActivatedAt: undefined,
-      };
-
-    case 'ENTER_SEARCH_MODE':
-      return {
-        ...state,
-        mode: 'search',
-        prefixActivatedAt: undefined,
-      };
-
-    case 'EXIT_SEARCH_MODE':
-      return {
-        ...state,
-        mode: 'normal',
-      };
-
-    case 'ENTER_AGGREGATE_MODE':
-      return {
-        ...state,
-        mode: 'aggregate',
-        prefixActivatedAt: undefined,
-      };
-
-    case 'EXIT_AGGREGATE_MODE':
-      return {
-        ...state,
-        mode: 'normal',
-      };
-
-    case 'ENTER_CONFIRM_MODE':
-      return {
-        ...state,
-        mode: 'confirm',
-        prefixActivatedAt: undefined,
-        confirmationType: action.confirmationType,
-      };
-
-    case 'EXIT_CONFIRM_MODE':
-      return {
-        ...state,
-        mode: 'normal',
-        confirmationType: undefined,
-      };
-
-    case 'TOGGLE_HINTS':
-      return {
-        ...state,
-        showHints: !state.showHints,
-      };
-
-    default:
-      return state;
-  }
-}
+// =============================================================================
+// Context
+// =============================================================================
 
 interface KeyboardContextValue {
   state: KeyboardState;
-  dispatch: Dispatch<KeyboardAction>;
+  enterPrefixMode: () => void;
+  exitPrefixMode: () => void;
+  enterSearchMode: () => void;
+  exitSearchMode: () => void;
+  enterAggregateMode: () => void;
+  exitAggregateMode: () => void;
+  enterConfirmMode: (confirmationType: ConfirmationType) => void;
+  exitConfirmMode: () => void;
+  toggleHints: () => void;
 }
 
 const KeyboardContext = createContext<KeyboardContextValue | null>(null);
 
-interface KeyboardProviderProps {
-  children: ReactNode;
-}
+// =============================================================================
+// Provider
+// =============================================================================
 
-export function KeyboardProvider({ children }: KeyboardProviderProps) {
+interface KeyboardProviderProps extends ParentProps {}
+
+export function KeyboardProvider(props: KeyboardProviderProps) {
   const initialState: KeyboardState = {
     mode: 'normal',
     showHints: false,
   };
 
-  const [state, dispatch] = useReducer(keyboardReducer, initialState);
+  const [state, setState] = createStore<KeyboardState>(initialState);
 
   // Prefix mode timeout
-  useEffect(() => {
+  createEffect(() => {
     if (state.mode !== 'prefix' || !state.prefixActivatedAt) return;
 
     const timeout = setTimeout(() => {
-      dispatch({ type: 'EXIT_PREFIX_MODE' });
+      setState(produce((s) => {
+        s.mode = 'normal';
+        s.prefixActivatedAt = undefined;
+      }));
     }, DEFAULT_CONFIG.prefixTimeout);
 
-    return () => clearTimeout(timeout);
-  }, [state.mode, state.prefixActivatedAt]);
+    onCleanup(() => clearTimeout(timeout));
+  });
+
+  // Actions
+  const enterPrefixMode = () => {
+    setState(produce((s) => {
+      s.mode = 'prefix';
+      s.prefixActivatedAt = Date.now();
+    }));
+  };
+
+  const exitPrefixMode = () => {
+    setState(produce((s) => {
+      s.mode = 'normal';
+      s.prefixActivatedAt = undefined;
+    }));
+  };
+
+  const enterSearchMode = () => {
+    setState(produce((s) => {
+      s.mode = 'search';
+      s.prefixActivatedAt = undefined;
+    }));
+  };
+
+  const exitSearchMode = () => {
+    setState('mode', 'normal');
+  };
+
+  const enterAggregateMode = () => {
+    setState(produce((s) => {
+      s.mode = 'aggregate';
+      s.prefixActivatedAt = undefined;
+    }));
+  };
+
+  const exitAggregateMode = () => {
+    setState('mode', 'normal');
+  };
+
+  const enterConfirmMode = (confirmationType: ConfirmationType) => {
+    setState(produce((s) => {
+      s.mode = 'confirm';
+      s.prefixActivatedAt = undefined;
+      s.confirmationType = confirmationType;
+    }));
+  };
+
+  const exitConfirmMode = () => {
+    setState(produce((s) => {
+      s.mode = 'normal';
+      s.confirmationType = undefined;
+    }));
+  };
+
+  const toggleHints = () => {
+    setState('showHints', (prev) => !prev);
+  };
+
+  const value: KeyboardContextValue = {
+    state,
+    enterPrefixMode,
+    exitPrefixMode,
+    enterSearchMode,
+    exitSearchMode,
+    enterAggregateMode,
+    exitAggregateMode,
+    enterConfirmMode,
+    exitConfirmMode,
+    toggleHints,
+  };
 
   return (
-    <KeyboardContext.Provider value={{ state, dispatch }}>
-      {children}
+    <KeyboardContext.Provider value={value}>
+      {props.children}
     </KeyboardContext.Provider>
   );
 }
+
+// =============================================================================
+// Hook
+// =============================================================================
 
 export function useKeyboardState(): KeyboardContextValue {
   const context = useContext(KeyboardContext);
@@ -139,6 +149,10 @@ export function useKeyboardState(): KeyboardContextValue {
   }
   return context;
 }
+
+// =============================================================================
+// Keyboard Handler Hook
+// =============================================================================
 
 /** Layout modes for cycling */
 const LAYOUT_MODES: Array<'vertical' | 'horizontal' | 'stacked'> = ['vertical', 'horizontal', 'stacked'];
@@ -159,18 +173,28 @@ interface KeyboardHandlerOptions {
  * Hook for handling keyboard input across all modes
  */
 export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
-  const { state: kbState, dispatch: kbDispatch } = useKeyboardState();
-  const { dispatch: layoutDispatch, activeWorkspace } = useLayout();
-  const { onPaste, onNewPane, onQuit, onRequestQuit, onRequestClosePane, onToggleSessionPicker, onEnterSearch, onToggleConsole, onToggleAggregateView } = options;
+  const keyboard = useKeyboardState();
+  const layout = useLayout();
+  const {
+    onPaste,
+    onNewPane,
+    onQuit,
+    onRequestQuit,
+    onRequestClosePane,
+    onToggleSessionPicker,
+    onEnterSearch,
+    onToggleConsole,
+    onToggleAggregateView,
+  } = options;
 
-  const handleKeyDown = useCallback((event: {
+  const handleKeyDown = (event: {
     key: string;
     ctrl?: boolean;
     alt?: boolean;
     shift?: boolean;
     meta?: boolean;
   }) => {
-    const { key, ctrl, alt, shift, meta } = event;
+    const { key, ctrl, alt } = event;
 
     // Note: We do NOT intercept Ctrl+V here. Applications like Claude Code need to
     // receive Ctrl+V directly so they can trigger their own clipboard reading (which
@@ -178,44 +202,71 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
     // (which triggers bracketed paste via PasteEvent handled in App.tsx).
 
     // Handle Alt keybindings (prefix-less actions) in normal mode
-    if (kbState.mode === 'normal' && alt) {
-      return handleAltKey(key, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onNewPane, onToggleSessionPicker, onEnterSearch, onToggleAggregateView, onRequestClosePane);
+    if (keyboard.state.mode === 'normal' && alt) {
+      return handleAltKey(
+        key,
+        keyboard,
+        layout,
+        layout.activeWorkspace.layoutMode,
+        onNewPane,
+        onToggleSessionPicker,
+        onEnterSearch,
+        onToggleAggregateView,
+        onRequestClosePane
+      );
     }
 
     // Handle Ctrl+B to enter prefix mode (only in normal mode)
-    if (kbState.mode === 'normal' && ctrl && key.toLowerCase() === PREFIX_KEY) {
-      kbDispatch({ type: 'ENTER_PREFIX_MODE' });
+    if (keyboard.state.mode === 'normal' && ctrl && key.toLowerCase() === PREFIX_KEY) {
+      keyboard.enterPrefixMode();
       return true;
     }
 
     // Handle Escape to exit prefix mode
     if (key === 'Escape' || key === 'escape') {
-      if (kbState.mode === 'prefix') {
-        kbDispatch({ type: 'EXIT_PREFIX_MODE' });
+      if (keyboard.state.mode === 'prefix') {
+        keyboard.exitPrefixMode();
         return true;
       }
       return false;
     }
 
     // Prefix mode commands
-    if (kbState.mode === 'prefix') {
-      return handlePrefixModeKey(key, kbDispatch, layoutDispatch, onPaste, onNewPane, onQuit, onRequestQuit, onRequestClosePane, onToggleSessionPicker, onEnterSearch, onToggleConsole, onToggleAggregateView);
+    if (keyboard.state.mode === 'prefix') {
+      return handlePrefixModeKey(
+        key,
+        keyboard,
+        layout,
+        onPaste,
+        onNewPane,
+        onQuit,
+        onRequestQuit,
+        onRequestClosePane,
+        onToggleSessionPicker,
+        onEnterSearch,
+        onToggleConsole,
+        onToggleAggregateView
+      );
     }
 
     // Normal mode - pass through to terminal
     return false;
-  }, [kbState.mode, kbDispatch, layoutDispatch, activeWorkspace.layoutMode, onPaste, onNewPane, onQuit, onRequestQuit, onRequestClosePane, onToggleSessionPicker, onEnterSearch, onToggleConsole, onToggleAggregateView]);
+  };
 
-  return { handleKeyDown, mode: kbState.mode };
+  return { handleKeyDown, mode: keyboard.state.mode };
 }
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
 
 /**
  * Handle Alt key combinations (prefix-less actions)
  */
 function handleAltKey(
   key: string,
-  kbDispatch: Dispatch<KeyboardAction>,
-  layoutDispatch: ReturnType<typeof useLayout>['dispatch'],
+  keyboard: KeyboardContextValue,
+  layout: ReturnType<typeof useLayout>,
   currentLayoutMode: 'vertical' | 'horizontal' | 'stacked',
   onNewPane?: () => void,
   onToggleSessionPicker?: () => void,
@@ -226,14 +277,14 @@ function handleAltKey(
   // Alt+hjkl for navigation
   const direction = keyToDirection(key);
   if (direction) {
-    layoutDispatch({ type: 'NAVIGATE', direction });
+    layout.navigate(direction);
     return true;
   }
 
   // Alt+1-9 for workspace switching
   if (/^[1-9]$/.test(key)) {
     const workspaceId = parseInt(key, 10) as WorkspaceId;
-    layoutDispatch({ type: 'SWITCH_WORKSPACE', workspaceId });
+    layout.switchWorkspace(workspaceId);
     return true;
   }
 
@@ -244,7 +295,7 @@ function handleAltKey(
       if (onNewPane) {
         onNewPane();
       } else {
-        layoutDispatch({ type: 'NEW_PANE' });
+        layout.newPane();
       }
       return true;
 
@@ -253,7 +304,7 @@ function handleAltKey(
       {
         const currentIndex = LAYOUT_MODES.indexOf(currentLayoutMode);
         const newIndex = (currentIndex - 1 + LAYOUT_MODES.length) % LAYOUT_MODES.length;
-        layoutDispatch({ type: 'SET_LAYOUT_MODE', mode: LAYOUT_MODES[newIndex]! });
+        layout.setLayoutMode(LAYOUT_MODES[newIndex]!);
       }
       return true;
 
@@ -262,7 +313,7 @@ function handleAltKey(
       {
         const currentIndex = LAYOUT_MODES.indexOf(currentLayoutMode);
         const newIndex = (currentIndex + 1) % LAYOUT_MODES.length;
-        layoutDispatch({ type: 'SET_LAYOUT_MODE', mode: LAYOUT_MODES[newIndex]! });
+        layout.setLayoutMode(LAYOUT_MODES[newIndex]!);
       }
       return true;
 
@@ -271,13 +322,13 @@ function handleAltKey(
       if (onRequestClosePane) {
         onRequestClosePane();
       } else {
-        layoutDispatch({ type: 'CLOSE_PANE' });
+        layout.closePane();
       }
       return true;
 
     // Alt+z to toggle zoom
     case 'z':
-      layoutDispatch({ type: 'TOGGLE_ZOOM' });
+      layout.toggleZoom();
       return true;
 
     // Alt+s to toggle session picker
@@ -288,7 +339,7 @@ function handleAltKey(
     // Alt+f to open search
     case 'f':
       if (onEnterSearch) {
-        kbDispatch({ type: 'ENTER_SEARCH_MODE' });
+        keyboard.enterSearchMode();
         onEnterSearch();
         return true;
       }
@@ -297,7 +348,7 @@ function handleAltKey(
     // Alt+g to toggle aggregate view (global view)
     case 'g':
       if (onToggleAggregateView) {
-        kbDispatch({ type: 'ENTER_AGGREGATE_MODE' });
+        keyboard.enterAggregateMode();
         onToggleAggregateView();
         return true;
       }
@@ -310,8 +361,8 @@ function handleAltKey(
 
 function handlePrefixModeKey(
   key: string,
-  kbDispatch: Dispatch<KeyboardAction>,
-  layoutDispatch: ReturnType<typeof useLayout>['dispatch'],
+  keyboard: KeyboardContextValue,
+  layout: ReturnType<typeof useLayout>,
   onPaste?: () => void,
   onNewPane?: () => void,
   onQuit?: () => void,
@@ -322,12 +373,12 @@ function handlePrefixModeKey(
   onToggleConsole?: () => void,
   onToggleAggregateView?: () => void
 ): boolean {
-  const exitPrefix = () => kbDispatch({ type: 'EXIT_PREFIX_MODE' });
+  const exitPrefix = () => keyboard.exitPrefixMode();
 
   // Navigation (hjkl like vim/i3)
   const direction = keyToDirection(key);
   if (direction) {
-    layoutDispatch({ type: 'NAVIGATE', direction });
+    layout.navigate(direction);
     exitPrefix();
     return true;
   }
@@ -335,7 +386,7 @@ function handlePrefixModeKey(
   // Workspace switching (1-9)
   if (/^[1-9]$/.test(key)) {
     const workspaceId = parseInt(key, 10) as WorkspaceId;
-    layoutDispatch({ type: 'SWITCH_WORKSPACE', workspaceId });
+    layout.switchWorkspace(workspaceId);
     exitPrefix();
     return true;
   }
@@ -347,7 +398,7 @@ function handlePrefixModeKey(
       if (onNewPane) {
         onNewPane();
       } else {
-        layoutDispatch({ type: 'NEW_PANE' });
+        layout.newPane();
       }
       exitPrefix();
       return true;
@@ -357,14 +408,14 @@ function handlePrefixModeKey(
       if (onRequestClosePane) {
         onRequestClosePane();
       } else {
-        layoutDispatch({ type: 'CLOSE_PANE' });
+        layout.closePane();
       }
       exitPrefix();
       return true;
 
     // Layout mode: vertical (panes side by side)
     case 'v':
-      layoutDispatch({ type: 'SET_LAYOUT_MODE', mode: 'vertical' });
+      layout.setLayoutMode('vertical');
       exitPrefix();
       return true;
 
@@ -376,13 +427,13 @@ function handlePrefixModeKey(
 
     // Layout mode: horizontal (panes stacked top/bottom) - now 'h' instead of 's'
     case 'H':
-      layoutDispatch({ type: 'SET_LAYOUT_MODE', mode: 'horizontal' });
+      layout.setLayoutMode('horizontal');
       exitPrefix();
       return true;
 
     // Layout mode: stacked (tabs)
     case 't':
-      layoutDispatch({ type: 'SET_LAYOUT_MODE', mode: 'stacked' });
+      layout.setLayoutMode('stacked');
       exitPrefix();
       return true;
 
@@ -395,13 +446,13 @@ function handlePrefixModeKey(
 
     // Toggle zoom on focused pane
     case 'z':
-      layoutDispatch({ type: 'TOGGLE_ZOOM' });
+      layout.toggleZoom();
       exitPrefix();
       return true;
 
     // Toggle hints
     case '?':
-      kbDispatch({ type: 'TOGGLE_HINTS' });
+      keyboard.toggleHints();
       return true;
 
     // Quit openmux (with confirmation)
@@ -422,9 +473,9 @@ function handlePrefixModeKey(
     // Search mode (vim-style)
     case '/':
       if (onEnterSearch) {
-        kbDispatch({ type: 'ENTER_SEARCH_MODE' });
+        keyboard.enterSearchMode();
         onEnterSearch();
-        // Don't call exitPrefix() here - ENTER_SEARCH_MODE already handles the mode transition
+        // Don't call exitPrefix() here - enterSearchMode already handles the mode transition
         return true;
       }
       exitPrefix();
@@ -433,9 +484,9 @@ function handlePrefixModeKey(
     // Aggregate view (global view)
     case 'g':
       if (onToggleAggregateView) {
-        kbDispatch({ type: 'ENTER_AGGREGATE_MODE' });
+        keyboard.enterAggregateMode();
         onToggleAggregateView();
-        // Don't call exitPrefix() here - ENTER_AGGREGATE_MODE already handles the mode transition
+        // Don't call exitPrefix() here - enterAggregateMode already handles the mode transition
         return true;
       }
       exitPrefix();

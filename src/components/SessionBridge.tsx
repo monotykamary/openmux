@@ -3,7 +3,7 @@
  * This component lives inside all contexts and provides callbacks to SessionContext
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import type { ParentProps } from 'solid-js';
 import { useLayout } from '../contexts/LayoutContext';
 import { useTerminal } from '../contexts/TerminalContext';
 import { SessionProvider } from '../contexts/SessionContext';
@@ -13,56 +13,36 @@ import {
   setSessionCwdMap,
 } from '../effect/bridge';
 
-interface SessionBridgeProps {
-  children: React.ReactNode;
-}
+interface SessionBridgeProps extends ParentProps {}
 
-export function SessionBridge({ children }: SessionBridgeProps) {
-  const { dispatch: layoutDispatch, state: layoutState, layoutVersion } = useLayout();
-  const { createPTY, destroyAllPTYs, suspendSession, resumeSession, cleanupSessionPtys, getSessionCwd, isInitialized } = useTerminal();
+export function SessionBridge(props: SessionBridgeProps) {
+  const layout = useLayout();
+  const { loadSession, clearAll } = layout;
+  const { suspendSession, resumeSession, cleanupSessionPtys, getSessionCwd } = useTerminal();
 
-  // Refs for stable callbacks
-  const layoutStateRef = useRef(layoutState);
-  const createPTYRef = useRef(createPTY);
-  const destroyAllPTYsRef = useRef(destroyAllPTYs);
-  const suspendSessionRef = useRef(suspendSession);
-  const resumeSessionRef = useRef(resumeSession);
-  const cleanupSessionPtysRef = useRef(cleanupSessionPtys);
-  const getSessionCwdRef = useRef(getSessionCwd);
-  const layoutDispatchRef = useRef(layoutDispatch);
-
-  useEffect(() => {
-    layoutStateRef.current = layoutState;
-    createPTYRef.current = createPTY;
-    destroyAllPTYsRef.current = destroyAllPTYs;
-    suspendSessionRef.current = suspendSession;
-    resumeSessionRef.current = resumeSession;
-    cleanupSessionPtysRef.current = cleanupSessionPtys;
-    getSessionCwdRef.current = getSessionCwd;
-    layoutDispatchRef.current = layoutDispatch;
-  }, [layoutState, createPTY, destroyAllPTYs, suspendSession, resumeSession, cleanupSessionPtys, getSessionCwd, layoutDispatch]);
+  // In Solid, we don't need refs for stable callbacks - there are no stale closures
 
   // Callbacks for SessionProvider
-  const getCwd = useCallback(async (ptyId: string) => {
-    return getSessionCwdRef.current(ptyId);
-  }, []);
+  const getCwd = async (ptyId: string) => {
+    return getSessionCwd(ptyId);
+  };
 
-  const getWorkspaces = useCallback(() => {
-    return layoutStateRef.current.workspaces;
-  }, []);
+  const getWorkspaces = () => {
+    return layout.state.workspaces;
+  };
 
-  const getActiveWorkspaceId = useCallback(() => {
-    return layoutStateRef.current.activeWorkspaceId;
-  }, []);
+  const getActiveWorkspaceId = () => {
+    return layout.state.activeWorkspaceId;
+  };
 
-  const onSessionLoad = useCallback(async (
+  const onSessionLoad = async (
     workspaces: Map<WorkspaceId, Workspace>,
     activeWorkspaceId: WorkspaceId,
     cwdMap: Map<string, string>,
     sessionId: string
   ) => {
     // Try to resume PTYs for this session (if we've visited it before)
-    const restoredPtys = await resumeSessionRef.current(sessionId);
+    const restoredPtys = await resumeSession(sessionId);
 
     // If we have restored PTYs, assign them to the panes
     if (restoredPtys && restoredPtys.size > 0) {
@@ -86,24 +66,24 @@ export function SessionBridge({ children }: SessionBridgeProps) {
     await clearPtyTracking();
 
     // Load workspaces into layout
-    layoutDispatchRef.current({ type: 'LOAD_SESSION', workspaces, activeWorkspaceId });
+    loadSession({ workspaces, activeWorkspaceId });
 
     // Store cwdMap in AppCoordinator for AppContent to use (for panes without restored PTYs)
     await setSessionCwdMap(cwdMap);
-  }, []);
+  };
 
-  const onBeforeSwitch = useCallback(async (currentSessionId: string) => {
+  const onBeforeSwitch = async (currentSessionId: string) => {
     // Suspend PTYs for current session (save mapping, unsubscribe but don't destroy)
-    suspendSessionRef.current(currentSessionId);
-    layoutDispatchRef.current({ type: 'CLEAR_ALL' });
+    suspendSession(currentSessionId);
+    clearAll();
     // Clear PTY tracking
     await clearPtyTracking();
-  }, []);
+  };
 
-  const onDeleteSession = useCallback((sessionId: string) => {
+  const onDeleteSession = (sessionId: string) => {
     // Clean up PTYs for deleted session
-    cleanupSessionPtysRef.current(sessionId);
-  }, []);
+    cleanupSessionPtys(sessionId);
+  };
 
   return (
     <SessionProvider
@@ -113,9 +93,9 @@ export function SessionBridge({ children }: SessionBridgeProps) {
       onSessionLoad={onSessionLoad}
       onBeforeSwitch={onBeforeSwitch}
       onDeleteSession={onDeleteSession}
-      layoutVersion={layoutVersion}
+      layoutVersion={() => layout.layoutVersion}
     >
-      {children}
+      {props.children}
     </SessionProvider>
   );
 }

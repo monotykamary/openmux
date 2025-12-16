@@ -5,14 +5,14 @@
 import {
   createContext,
   useContext,
-  useReducer,
-  useMemo,
-  useEffect,
-  useCallback,
-  useRef,
-  type ReactNode,
-  type Dispatch,
-} from 'react';
+  createEffect,
+  createMemo,
+  onMount,
+  onCleanup,
+  type ParentProps,
+  type Accessor,
+} from 'solid-js';
+import { createStore, produce } from 'solid-js/store';
 import type { SessionId, SessionMetadata, Workspace, WorkspaceId } from '../core/types';
 import { DEFAULT_CONFIG } from '../core/config';
 import {
@@ -37,9 +37,12 @@ import {
 // Re-export types for external consumers
 export type { SessionState, SessionSummary };
 
+// =============================================================================
+// Context Value Interface
+// =============================================================================
+
 interface SessionContextValue {
   state: SessionState;
-  dispatch: Dispatch<SessionAction>;
   /** Filter sessions by search query */
   filteredSessions: SessionMetadata[];
   /** Create a new session */
@@ -58,12 +61,27 @@ interface SessionContextValue {
   togglePicker: () => void;
   /** Close session picker */
   closePicker: () => void;
+  /** Set search query */
+  setSearchQuery: (query: string) => void;
+  /** Start rename mode */
+  startRename: (id: SessionId, currentName: string) => void;
+  /** Cancel rename */
+  cancelRename: () => void;
+  /** Update rename value */
+  updateRenameValue: (value: string) => void;
+  /** Navigate up in picker */
+  navigateUp: () => void;
+  /** Navigate down in picker */
+  navigateDown: () => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
-interface SessionProviderProps {
-  children: ReactNode;
+// =============================================================================
+// Provider
+// =============================================================================
+
+interface SessionProviderProps extends ParentProps {
   /** Function to get CWD for a PTY ID */
   getCwd: (ptyId: string) => Promise<string>;
   /** Function to get current workspaces */
@@ -82,39 +100,22 @@ interface SessionProviderProps {
   /** Callback to cleanup PTYs when a session is deleted */
   onDeleteSession: (sessionId: string) => void;
   /** Layout version counter - triggers save when changed */
-  layoutVersion?: number;
+  layoutVersion?: Accessor<number>;
 }
 
-export function SessionProvider({
-  children,
-  getCwd,
-  getWorkspaces,
-  getActiveWorkspaceId,
-  onSessionLoad,
-  onBeforeSwitch,
-  onDeleteSession,
-  layoutVersion,
-}: SessionProviderProps) {
-  const [state, dispatch] = useReducer(sessionReducer, undefined, createInitialState);
+export function SessionProvider(props: SessionProviderProps) {
+  const [state, setState] = createStore<SessionState>(createInitialState());
 
-  // Keep refs for callbacks to avoid stale closures
-  const getCwdRef = useRef(getCwd);
-  const getWorkspacesRef = useRef(getWorkspaces);
-  const getActiveWorkspaceIdRef = useRef(getActiveWorkspaceId);
-  const onSessionLoadRef = useRef(onSessionLoad);
-  const onBeforeSwitchRef = useRef(onBeforeSwitch);
-  const onDeleteSessionRef = useRef(onDeleteSession);
+  // Helper to dispatch actions through the reducer
+  const dispatch = (action: SessionAction) => {
+    setState(produce((s) => {
+      const newState = sessionReducer(s as SessionState, action);
+      Object.assign(s, newState);
+    }));
+  };
 
-  useEffect(() => {
-    getCwdRef.current = getCwd;
-    getWorkspacesRef.current = getWorkspaces;
-    getActiveWorkspaceIdRef.current = getActiveWorkspaceId;
-    onSessionLoadRef.current = onSessionLoad;
-    onBeforeSwitchRef.current = onBeforeSwitch;
-    onDeleteSessionRef.current = onDeleteSession;
-  }, [getCwd, getWorkspaces, getActiveWorkspaceId, onSessionLoad, onBeforeSwitch, onDeleteSession]);
-
-  const refreshSessions = useCallback(async () => {
+  // Actions
+  const refreshSessions = async () => {
     const sessions = await listSessions();
     dispatch({ type: 'SET_SESSIONS', sessions });
 
@@ -127,109 +128,107 @@ export function SessionProvider({
       }
     }
     dispatch({ type: 'SET_SUMMARIES', summaries });
-  }, []);
+  };
 
   // Initialize on mount
-  useEffect(() => {
-    const init = async () => {
-      await refreshSessions();
+  onMount(async () => {
+    await refreshSessions();
 
-      // Get active session or create default
-      let activeId = await getActiveSessionId();
-      const sessions = await listSessions();
+    // Get active session or create default
+    let activeId = await getActiveSessionId();
+    const sessions = await listSessions();
 
-      if (!activeId && sessions.length === 0) {
-        // First run - create default session
-        const metadata = await createSessionOnDisk();
-        activeId = metadata.id;
-        dispatch({ type: 'SET_SESSIONS', sessions: [metadata] });
-        dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
-      } else if (activeId) {
-        // Load existing session
-        const session = sessions.find(s => s.id === activeId);
-        if (session) {
-          dispatch({ type: 'SET_ACTIVE_SESSION', id: activeId, session });
+    if (!activeId && sessions.length === 0) {
+      // First run - create default session
+      const metadata = await createSessionOnDisk();
+      activeId = metadata.id;
+      dispatch({ type: 'SET_SESSIONS', sessions: [metadata] });
+      dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
+    } else if (activeId) {
+      // Load existing session
+      const session = sessions.find(s => s.id === activeId);
+      if (session) {
+        dispatch({ type: 'SET_ACTIVE_SESSION', id: activeId, session });
 
-          // Update lastSwitchedAt so this session is properly marked as most recent
-          await switchToSession(activeId);
-          await refreshSessions();
+        // Update lastSwitchedAt so this session is properly marked as most recent
+        await switchToSession(activeId);
+        await refreshSessions();
 
-          // Load session data and notify parent
-          const data = await loadSessionData(activeId);
-          if (data && data.workspaces.size > 0) {
-            onSessionLoadRef.current(data.workspaces, data.activeWorkspaceId, data.cwdMap, activeId);
-          }
+        // Load session data and notify parent
+        const data = await loadSessionData(activeId);
+        if (data && data.workspaces.size > 0) {
+          props.onSessionLoad(data.workspaces, data.activeWorkspaceId, data.cwdMap, activeId);
         }
       }
+    }
 
-      dispatch({ type: 'SET_INITIALIZED' });
-    };
-
-    init();
-  }, [refreshSessions]);
+    dispatch({ type: 'SET_INITIALIZED' });
+  });
 
   // Auto-save interval
-  useEffect(() => {
+  createEffect(() => {
     if (!state.activeSession || DEFAULT_CONFIG.autoSaveInterval === 0) return;
 
     const interval = setInterval(async () => {
-      const workspaces = getWorkspacesRef.current();
-      const activeWorkspaceId = getActiveWorkspaceIdRef.current();
+      const workspaces = props.getWorkspaces();
+      const activeWorkspaceId = props.getActiveWorkspaceId();
 
       if (state.activeSession && workspaces.size > 0) {
         await saveCurrentSession(
           state.activeSession,
           workspaces,
           activeWorkspaceId,
-          getCwdRef.current
+          props.getCwd
         );
       }
     }, DEFAULT_CONFIG.autoSaveInterval);
 
-    return () => clearInterval(interval);
-  }, [state.activeSession]);
+    onCleanup(() => clearInterval(interval));
+  });
 
   // Track previous layoutVersion to detect changes
-  const prevLayoutVersionRef = useRef(layoutVersion);
+  let prevLayoutVersion = props.layoutVersion?.();
 
   // Immediate save when layoutVersion changes (pane/workspace changes)
-  useEffect(() => {
+  createEffect(() => {
+    const layoutVersion = props.layoutVersion?.();
+
     // Skip on initial render or if no active session
-    if (prevLayoutVersionRef.current === layoutVersion || !state.activeSession) {
-      prevLayoutVersionRef.current = layoutVersion;
+    if (prevLayoutVersion === layoutVersion || !state.activeSession) {
+      prevLayoutVersion = layoutVersion;
       return;
     }
 
-    prevLayoutVersionRef.current = layoutVersion;
+    prevLayoutVersion = layoutVersion;
 
     // Save immediately when layout changes
-    const workspaces = getWorkspacesRef.current();
-    const activeWorkspaceId = getActiveWorkspaceIdRef.current();
+    const workspaces = props.getWorkspaces();
+    const activeWorkspaceId = props.getActiveWorkspaceId();
 
     if (workspaces.size > 0) {
       saveCurrentSession(
         state.activeSession,
         workspaces,
         activeWorkspaceId,
-        getCwdRef.current
+        props.getCwd
       );
     }
-  }, [layoutVersion, state.activeSession]);
+  });
 
-  const createSession = useCallback(async (name?: string) => {
+  const createSession = async (name?: string) => {
     // Save current session first
     if (state.activeSession && state.activeSessionId) {
-      const workspaces = getWorkspacesRef.current();
-      const activeWorkspaceId = getActiveWorkspaceIdRef.current();
+      const workspaces = props.getWorkspaces();
+      const activeWorkspaceId = props.getActiveWorkspaceId();
       await saveCurrentSession(
         state.activeSession,
         workspaces,
         activeWorkspaceId,
-        getCwdRef.current
+        props.getCwd
       );
 
       // Suspend PTYs for current session before switching
-      onBeforeSwitchRef.current(state.activeSessionId);
+      props.onBeforeSwitch(state.activeSessionId);
     }
 
     const metadata = await createSessionOnDisk(name);
@@ -237,27 +236,27 @@ export function SessionProvider({
     dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
 
     // Load empty workspaces for new session
-    onSessionLoadRef.current(new Map(), 1, new Map(), metadata.id);
+    props.onSessionLoad(new Map(), 1, new Map(), metadata.id);
 
     return metadata;
-  }, [state.activeSession, state.activeSessionId, refreshSessions]);
+  };
 
-  const switchSession = useCallback(async (id: SessionId) => {
+  const switchSession = async (id: SessionId) => {
     if (id === state.activeSessionId) return;
 
     // Save current session
     if (state.activeSession && state.activeSessionId) {
-      const workspaces = getWorkspacesRef.current();
-      const activeWorkspaceId = getActiveWorkspaceIdRef.current();
+      const workspaces = props.getWorkspaces();
+      const activeWorkspaceId = props.getActiveWorkspaceId();
       await saveCurrentSession(
         state.activeSession,
         workspaces,
         activeWorkspaceId,
-        getCwdRef.current
+        props.getCwd
       );
 
       // Suspend PTYs for current session (save mapping, don't destroy)
-      onBeforeSwitchRef.current(state.activeSessionId);
+      props.onBeforeSwitch(state.activeSessionId);
     }
 
     // Load new session
@@ -266,15 +265,15 @@ export function SessionProvider({
 
     if (data) {
       dispatch({ type: 'SET_ACTIVE_SESSION', id, session: data.metadata });
-      onSessionLoadRef.current(data.workspaces, data.activeWorkspaceId, data.cwdMap, id);
+      props.onSessionLoad(data.workspaces, data.activeWorkspaceId, data.cwdMap, id);
     }
 
     dispatch({ type: 'CLOSE_SESSION_PICKER' });
 
     await refreshSessions();
-  }, [state.activeSessionId, state.activeSession, refreshSessions]);
+  };
 
-  const renameSession = useCallback(async (id: SessionId, name: string) => {
+  const renameSession = async (id: SessionId, name: string) => {
     await renameSessionOnDisk(id, name);
     await refreshSessions();
 
@@ -287,11 +286,11 @@ export function SessionProvider({
     }
 
     dispatch({ type: 'CANCEL_RENAME' });
-  }, [state.activeSessionId, state.activeSession, refreshSessions]);
+  };
 
-  const deleteSession = useCallback(async (id: SessionId) => {
+  const deleteSession = async (id: SessionId) => {
     // Clean up PTYs for the deleted session
-    onDeleteSessionRef.current(id);
+    props.onDeleteSession(id);
 
     await deleteSessionOnDisk(id);
     await refreshSessions();
@@ -303,52 +302,66 @@ export function SessionProvider({
         await switchSession(sessions[0]!.id);
       }
     }
-  }, [state.activeSessionId, refreshSessions, switchSession]);
+  };
 
-  const saveSession = useCallback(async () => {
+  const saveSession = async () => {
     if (!state.activeSession) return;
 
-    const workspaces = getWorkspacesRef.current();
-    const activeWorkspaceId = getActiveWorkspaceIdRef.current();
+    const workspaces = props.getWorkspaces();
+    const activeWorkspaceId = props.getActiveWorkspaceId();
 
     await saveCurrentSession(
       state.activeSession,
       workspaces,
       activeWorkspaceId,
-      getCwdRef.current
+      props.getCwd
     );
 
     await refreshSessions();
-  }, [state.activeSession, refreshSessions]);
+  };
 
-  const togglePicker = useCallback(() => {
+  const togglePicker = () => {
     dispatch({ type: 'TOGGLE_SESSION_PICKER' });
-  }, []);
+  };
 
-  const closePicker = useCallback(() => {
+  const closePicker = () => {
     dispatch({ type: 'CLOSE_SESSION_PICKER' });
-  }, []);
+  };
 
-  const value = useMemo<SessionContextValue>(() => {
-    const filteredSessions = state.sessions.filter(s =>
+  const setSearchQuery = (query: string) => {
+    dispatch({ type: 'SET_SEARCH_QUERY', query });
+  };
+
+  const startRename = (id: SessionId, currentName: string) => {
+    dispatch({ type: 'START_RENAME', sessionId: id, currentName });
+  };
+
+  const cancelRename = () => {
+    dispatch({ type: 'CANCEL_RENAME' });
+  };
+
+  const updateRenameValue = (value: string) => {
+    dispatch({ type: 'UPDATE_RENAME_VALUE', value });
+  };
+
+  const navigateUp = () => {
+    dispatch({ type: 'NAVIGATE_UP' });
+  };
+
+  const navigateDown = () => {
+    dispatch({ type: 'NAVIGATE_DOWN' });
+  };
+
+  // Computed values
+  const filteredSessions = createMemo(() =>
+    state.sessions.filter(s =>
       s.name.toLowerCase().includes(state.searchQuery.toLowerCase())
-    );
+    )
+  );
 
-    return {
-      state,
-      dispatch,
-      filteredSessions,
-      createSession,
-      switchSession,
-      renameSession,
-      deleteSession,
-      saveSession,
-      refreshSessions,
-      togglePicker,
-      closePicker,
-    };
-  }, [
-    state,
+  const value: SessionContextValue = {
+    get state() { return state; },
+    get filteredSessions() { return filteredSessions(); },
     createSession,
     switchSession,
     renameSession,
@@ -357,14 +370,24 @@ export function SessionProvider({
     refreshSessions,
     togglePicker,
     closePicker,
-  ]);
+    setSearchQuery,
+    startRename,
+    cancelRename,
+    updateRenameValue,
+    navigateUp,
+    navigateDown,
+  };
 
   return (
     <SessionContext.Provider value={value}>
-      {children}
+      {props.children}
     </SessionContext.Provider>
   );
 }
+
+// =============================================================================
+// Hooks
+// =============================================================================
 
 export function useSession(): SessionContextValue {
   const context = useContext(SessionContext);

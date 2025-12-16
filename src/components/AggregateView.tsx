@@ -7,7 +7,7 @@
  * - Preview mode: Interact with the terminal, Prefix+Esc to return to list
  */
 
-import { useCallback, useEffect, useState, useRef, useMemo } from 'react';
+import { Show, For, createSignal, createEffect, onCleanup } from 'solid-js';
 import { type MouseEvent as OpenTUIMouseEvent } from '@opentui/core';
 import { useAggregateView } from '../contexts/AggregateViewContext';
 import { useKeyboardState } from '../contexts/KeyboardContext';
@@ -26,7 +26,7 @@ interface AggregateViewProps {
   height: number;
 }
 
-export function AggregateView({ width, height }: AggregateViewProps) {
+export function AggregateView(props: AggregateViewProps) {
   const {
     state,
     closeAggregateView,
@@ -36,69 +36,62 @@ export function AggregateView({ width, height }: AggregateViewProps) {
     enterPreviewMode,
     exitPreviewMode,
   } = useAggregateView();
-  const { dispatch: kbDispatch } = useKeyboardState();
-  const { state: layoutState, dispatch: layoutDispatch } = useLayout();
+  const { exitAggregateMode } = useKeyboardState();
+  const { state: layoutState, switchWorkspace, focusPane, clearAll } = useLayout();
   const { state: sessionState, switchSession } = useSession();
   const { findSessionForPty } = useTerminal();
   const theme = useTheme();
 
-  const {
-    showAggregateView,
-    filterQuery,
-    matchedPtys,
-    selectedIndex,
-    selectedPtyId,
-    previewMode,
-  } = state;
-
   // Track prefix mode for prefix+esc to exit interactive mode
-  const [prefixActive, setPrefixActive] = useState(false);
-  const prefixTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [prefixActive, setPrefixActive] = createSignal(false);
+  let prefixTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Track pending navigation after session switch
-  const pendingPaneNavigationRef = useRef<string | null>(null);
+  let pendingPaneNavigation: string | null = null;
 
   // Clear prefix timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (prefixTimeoutRef.current) {
-        clearTimeout(prefixTimeoutRef.current);
-      }
-    };
-  }, []);
+  onCleanup(() => {
+    if (prefixTimeout) {
+      clearTimeout(prefixTimeout);
+    }
+  });
 
   // Handle pending navigation after session switch
-  useEffect(() => {
-    const pendingPaneId = pendingPaneNavigationRef.current;
-    if (!pendingPaneId) return;
+  createEffect(() => {
+    // Track session ID to detect changes
+    const _sessionId = sessionState.activeSessionId;
+
+    if (!pendingPaneNavigation) return;
+    const pendingPaneId = pendingPaneNavigation;
 
     // Clear the pending navigation
-    pendingPaneNavigationRef.current = null;
+    pendingPaneNavigation = null;
 
     // Find the workspace containing this pane in the current (newly loaded) workspaces
     const paneLocation = findPaneLocation(pendingPaneId, layoutState.workspaces);
     if (paneLocation) {
-      layoutDispatch({ type: 'SWITCH_WORKSPACE', workspaceId: paneLocation.workspaceId });
+      switchWorkspace(paneLocation.workspaceId);
     }
-    layoutDispatch({ type: 'FOCUS_PANE', paneId: pendingPaneId });
-  }, [sessionState.activeSessionId, layoutState.workspaces, layoutDispatch]);
+    focusPane(pendingPaneId);
+  });
 
   // Jump to the selected PTY's workspace and pane (supports cross-session jumps)
-  const handleJumpToPty = useCallback(async () => {
+  const handleJumpToPty = async () => {
+    const selectedPtyId = state.selectedPtyId;
     if (!selectedPtyId) return false;
 
     // Close aggregate view first
     closeAggregateView();
-    kbDispatch({ type: 'EXIT_AGGREGATE_MODE' });
+    exitAggregateMode();
 
     // First, check if PTY is in the current session
     const location = findPtyLocation(selectedPtyId, layoutState.workspaces);
     if (location) {
       // PTY is in current session - navigate to it
       if (layoutState.activeWorkspaceId !== location.workspaceId) {
-        layoutDispatch({ type: 'SWITCH_WORKSPACE', workspaceId: location.workspaceId });
+        switchWorkspace(location.workspaceId);
       }
-      layoutDispatch({ type: 'FOCUS_PANE', paneId: location.paneId });
+      focusPane(location.paneId);
       return true;
     }
 
@@ -106,7 +99,7 @@ export function AggregateView({ width, height }: AggregateViewProps) {
     const sessionLocation = findSessionForPty(selectedPtyId);
     if (sessionLocation && sessionLocation.sessionId !== sessionState.activeSessionId) {
       // Store the target pane ID for navigation after session loads
-      pendingPaneNavigationRef.current = sessionLocation.paneId;
+      pendingPaneNavigation = sessionLocation.paneId;
 
       // Switch to the other session - the effect will handle navigation after load
       await switchSession(sessionLocation.sessionId);
@@ -115,142 +108,126 @@ export function AggregateView({ width, height }: AggregateViewProps) {
     }
 
     return false;
-  }, [selectedPtyId, layoutState.workspaces, layoutState.activeWorkspaceId, sessionState.activeSessionId, closeAggregateView, kbDispatch, layoutDispatch, findSessionForPty, switchSession]);
+  };
 
   // Handle keyboard input when aggregate view is open
-  const handleKeyDown = useCallback(
-    (event: { key: string; ctrl?: boolean; alt?: boolean; shift?: boolean; sequence?: string }) => {
-      if (!showAggregateView) return false;
+  const handleKeyDown = (event: { key: string; ctrl?: boolean; alt?: boolean; shift?: boolean; sequence?: string }) => {
+    if (!state.showAggregateView) return false;
 
-      const { key } = event;
-      const normalizedKey = key.toLowerCase();
+    const { key } = event;
+    const normalizedKey = key.toLowerCase();
 
-      // In preview mode, most keys go to the PTY
-      if (previewMode) {
-        // Check for prefix key (Ctrl+B) to enter prefix mode
-        if (event.ctrl && normalizedKey === 'b') {
-          setPrefixActive(true);
-          // Set timeout to clear prefix mode after 2 seconds
-          if (prefixTimeoutRef.current) {
-            clearTimeout(prefixTimeoutRef.current);
-          }
-          prefixTimeoutRef.current = setTimeout(() => {
-            setPrefixActive(false);
-          }, 2000);
-          return true;
+    // In preview mode, most keys go to the PTY
+    if (state.previewMode) {
+      // Check for prefix key (Ctrl+B) to enter prefix mode
+      if (event.ctrl && normalizedKey === 'b') {
+        setPrefixActive(true);
+        // Set timeout to clear prefix mode after 2 seconds
+        if (prefixTimeout) {
+          clearTimeout(prefixTimeout);
         }
-
-        // Prefix+Escape exits preview mode (allows programs to use plain Esc)
-        if (prefixActive && normalizedKey === 'escape') {
+        prefixTimeout = setTimeout(() => {
           setPrefixActive(false);
-          if (prefixTimeoutRef.current) {
-            clearTimeout(prefixTimeoutRef.current);
-          }
-          exitPreviewMode();
-          return true;
+        }, 2000);
+        return true;
+      }
+
+      // Prefix+Escape exits preview mode (allows programs to use plain Esc)
+      if (prefixActive() && normalizedKey === 'escape') {
+        setPrefixActive(false);
+        if (prefixTimeout) {
+          clearTimeout(prefixTimeout);
         }
+        exitPreviewMode();
+        return true;
+      }
 
-        // Clear prefix mode on any other key after prefix
-        if (prefixActive) {
-          setPrefixActive(false);
-          if (prefixTimeoutRef.current) {
-            clearTimeout(prefixTimeoutRef.current);
-          }
+      // Clear prefix mode on any other key after prefix
+      if (prefixActive()) {
+        setPrefixActive(false);
+        if (prefixTimeout) {
+          clearTimeout(prefixTimeout);
         }
+      }
 
-        // Forward key to PTY using inputHandler for proper encoding
-        if (selectedPtyId) {
-          const inputStr = inputHandler.encodeKey({
-            key,
-            ctrl: event.ctrl,
-            alt: event.alt,
-            shift: event.shift,
-          });
-          if (inputStr) {
-            writeToPty(selectedPtyId, inputStr);
-          }
+      // Forward key to PTY using inputHandler for proper encoding
+      const selectedPtyId = state.selectedPtyId;
+      if (selectedPtyId) {
+        const inputStr = inputHandler.encodeKey({
+          key,
+          ctrl: event.ctrl,
+          alt: event.alt,
+          shift: event.shift,
+        });
+        if (inputStr) {
+          writeToPty(selectedPtyId, inputStr);
         }
-        return true;
       }
+      return true;
+    }
 
-      // List mode keyboard handling
-      if (normalizedKey === 'escape') {
-        closeAggregateView();
-        kbDispatch({ type: 'EXIT_AGGREGATE_MODE' });
-        return true;
+    // List mode keyboard handling
+    if (normalizedKey === 'escape') {
+      closeAggregateView();
+      exitAggregateMode();
+      return true;
+    }
+
+    if (normalizedKey === 'down' || (normalizedKey === 'j' && !event.ctrl)) {
+      navigateDown();
+      return true;
+    }
+
+    if (normalizedKey === 'up' || (normalizedKey === 'k' && !event.ctrl)) {
+      navigateUp();
+      return true;
+    }
+
+    if (normalizedKey === 'return' || normalizedKey === 'enter') {
+      // Enter preview mode (interactive terminal)
+      if (state.selectedPtyId) {
+        enterPreviewMode();
       }
+      return true;
+    }
 
-      if (normalizedKey === 'down' || (normalizedKey === 'j' && !event.ctrl)) {
-        navigateDown();
-        return true;
-      }
+    // Tab jumps to the PTY's workspace/pane
+    if (normalizedKey === 'tab') {
+      handleJumpToPty();
+      return true;
+    }
 
-      if (normalizedKey === 'up' || (normalizedKey === 'k' && !event.ctrl)) {
-        navigateUp();
-        return true;
-      }
+    if (normalizedKey === 'backspace') {
+      setFilterQuery(state.filterQuery.slice(0, -1));
+      return true;
+    }
 
-      if (normalizedKey === 'return' || normalizedKey === 'enter') {
-        // Enter preview mode (interactive terminal)
-        if (selectedPtyId) {
-          enterPreviewMode();
-        }
-        return true;
-      }
+    // Single printable character - add to filter
+    if (key.length === 1 && !event.ctrl && !event.alt) {
+      setFilterQuery(state.filterQuery + key);
+      return true;
+    }
 
-      // Tab jumps to the PTY's workspace/pane
-      if (normalizedKey === 'tab') {
-        handleJumpToPty();
-        return true;
-      }
-
-      if (normalizedKey === 'backspace') {
-        setFilterQuery(filterQuery.slice(0, -1));
-        return true;
-      }
-
-      // Single printable character - add to filter
-      if (key.length === 1 && !event.ctrl && !event.alt) {
-        setFilterQuery(filterQuery + key);
-        return true;
-      }
-
-      return true; // Consume all keys while in aggregate view
-    },
-    [
-      showAggregateView,
-      filterQuery,
-      selectedPtyId,
-      previewMode,
-      prefixActive,
-      closeAggregateView,
-      setFilterQuery,
-      navigateUp,
-      navigateDown,
-      enterPreviewMode,
-      exitPreviewMode,
-      handleJumpToPty,
-      kbDispatch,
-    ]
-  );
+    return true; // Consume all keys while in aggregate view
+  };
 
   // Register keyboard handler with KeyboardRouter
-  useEffect(() => {
+  createEffect(() => {
     let unsubscribe: (() => void) | null = null;
 
     registerKeyboardHandler('aggregateView', handleKeyDown).then((unsub) => {
       unsubscribe = unsub;
     });
 
-    return () => {
+    onCleanup(() => {
       if (unsubscribe) {
         unsubscribe();
       }
-    };
-  }, [handleKeyDown]);
+    });
+  });
 
   // Get host terminal background color to match user's theme
-  const hostBgColor = useMemo(() => getHostBackgroundColor(), []);
+  const hostBgColor = getHostBackgroundColor();
 
   // Map borderStyle to OpenTUI BorderStyle type
   const borderStyleMap: Record<string, 'single' | 'double' | 'rounded'> = {
@@ -263,33 +240,33 @@ export function AggregateView({ width, height }: AggregateViewProps) {
   // Layout calculations
   // Reserve 1 row for footer (status bar with search + hints)
   const footerHeight = 1;
-  const contentHeight = height - footerHeight;
+  const contentHeight = () => props.height - footerHeight;
 
   // Split width: list pane (35%) and preview pane (65%)
-  const listPaneWidth = Math.floor(width * 0.35);
-  const previewPaneWidth = width - listPaneWidth;
+  const listPaneWidth = () => Math.floor(props.width * 0.35);
+  const previewPaneWidth = () => props.width - listPaneWidth();
 
   // Inner dimensions (account for borders: -2 for left/right border)
-  const listInnerWidth = Math.max(1, listPaneWidth - 2);
-  const listInnerHeight = Math.max(1, contentHeight - 2);
-  const previewInnerWidth = Math.max(1, previewPaneWidth - 2);
-  const previewInnerHeight = Math.max(1, contentHeight - 2);
+  const listInnerWidth = () => Math.max(1, listPaneWidth() - 2);
+  const listInnerHeight = () => Math.max(1, contentHeight() - 2);
+  const previewInnerWidth = () => Math.max(1, previewPaneWidth() - 2);
+  const previewInnerHeight = () => Math.max(1, contentHeight() - 2);
 
   // Each card is 2 lines, calculate max visible cards
-  const maxVisibleCards = Math.floor(listInnerHeight / 2);
+  const maxVisibleCards = () => Math.floor(listInnerHeight() / 2);
 
   // Mouse handler for preview pane
-  const handlePreviewMouseEvent = useCallback((event: OpenTUIMouseEvent, type: 'down' | 'up' | 'move' | 'drag' | 'scroll') => {
-    if (!previewMode || !selectedPtyId) return;
+  const handlePreviewMouseEvent = (event: OpenTUIMouseEvent, type: 'down' | 'up' | 'move' | 'drag' | 'scroll') => {
+    if (!state.previewMode || !state.selectedPtyId) return;
 
     // Calculate coordinates relative to preview content (subtract border and pane position)
-    const previewX = listPaneWidth;
+    const previewX = listPaneWidth();
     const previewY = 0; // No header now, panes start at top
     const relX = event.x - previewX - 1;
     const relY = event.y - previewY - 1;
 
     // Only forward if inside the content area
-    if (relX < 0 || relY < 0 || relX >= previewInnerWidth || relY >= previewInnerHeight) return;
+    if (relX < 0 || relY < 0 || relX >= previewInnerWidth() || relY >= previewInnerHeight()) return;
 
     // Handle scroll specially
     if (type === 'scroll') {
@@ -304,7 +281,7 @@ export function AggregateView({ width, height }: AggregateViewProps) {
         alt: event.modifiers?.alt,
         ctrl: event.modifiers?.ctrl,
       });
-      writeToPty(selectedPtyId, sequence);
+      writeToPty(state.selectedPtyId, sequence);
       return;
     }
 
@@ -317,127 +294,130 @@ export function AggregateView({ width, height }: AggregateViewProps) {
       alt: event.modifiers?.alt,
       ctrl: event.modifiers?.ctrl,
     });
-    writeToPty(selectedPtyId, sequence);
-  }, [previewMode, selectedPtyId, listPaneWidth, previewInnerWidth, previewInnerHeight]);
+    writeToPty(state.selectedPtyId, sequence);
+  };
 
-  const handlePreviewMouseDown = useCallback((event: OpenTUIMouseEvent) => {
+  const handlePreviewMouseDown = (event: OpenTUIMouseEvent) => {
     event.preventDefault();
     handlePreviewMouseEvent(event, 'down');
-  }, [handlePreviewMouseEvent]);
+  };
 
-  const handlePreviewMouseUp = useCallback((event: OpenTUIMouseEvent) => {
+  const handlePreviewMouseUp = (event: OpenTUIMouseEvent) => {
     event.preventDefault();
     handlePreviewMouseEvent(event, 'up');
-  }, [handlePreviewMouseEvent]);
+  };
 
-  const handlePreviewMouseMove = useCallback((event: OpenTUIMouseEvent) => {
+  const handlePreviewMouseMove = (event: OpenTUIMouseEvent) => {
     event.preventDefault();
     handlePreviewMouseEvent(event, 'move');
-  }, [handlePreviewMouseEvent]);
+  };
 
-  const handlePreviewMouseDrag = useCallback((event: OpenTUIMouseEvent) => {
+  const handlePreviewMouseDrag = (event: OpenTUIMouseEvent) => {
     event.preventDefault();
     handlePreviewMouseEvent(event, 'drag');
-  }, [handlePreviewMouseEvent]);
+  };
 
-  const handlePreviewMouseScroll = useCallback((event: OpenTUIMouseEvent) => {
+  const handlePreviewMouseScroll = (event: OpenTUIMouseEvent) => {
     handlePreviewMouseEvent(event, 'scroll');
-  }, [handlePreviewMouseEvent]);
-
-  if (!showAggregateView) return null;
+  };
 
   // Build hints text based on mode
-  const hintsText = previewMode
+  const hintsText = () => state.previewMode
     ? 'Prefix+Esc: back to list'
     : '↑↓/jk: navigate | Enter: interact | Tab: jump | Esc: close';
 
   // Build search/filter text
-  const filterText = `Filter: ${filterQuery}_`;
+  const filterText = () => `Filter: ${state.filterQuery}_`;
 
   // Calculate how much space hints need (right-aligned)
-  const hintsWidth = hintsText.length;
-  const filterWidth = width - hintsWidth - 2; // -2 for spacing
+  const hintsWidth = () => hintsText().length;
+  const filterWidth = () => props.width - hintsWidth() - 2; // -2 for spacing
 
-  // Use host terminal's background color to match user's theme
   return (
-    <box
-      style={{
-        position: 'absolute',
-        left: 0,
-        top: 0,
-        width: width,
-        height: height,
-        flexDirection: 'column',
-      }}
-      backgroundColor={hostBgColor}
-    >
-      {/* Main content - two panes side by side */}
-      <box style={{ flexDirection: 'row', height: contentHeight }}>
-        {/* Left pane - PTY list (bordered, highlighted when in list mode) */}
-        <box
-          style={{
-            width: listPaneWidth,
-            height: contentHeight,
-            border: true,
-            borderStyle: borderStyleMap[theme.pane.borderStyle] ?? 'single',
-            borderColor: previewMode ? theme.pane.borderColor : theme.pane.focusedBorderColor,
-          }}
-          title={`PTYs (${matchedPtys.length})`}
-          titleAlignment="left"
-        >
-          <box style={{ flexDirection: 'column' }}>
-            {matchedPtys.length > 0 ? (
-              matchedPtys.slice(0, maxVisibleCards).map((pty, index) => (
-                <PtyCard
-                  key={pty.ptyId}
-                  pty={pty}
-                  isSelected={index === selectedIndex}
-                  maxWidth={listInnerWidth}
-                />
-              ))
-            ) : (
-              <box style={{ height: 1 }}>
-                <text fg="#666666">No PTYs match filter</text>
-              </box>
-            )}
+    <Show when={state.showAggregateView}>
+      <box
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: props.width,
+          height: props.height,
+          flexDirection: 'column',
+        }}
+        backgroundColor={hostBgColor}
+      >
+        {/* Main content - two panes side by side */}
+        <box style={{ flexDirection: 'row', height: contentHeight() }}>
+          {/* Left pane - PTY list (bordered, highlighted when in list mode) */}
+          <box
+            style={{
+              width: listPaneWidth(),
+              height: contentHeight(),
+              border: true,
+              borderStyle: borderStyleMap[theme.pane.borderStyle] ?? 'single',
+              borderColor: state.previewMode ? theme.pane.borderColor : theme.pane.focusedBorderColor,
+            }}
+            title={`PTYs (${state.matchedPtys.length})`}
+            titleAlignment="left"
+          >
+            <box style={{ flexDirection: 'column' }}>
+              <Show
+                when={state.matchedPtys.length > 0}
+                fallback={
+                  <box style={{ height: 1 }}>
+                    <text fg="#666666">No PTYs match filter</text>
+                  </box>
+                }
+              >
+                <For each={state.matchedPtys.slice(0, maxVisibleCards())}>
+                  {(pty, index) => (
+                    <PtyCard
+                      pty={pty}
+                      isSelected={index() === state.selectedIndex}
+                      maxWidth={listInnerWidth()}
+                    />
+                  )}
+                </For>
+              </Show>
+            </box>
+          </box>
+
+          {/* Right pane - Terminal preview (bordered, with mouse support) */}
+          <box
+            style={{
+              width: previewPaneWidth(),
+              height: contentHeight(),
+              border: true,
+              borderStyle: borderStyleMap[theme.pane.borderStyle] ?? 'single',
+              borderColor: state.previewMode ? theme.pane.focusedBorderColor : theme.pane.borderColor,
+            }}
+            onMouseDown={handlePreviewMouseDown}
+            onMouseUp={handlePreviewMouseUp}
+            onMouseMove={handlePreviewMouseMove}
+            onMouseDrag={handlePreviewMouseDrag}
+            onMouseScroll={handlePreviewMouseScroll}
+          >
+            <InteractivePreview
+              ptyId={state.selectedPtyId}
+              width={previewInnerWidth()}
+              height={previewInnerHeight()}
+              isInteractive={state.previewMode}
+              offsetX={listPaneWidth() + 1}
+              offsetY={1}
+            />
           </box>
         </box>
 
-        {/* Right pane - Terminal preview (bordered, with mouse support) */}
-        <box
-          style={{
-            width: previewPaneWidth,
-            height: contentHeight,
-            border: true,
-            borderStyle: borderStyleMap[theme.pane.borderStyle] ?? 'single',
-            borderColor: previewMode ? theme.pane.focusedBorderColor : theme.pane.borderColor,
-          }}
-          onMouseDown={handlePreviewMouseDown}
-          onMouseUp={handlePreviewMouseUp}
-          onMouseMove={handlePreviewMouseMove}
-          onMouseDrag={handlePreviewMouseDrag}
-          onMouseScroll={handlePreviewMouseScroll}
-        >
-          <InteractivePreview
-            ptyId={selectedPtyId}
-            width={previewInnerWidth}
-            height={previewInnerHeight}
-            isInteractive={previewMode}
-            offsetX={listPaneWidth + 1}
-            offsetY={1}
-          />
+        {/* Footer status bar - search on left, hints on right */}
+        <box style={{ height: 1, flexDirection: 'row' }}>
+          <box style={{ width: filterWidth() }}>
+            <text fg="#CCCCCC">{filterText().slice(0, filterWidth())}</text>
+          </box>
+          <box style={{ width: hintsWidth() + 2, flexDirection: 'row', justifyContent: 'flex-end' }}>
+            <text fg="#666666">{hintsText()}</text>
+          </box>
         </box>
       </box>
-
-      {/* Footer status bar - search on left, hints on right */}
-      <box style={{ height: 1, flexDirection: 'row' }}>
-        <box style={{ width: filterWidth }}>
-          <text fg="#CCCCCC">{filterText.slice(0, filterWidth)}</text>
-        </box>
-        <box style={{ width: hintsWidth + 2, flexDirection: 'row', justifyContent: 'flex-end' }}>
-          <text fg="#666666">{hintsText}</text>
-        </box>
-      </box>
-    </box>
+    </Show>
   );
 }

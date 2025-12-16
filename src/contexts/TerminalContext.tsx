@@ -3,18 +3,17 @@
  * Uses Effect services via bridge for all PTY operations.
  */
 
-import React, {
+import {
   createContext,
   useContext,
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  type ReactNode,
-} from 'react';
+  createSignal,
+  onMount,
+  onCleanup,
+  type ParentProps,
+} from 'solid-js';
 import { initGhostty, isGhosttyInitialized, detectHostCapabilities } from '../terminal';
 import type { TerminalState, TerminalScrollState } from '../core/types';
-import { createSessionHandlers, createScrollHandlers } from './terminal';
+import { createScrollHandlers } from './terminal';
 import { getFocusedPtyId as getWorkspaceFocusedPtyId } from '../core/workspace-utils';
 import { useLayout } from './LayoutContext';
 import {
@@ -88,39 +87,38 @@ interface TerminalContextValue {
 
 const TerminalContext = createContext<TerminalContextValue | null>(null);
 
-interface TerminalProviderProps {
-  children: ReactNode;
-}
+interface TerminalProviderProps extends ParentProps {}
 
-export function TerminalProvider({ children }: TerminalProviderProps) {
-  const { activeWorkspace, dispatch } = useLayout();
-  const initializedRef = useRef(false);
-  const [isInitialized, setIsInitialized] = useState(false);
+export function TerminalProvider(props: TerminalProviderProps) {
+  const layout = useLayout();
+  const { setPanePty, closePaneById } = layout;
+  let initialized = false;
+  const [isInitialized, setIsInitialized] = createSignal(false);
 
   // Track ptyId -> paneId mapping for exit handling
-  const ptyToPaneMap = useRef<Map<string, string>>(new Map());
+  const ptyToPaneMap = new Map<string, string>();
 
   // Track PTYs by session ID for persistence across session switches
   // sessionId → Map<paneId, ptyId>
-  const sessionPtyMapRef = useRef<Map<string, Map<string, string>>>(new Map());
+  const sessionPtyMap = new Map<string, Map<string, string>>();
 
   // Unified caches for PTY state (used by usePtySubscription)
-  const ptyCaches = useRef<PtyCaches>({
+  const ptyCaches: PtyCaches = {
     terminalStates: new Map<string, TerminalState>(),
     scrollStates: new Map<string, TerminalScrollState>(),
     emulators: new Map<string, GhosttyEmulator>(),
-  });
+  };
 
   // Track unsubscribe functions for cleanup
-  const unsubscribeFns = useRef<Map<string, () => void>>(new Map());
+  const unsubscribeFns = new Map<string, () => void>();
 
   // Create scroll handlers (extracted for reduced file size)
   const scrollHandlers = createScrollHandlers(ptyCaches);
 
   // Initialize ghostty and detect host terminal capabilities on mount
-  useEffect(() => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
+  onMount(() => {
+    if (initialized) return;
+    initialized = true;
 
     // Detect host capabilities first (for graphics passthrough)
     detectHostCapabilities()
@@ -131,25 +129,34 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
       .catch((err) => {
         console.error('Failed to initialize terminal:', err);
       });
-  }, []);
+  });
+
+  // Cleanup on unmount
+  onCleanup(() => {
+    // Unsubscribe all
+    for (const unsub of unsubscribeFns.values()) {
+      unsub();
+    }
+    destroyAllPtys();
+  });
 
   // Handle PTY exit callback
-  const handlePtyExit = useCallback((ptyId: string, paneId: string) => {
-    const mappedPaneId = ptyToPaneMap.current.get(ptyId);
+  const handlePtyExit = (ptyId: string, _paneId: string) => {
+    const mappedPaneId = ptyToPaneMap.get(ptyId);
     if (mappedPaneId) {
-      dispatch({ type: 'CLOSE_PANE_BY_ID', paneId: mappedPaneId });
-      ptyToPaneMap.current.delete(ptyId);
+      closePaneById(mappedPaneId);
+      ptyToPaneMap.delete(ptyId);
     }
     // Also remove from session mappings
-    for (const [, mapping] of sessionPtyMapRef.current) {
+    for (const [, mapping] of sessionPtyMap) {
       for (const [pid, ptid] of mapping) {
         if (ptid === ptyId) mapping.delete(pid);
       }
     }
-  }, [dispatch]);
+  };
 
   // Create a PTY session
-  const createPTY = useCallback(async (paneId: string, cols: number, rows: number, cwd?: string): Promise<string> => {
+  const createPTY = async (paneId: string, cols: number, rows: number, cwd?: string): Promise<string> => {
     if (!isGhosttyInitialized()) {
       throw new Error('Ghostty not initialized');
     }
@@ -157,78 +164,78 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     const ptyId = await createPtySession({ cols, rows, cwd });
 
     // Track the mapping
-    ptyToPaneMap.current.set(ptyId, paneId);
+    ptyToPaneMap.set(ptyId, paneId);
 
     // Subscribe to PTY with unified caches
     const unsub = await subscribeToPtyWithCaches(
       ptyId,
       paneId,
-      ptyCaches.current,
+      ptyCaches,
       handlePtyExit
     );
 
     // Store unsubscribe function
-    unsubscribeFns.current.set(ptyId, unsub);
+    unsubscribeFns.set(ptyId, unsub);
 
     // Update the pane with the PTY ID
-    dispatch({ type: 'SET_PANE_PTY', paneId, ptyId });
+    setPanePty(paneId, ptyId);
 
     return ptyId;
-  }, [dispatch, handlePtyExit]);
+  };
 
   // Destroy a PTY session
-  const handleDestroyPTY = useCallback((ptyId: string) => {
+  const handleDestroyPTY = (ptyId: string) => {
     // Unsubscribe from updates
-    const unsub = unsubscribeFns.current.get(ptyId);
+    const unsub = unsubscribeFns.get(ptyId);
     if (unsub) {
       unsub();
-      unsubscribeFns.current.delete(ptyId);
+      unsubscribeFns.delete(ptyId);
     }
 
     // Clear caches
-    clearPtyCaches(ptyId, ptyCaches.current);
-    ptyToPaneMap.current.delete(ptyId);
+    clearPtyCaches(ptyId, ptyCaches);
+    ptyToPaneMap.delete(ptyId);
 
     // Destroy the PTY (fire and forget)
     destroyPty(ptyId);
-  }, []);
+  };
 
   // Destroy all PTY sessions
-  const handleDestroyAllPTYs = useCallback(() => {
+  const handleDestroyAllPTYs = () => {
     // Unsubscribe all
-    for (const unsub of unsubscribeFns.current.values()) {
+    for (const unsub of unsubscribeFns.values()) {
       unsub();
     }
-    unsubscribeFns.current.clear();
-    clearAllPtyCaches(ptyCaches.current);
-    ptyToPaneMap.current.clear();
+    unsubscribeFns.clear();
+    clearAllPtyCaches(ptyCaches);
+    ptyToPaneMap.clear();
 
     // Destroy all PTYs (fire and forget)
     destroyAllPtys();
-  }, []);
+  };
 
   // Suspend a session: save PTY mapping and unsubscribe (but don't destroy PTYs)
-  const handleSuspendSession = useCallback((sessionId: string) => {
+  const handleSuspendSession = (sessionId: string) => {
     // Save current pane→pty mapping for this session
     const mapping = new Map<string, string>();
-    for (const [ptyId, paneId] of ptyToPaneMap.current) {
+    for (const [ptyId, paneId] of ptyToPaneMap) {
       mapping.set(paneId, ptyId);
     }
-    sessionPtyMapRef.current.set(sessionId, mapping);
+    sessionPtyMap.set(sessionId, mapping);
 
     // Unsubscribe from all PTYs (stop rendering, but keep alive)
-    for (const unsub of unsubscribeFns.current.values()) {
+    for (const unsub of unsubscribeFns.values()) {
       unsub();
     }
-    unsubscribeFns.current.clear();
-    clearAllPtyCaches(ptyCaches.current);
-    ptyToPaneMap.current.clear();
+    unsubscribeFns.clear();
+    clearAllPtyCaches(ptyCaches);
+    ptyToPaneMap.clear();
     // Note: DO NOT call destroyAllPtys() - PTYs stay alive
-  }, []);
+  };
 
   // Resume a session: resubscribe to saved PTYs
-  const handleResumeSession = useCallback(async (sessionId: string): Promise<Map<string, string> | undefined> => {
-    const savedMapping = sessionPtyMapRef.current.get(sessionId);
+  const handleResumeSession = async (sessionId: string): Promise<Map<string, string> | undefined> => {
+    const savedMapping = sessionPtyMap.get(sessionId);
     if (!savedMapping || savedMapping.size === 0) {
       return undefined;
     }
@@ -240,60 +247,60 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
         const unsub = await subscribeToPtyWithCaches(
           ptyId,
           paneId,
-          ptyCaches.current,
+          ptyCaches,
           handlePtyExit
         );
 
         // Store unsubscribe function
-        unsubscribeFns.current.set(ptyId, unsub);
+        unsubscribeFns.set(ptyId, unsub);
 
         // Restore pty→pane mapping
-        ptyToPaneMap.current.set(ptyId, paneId);
-      } catch (err) {
+        ptyToPaneMap.set(ptyId, paneId);
+      } catch (_err) {
         // PTY may have exited while suspended - remove from mapping
         savedMapping.delete(paneId);
       }
     }
 
     return savedMapping;
-  }, [handlePtyExit]);
+  };
 
   // Cleanup PTYs for a deleted session
-  const handleCleanupSessionPtys = useCallback((sessionId: string) => {
-    const savedMapping = sessionPtyMapRef.current.get(sessionId);
+  const handleCleanupSessionPtys = (sessionId: string) => {
+    const savedMapping = sessionPtyMap.get(sessionId);
     if (savedMapping) {
       for (const ptyId of savedMapping.values()) {
         // Unsubscribe if currently subscribed
-        const unsub = unsubscribeFns.current.get(ptyId);
+        const unsub = unsubscribeFns.get(ptyId);
         if (unsub) {
           unsub();
-          unsubscribeFns.current.delete(ptyId);
+          unsubscribeFns.delete(ptyId);
         }
         // Destroy the PTY
         destroyPty(ptyId);
       }
-      sessionPtyMapRef.current.delete(sessionId);
+      sessionPtyMap.delete(sessionId);
     }
-  }, []);
+  };
 
   // Get CWD for a specific PTY session
-  const getSessionCwd = useCallback(async (ptyId: string): Promise<string> => {
+  const getSessionCwd = async (ptyId: string): Promise<string> => {
     return getPtyCwd(ptyId);
-  }, []);
+  };
 
   // Helper to get focused PTY ID (uses centralized utility)
-  const getFocusedPtyId = useCallback((): string | undefined => {
-    return getWorkspaceFocusedPtyId(activeWorkspace);
-  }, [activeWorkspace]);
+  const getFocusedPtyId = (): string | undefined => {
+    return getWorkspaceFocusedPtyId(layout.activeWorkspace);
+  };
 
   // Write to the focused pane's PTY
-  const writeToFocused = useCallback((data: string) => {
+  const writeToFocused = (data: string) => {
     const focusedPtyId = getFocusedPtyId();
     if (focusedPtyId) {
       // Reset scroll cache to bottom (typing auto-scrolls)
-      const cached = ptyCaches.current.scrollStates.get(focusedPtyId);
+      const cached = ptyCaches.scrollStates.get(focusedPtyId);
       if (cached && cached.viewportOffset > 0) {
-        ptyCaches.current.scrollStates.set(focusedPtyId, {
+        ptyCaches.scrollStates.set(focusedPtyId, {
           ...cached,
           viewportOffset: 0,
           isAtBottom: true,
@@ -302,26 +309,26 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
       // Fire and forget for responsive typing
       writeToPty(focusedPtyId, data);
     }
-  }, [getFocusedPtyId]);
+  };
 
   // Resize a PTY session
-  const handleResizePTY = useCallback((ptyId: string, cols: number, rows: number) => {
+  const handleResizePTY = (ptyId: string, cols: number, rows: number) => {
     // Fire and forget
     resizePty(ptyId, cols, rows);
-  }, []);
+  };
 
   // Update pane position for graphics passthrough
-  const handleSetPanePosition = useCallback((ptyId: string, x: number, y: number) => {
+  const handleSetPanePosition = (ptyId: string, x: number, y: number) => {
     // Fire and forget
     setPanePosition(ptyId, x, y);
-  }, []);
+  };
 
   // Write to a specific PTY
-  const handleWriteToPTY = useCallback((ptyId: string, data: string) => {
+  const handleWriteToPTY = (ptyId: string, data: string) => {
     // Reset scroll cache to bottom (typing auto-scrolls)
-    const cached = ptyCaches.current.scrollStates.get(ptyId);
+    const cached = ptyCaches.scrollStates.get(ptyId);
     if (cached && cached.viewportOffset > 0) {
-      ptyCaches.current.scrollStates.set(ptyId, {
+      ptyCaches.scrollStates.set(ptyId, {
         ...cached,
         viewportOffset: 0,
         isAtBottom: true,
@@ -329,17 +336,17 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     }
     // Fire and forget for responsive typing
     writeToPty(ptyId, data);
-  }, []);
+  };
 
   // Get the current working directory of the focused pane
-  const getFocusedCwd = useCallback(async (): Promise<string | null> => {
+  const getFocusedCwd = async (): Promise<string | null> => {
     const focusedPtyId = getFocusedPtyId();
     if (!focusedPtyId) return null;
     return getPtyCwd(focusedPtyId);
-  }, [getFocusedPtyId]);
+  };
 
   // Paste from clipboard to the focused PTY
-  const pasteToFocused = useCallback(async (): Promise<boolean> => {
+  const pasteToFocused = async (): Promise<boolean> => {
     const focusedPtyId = getFocusedPtyId();
     if (!focusedPtyId) return false;
 
@@ -347,9 +354,9 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     if (!clipboardText) return false;
 
     // Reset scroll cache to bottom (pasting auto-scrolls)
-    const cached = ptyCaches.current.scrollStates.get(focusedPtyId);
+    const cached = ptyCaches.scrollStates.get(focusedPtyId);
     if (cached && cached.viewportOffset > 0) {
-      ptyCaches.current.scrollStates.set(focusedPtyId, {
+      ptyCaches.scrollStates.set(focusedPtyId, {
         ...cached,
         viewportOffset: 0,
         isAtBottom: true,
@@ -357,63 +364,60 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     }
     writeToPty(focusedPtyId, clipboardText);
     return true;
-  }, [getFocusedPtyId]);
+  };
 
   // Get the cursor key mode from the focused pane (sync - uses cache)
-  const getFocusedCursorKeyMode = useCallback((): 'normal' | 'application' => {
+  const getFocusedCursorKeyMode = (): 'normal' | 'application' => {
     const focusedPtyId = getFocusedPtyId();
     if (!focusedPtyId) return 'normal';
 
-    const terminalState = ptyCaches.current.terminalStates.get(focusedPtyId);
+    const terminalState = ptyCaches.terminalStates.get(focusedPtyId);
     return terminalState?.cursorKeyMode ?? 'normal';
-  }, [getFocusedPtyId]);
+  };
 
   // Check if mouse tracking is enabled for a PTY (sync - uses cache)
-  const handleIsMouseTrackingEnabled = useCallback((ptyId: string): boolean => {
-    const terminalState = ptyCaches.current.terminalStates.get(ptyId);
+  const handleIsMouseTrackingEnabled = (ptyId: string): boolean => {
+    const terminalState = ptyCaches.terminalStates.get(ptyId);
     return terminalState?.mouseTracking ?? false;
-  }, []);
+  };
 
   // Check if terminal is in alternate screen mode (sync - uses cache)
-  const handleIsAlternateScreen = useCallback((ptyId: string): boolean => {
-    const terminalState = ptyCaches.current.terminalStates.get(ptyId);
+  const handleIsAlternateScreen = (ptyId: string): boolean => {
+    const terminalState = ptyCaches.terminalStates.get(ptyId);
     return terminalState?.alternateScreen ?? false;
-  }, []);
-
-  // Scroll handlers are extracted to terminal/scroll-handlers.ts for reduced file size
-  // The handlers are created above using createScrollHandlers(ptyCaches)
+  };
 
   // Get cached emulator synchronously (for selection text extraction)
-  const getEmulatorSync = useCallback((ptyId: string): GhosttyEmulator | null => {
-    return ptyCaches.current.emulators.get(ptyId) ?? null;
-  }, []);
+  const getEmulatorSync = (ptyId: string): GhosttyEmulator | null => {
+    return ptyCaches.emulators.get(ptyId) ?? null;
+  };
 
   // Get cached terminal state synchronously (for selection text extraction)
-  const getTerminalStateSync = useCallback((ptyId: string): TerminalState | null => {
-    return ptyCaches.current.terminalStates.get(ptyId) ?? null;
-  }, []);
+  const getTerminalStateSync = (ptyId: string): TerminalState | null => {
+    return ptyCaches.terminalStates.get(ptyId) ?? null;
+  };
 
   // Find which session owns a PTY
-  const findSessionForPty = useCallback((ptyId: string): { sessionId: string; paneId: string } | null => {
+  const findSessionForPty = (ptyId: string): { sessionId: string; paneId: string } | null => {
     // First check current session's ptyToPaneMap (active PTYs)
-    const currentPaneId = ptyToPaneMap.current.get(ptyId);
+    const currentPaneId = ptyToPaneMap.get(ptyId);
     if (currentPaneId) {
       // PTY is in the current session - find which session that is
-      // by checking sessionPtyMapRef for a session that has this mapping
-      for (const [sessionId, mapping] of sessionPtyMapRef.current) {
+      // by checking sessionPtyMap for a session that has this mapping
+      for (const [sessionId, mapping] of sessionPtyMap) {
         for (const [paneId, mappedPtyId] of mapping) {
           if (mappedPtyId === ptyId) {
             return { sessionId, paneId };
           }
         }
       }
-      // If not found in sessionPtyMapRef, it's in the current unsaved session
+      // If not found in sessionPtyMap, it's in the current unsaved session
       // Return null for now - the caller should handle current session separately
       return null;
     }
 
     // Search through all session PTY mappings
-    for (const [sessionId, mapping] of sessionPtyMapRef.current) {
+    for (const [sessionId, mapping] of sessionPtyMap) {
       for (const [paneId, mappedPtyId] of mapping) {
         if (mappedPtyId === ptyId) {
           return { sessionId, paneId };
@@ -422,18 +426,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     }
 
     return null;
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      // Unsubscribe all
-      for (const unsub of unsubscribeFns.current.values()) {
-        unsub();
-      }
-      destroyAllPtys();
-    };
-  }, []);
+  };
 
   const value: TerminalContextValue = {
     createPTY,
@@ -458,13 +451,13 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
     scrollToBottom: scrollHandlers.handleScrollToBottom,
     getEmulatorSync,
     getTerminalStateSync,
-    isInitialized,
+    get isInitialized() { return isInitialized(); },
     findSessionForPty,
   };
 
   return (
     <TerminalContext.Provider value={value}>
-      {children}
+      {props.children}
     </TerminalContext.Provider>
   );
 }

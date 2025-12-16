@@ -3,7 +3,8 @@
  * Uses Effect bridge for PTY operations.
  */
 
-import { useState, useEffect, useCallback, useRef, memo } from 'react';
+import { createSignal, createEffect, onCleanup, Show } from 'solid-js';
+import { useRenderer } from '@opentui/solid';
 import { RGBA, type OptimizedBuffer } from '@opentui/core';
 import type { TerminalState, TerminalCell, TerminalScrollState, UnifiedTerminalUpdate } from '../core/types';
 import type { GhosttyEmulator } from '../terminal/ghostty-emulator';
@@ -76,31 +77,29 @@ const ATTR_STRIKETHROUGH = 128;
 /**
  * TerminalView component - uses direct buffer rendering for maximum performance
  */
-export const TerminalView = memo(function TerminalView({
-  ptyId,
-  width,
-  height,
-  isFocused,
-  offsetX = 0,
-  offsetY = 0,
-}: TerminalViewProps) {
-  // Get selection state
-  const { isCellSelected, getSelection, selectionVersion } = useSelection();
-  // Get search state
-  const { isSearchMatch, isCurrentMatch, searchState, searchVersion } = useSearch();
+export function TerminalView(props: TerminalViewProps) {
+  const renderer = useRenderer();
+  // Get selection state - keep full context to access selectionVersion reactively
+  const selection = useSelection();
+  const { isCellSelected, getSelection } = selection;
+  // Get search state - keep full context to access searchVersion reactively
+  const search = useSearch();
+  const { isSearchMatch, isCurrentMatch } = search;
   // Get scroll state from context cache (synchronous, already updated by scroll events)
   const { getScrollState: getScrollStateFromCache } = useTerminal();
 
-  // Store terminal state in a ref to avoid React re-renders
-  const terminalStateRef = useRef<TerminalState | null>(null);
+  // Store terminal state in a plain variable (Solid has no stale closures)
+  let terminalState: TerminalState | null = null;
   // Cache emulator for sync access to scrollback lines
-  const emulatorRef = useRef<GhosttyEmulator | null>(null);
-  // Version counter to trigger re-renders when state changes
-  const [version, setVersion] = useState(0);
+  let emulator: GhosttyEmulator | null = null;
   // Frame batching: coalesce multiple updates into single render per event loop tick
-  const renderRequestedRef = useRef(false);
+  let renderRequested = false;
 
-  useEffect(() => {
+  // Version counter to trigger re-renders when state changes
+  const [version, setVersion] = createSignal(0);
+
+  createEffect(() => {
+    const ptyId = props.ptyId;
     let unsubscribe: (() => void) | null = null;
     let mounted = true;
 
@@ -108,14 +107,12 @@ export const TerminalView = memo(function TerminalView({
     let cachedRows: TerminalCell[][] = [];
 
     // Batched render request - coalesces multiple updates into one render
-    const requestRender = () => {
-      if (!renderRequestedRef.current && mounted) {
-        renderRequestedRef.current = true;
-        // Use queueMicrotask for tighter timing than setImmediate
-        // Microtasks run before the next event loop tick, reducing frame latency
+    const requestRenderFrame = () => {
+      if (!renderRequested && mounted) {
+        renderRequested = true;
         queueMicrotask(() => {
           if (mounted) {
-            renderRequestedRef.current = false;
+            renderRequested = false;
             setVersion(v => v + 1);
           }
         });
@@ -125,9 +122,9 @@ export const TerminalView = memo(function TerminalView({
     // Initialize async resources
     const init = async () => {
       // Get emulator for scrollback access
-      const emulator = await getEmulator(ptyId);
+      const em = await getEmulator(ptyId);
       if (!mounted) return;
-      emulatorRef.current = emulator;
+      emulator = em;
 
       // Subscribe to unified updates (terminal + scroll combined)
       // This replaces separate subscribeToPty + subscribeToScroll with single subscription
@@ -139,18 +136,18 @@ export const TerminalView = memo(function TerminalView({
         // Update terminal state
         if (terminalUpdate.isFull && terminalUpdate.fullState) {
           // Full refresh: store complete state
-          terminalStateRef.current = terminalUpdate.fullState;
+          terminalState = terminalUpdate.fullState;
           cachedRows = [...terminalUpdate.fullState.cells];
         } else {
           // Delta update: merge dirty rows into cached state
-          const existingState = terminalStateRef.current;
+          const existingState = terminalState;
           if (existingState) {
             // Apply dirty rows to cached rows
             for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
               cachedRows[rowIdx] = newRow;
             }
             // Update state with merged cells and new cursor/modes
-            terminalStateRef.current = {
+            terminalState = {
               ...existingState,
               cells: cachedRows,
               cursor: terminalUpdate.cursor,
@@ -162,26 +159,35 @@ export const TerminalView = memo(function TerminalView({
         }
 
         // Request batched render (scroll state comes from context cache)
-        requestRender();
+        requestRenderFrame();
       });
 
       // Trigger initial render
-      requestRender();
+      requestRenderFrame();
     };
 
     init();
 
-    return () => {
+    onCleanup(() => {
       mounted = false;
       if (unsubscribe) {
         unsubscribe();
       }
-    };
-  }, [ptyId]);
+      terminalState = null;
+      emulator = null;
+    });
+  });
 
   // Render callback that directly writes to buffer
-  const renderTerminal = useCallback((buffer: OptimizedBuffer) => {
-    const state = terminalStateRef.current;
+  const renderTerminal = (buffer: OptimizedBuffer) => {
+    const state = terminalState;
+    const width = props.width;
+    const height = props.height;
+    const offsetX = props.offsetX ?? 0;
+    const offsetY = props.offsetY ?? 0;
+    const isFocused = props.isFocused;
+    const ptyId = props.ptyId;
+
     if (!state) {
       // Clear the buffer area when state is null (PTY destroyed)
       for (let y = 0; y < height; y++) {
@@ -206,7 +212,7 @@ export const TerminalView = memo(function TerminalView({
     const fallbackFg = BLACK;
 
     // Pre-fetch all rows we need for rendering (optimization: fetch once per row, not per cell)
-    const emulator = viewportOffset > 0 ? emulatorRef.current : null;
+    const currentEmulator = viewportOffset > 0 ? emulator : null;
     const rowCache: (TerminalCell[] | null)[] = new Array(rows);
 
     for (let y = 0; y < rows; y++) {
@@ -222,7 +228,7 @@ export const TerminalView = memo(function TerminalView({
           rowCache[y] = null;
         } else if (absoluteY < scrollbackLength) {
           // In scrollback buffer
-          rowCache[y] = emulator?.getScrollbackLine(absoluteY) ?? null;
+          rowCache[y] = currentEmulator?.getScrollbackLine(absoluteY) ?? null;
         } else {
           // In live terminal area
           const liveY = absoluteY - scrollbackLength;
@@ -233,7 +239,8 @@ export const TerminalView = memo(function TerminalView({
 
     // Pre-check if selection/search is active for this pane (avoid 5760 function calls per frame)
     const hasSelection = !!getSelection(ptyId)?.normalizedRange;
-    const hasSearch = searchState?.ptyId === ptyId && searchState.matches.length > 0;
+    const currentSearchState = search.searchState;
+    const hasSearch = currentSearchState?.ptyId === ptyId && currentSearchState.matches.length > 0;
 
     for (let y = 0; y < rows; y++) {
       const row = rowCache[y];
@@ -344,35 +351,54 @@ export const TerminalView = memo(function TerminalView({
         );
       }
     }
+  };
 
-    }, [width, height, isFocused, offsetX, offsetY, ptyId, isCellSelected, getSelection, selectionVersion, isSearchMatch, isCurrentMatch, searchState, searchVersion, getScrollStateFromCache]);
+  // Force periodic renders to ensure terminal updates are displayed
+  // This works around Solid's reactivity not triggering OpenTUI renders
+  createEffect(() => {
+    const intervalId = setInterval(() => {
+      if (terminalState) {
+        renderer.requestRender();
+      }
+    }, 16); // ~60fps
 
-  const terminalState = terminalStateRef.current;
+    onCleanup(() => {
+      clearInterval(intervalId);
+    });
+  });
 
-  if (!terminalState) {
-    return (
-      <box
-        style={{
-          width,
-          height,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <text fg="#666666">Loading terminal...</text>
-      </box>
-    );
-  }
+  // Request render when selection or search version changes
+  createEffect(() => {
+    const sv = selection.selectionVersion;
+    const searchV = search.searchVersion;
+    renderer.requestRender();
+  });
 
   return (
-    <box
-      style={{
-        width,
-        height,
-      }}
-      renderAfter={renderTerminal}
-    />
+    <Show
+      when={version() > 0}
+      fallback={
+        <box
+          style={{
+            width: props.width,
+            height: props.height,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <text fg="#666666">Loading terminal...</text>
+        </box>
+      }
+    >
+      <box
+        style={{
+          width: props.width,
+          height: props.height,
+        }}
+        renderAfter={renderTerminal}
+      />
+    </Show>
   );
-});
+}
 
 export default TerminalView;

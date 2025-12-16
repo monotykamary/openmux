@@ -1,0 +1,5 @@
+# Solid.js JSX transform preload
+preload = ["@opentui/solid/preload"]
+
+[test]
+preload = ["@opentui/solid/preload"]

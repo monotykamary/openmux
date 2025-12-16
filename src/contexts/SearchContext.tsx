@@ -7,14 +7,13 @@
  * - Navigation between matches with auto-scroll
  */
 
-import React, {
+import {
   createContext,
   useContext,
-  useCallback,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+  createSignal,
+  onCleanup,
+  type ParentProps,
+} from 'solid-js';
 import { getEmulator, getTerminalState, getScrollState } from '../effect/bridge';
 import { useTerminal } from './TerminalContext';
 
@@ -37,48 +36,50 @@ const SearchContext = createContext<SearchContextValue | null>(null);
 // Provider
 // =============================================================================
 
-interface SearchProviderProps {
-  children: ReactNode;
-}
+interface SearchProviderProps extends ParentProps {}
 
 // Search debounce delay in ms
 const SEARCH_DEBOUNCE_MS = 150;
 
-export function SearchProvider({ children }: SearchProviderProps) {
+export function SearchProvider(props: SearchProviderProps) {
   // Get setScrollOffset from TerminalContext (updates cache for immediate rendering)
   const { setScrollOffset } = useTerminal();
 
-  // Store search state - use state so context consumers get updates
-  const [searchState, setSearchState] = useState<SearchState | null>(null);
-  // Also keep a ref for synchronous access in render callbacks (isSearchMatch/isCurrentMatch)
-  const searchStateRef = useRef<SearchState | null>(null);
+  // Store search state - Solid signals are synchronous, so no need for separate ref
+  const [searchState, setSearchState] = createSignal<SearchState | null>(null);
 
   // Version counter to trigger re-renders when search state changes
-  const [searchVersion, setSearchVersion] = useState(0);
+  const [searchVersion, setSearchVersion] = createSignal(0);
 
   // Debounce timer for search
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   // Pending query for debounced search
-  const pendingQueryRef = useRef<string>('');
+  let pendingQuery = '';
 
   // Spatial index for O(1) match lookup by line
   // Map<lineIndex, Array<{startCol, endCol}>>
-  const matchLookupRef = useRef<Map<number, Array<{ startCol: number; endCol: number }>>>(new Map());
+  let matchLookup = new Map<number, Array<{ startCol: number; endCol: number }>>();
 
-  // Update both state and ref, and rebuild spatial index
-  const updateSearchState = useCallback((newState: SearchState | null) => {
-    searchStateRef.current = newState;
+  // Cleanup on unmount
+  onCleanup(() => {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+    }
+  });
+
+  // Update state and rebuild spatial index
+  const updateSearchState = (newState: SearchState | null) => {
     setSearchState(newState);
     setSearchVersion((v) => v + 1);
 
     // Rebuild spatial index for fast lookup using extracted helper
-    matchLookupRef.current = newState?.matches
+    matchLookup = newState?.matches
       ? buildMatchLookup(newState.matches)
       : new Map();
-  }, []);
+  };
 
   // Enter search mode
-  const enterSearchMode = useCallback(async (ptyId: string) => {
+  const enterSearchMode = async (ptyId: string) => {
     // Get emulator and terminal state
     const emulator = await getEmulator(ptyId);
     const terminalState = await getTerminalState(ptyId);
@@ -98,17 +99,17 @@ export function SearchProvider({ children }: SearchProviderProps) {
       scrollbackLength: emulator.getScrollbackLength(),
       originalScrollOffset: scrollState?.viewportOffset ?? 0,
     });
-  }, [updateSearchState]);
+  };
 
   // Exit search mode
-  const exitSearchMode = useCallback((restorePosition = false) => {
-    const state = searchStateRef.current;
+  const exitSearchMode = (restorePosition = false) => {
+    const state = searchState();
     if (!state) return;
 
     // Clear any pending debounced search
-    if (searchDebounceRef.current) {
-      clearTimeout(searchDebounceRef.current);
-      searchDebounceRef.current = null;
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
     }
 
     // Restore original scroll position if requested (on Escape)
@@ -117,18 +118,18 @@ export function SearchProvider({ children }: SearchProviderProps) {
     }
 
     updateSearchState(null);
-  }, [updateSearchState, setScrollOffset]);
+  };
 
   // Update search query (debounced)
-  const setSearchQuery = useCallback((query: string) => {
-    const state = searchStateRef.current;
+  const setSearchQuery = (query: string) => {
+    const state = searchState();
     if (!state || !state.emulator || !state.terminalState) return;
 
-    pendingQueryRef.current = query;
+    pendingQuery = query;
 
     // Clear existing debounce timer
-    if (searchDebounceRef.current) {
-      clearTimeout(searchDebounceRef.current);
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
     }
 
     // Update query immediately for display (show typing instantly)
@@ -139,10 +140,10 @@ export function SearchProvider({ children }: SearchProviderProps) {
     });
 
     // Debounce the actual search
-    searchDebounceRef.current = setTimeout(() => {
-      const currentState = searchStateRef.current;
+    searchDebounceTimer = setTimeout(() => {
+      const currentState = searchState();
       if (!currentState || !currentState.emulator || !currentState.terminalState) return;
-      if (pendingQueryRef.current !== query) return; // Query changed, skip
+      if (pendingQuery !== query) return; // Query changed, skip
 
       // Perform search
       const matches = performSearch(query, currentState.emulator, currentState.terminalState);
@@ -169,11 +170,11 @@ export function SearchProvider({ children }: SearchProviderProps) {
         setScrollOffset(currentState.ptyId, offset);
       }
     }, SEARCH_DEBOUNCE_MS);
-  }, [updateSearchState, setScrollOffset]);
+  };
 
   // Navigate to next match
-  const nextMatch = useCallback(() => {
-    const state = searchStateRef.current;
+  const nextMatch = () => {
+    const state = searchState();
     if (!state || state.matches.length === 0 || !state.terminalState) return;
 
     const newIndex = (state.currentMatchIndex + 1) % state.matches.length;
@@ -191,11 +192,11 @@ export function SearchProvider({ children }: SearchProviderProps) {
       state.terminalState.rows
     );
     setScrollOffset(state.ptyId, offset);
-  }, [updateSearchState]);
+  };
 
   // Navigate to previous match
-  const prevMatch = useCallback(() => {
-    const state = searchStateRef.current;
+  const prevMatch = () => {
+    const state = searchState();
     if (!state || state.matches.length === 0 || !state.terminalState) return;
 
     const newIndex = state.currentMatchIndex <= 0
@@ -215,50 +216,45 @@ export function SearchProvider({ children }: SearchProviderProps) {
       state.terminalState.rows
     );
     setScrollOffset(state.ptyId, offset);
-  }, [updateSearchState]);
+  };
 
   // Check if cell is any search match (optimized with spatial index)
-  const isSearchMatch = useCallback(
-    (ptyId: string, x: number, absoluteY: number): boolean => {
-      const state = searchStateRef.current;
-      if (!state || state.ptyId !== ptyId) {
-        return false;
-      }
-
-      // O(1) lookup by line using spatial index
-      const lineMatches = matchLookupRef.current.get(absoluteY);
-      if (!lineMatches) return false;
-
-      // Check matches on this line (usually very few per line)
-      for (const { startCol, endCol } of lineMatches) {
-        if (x >= startCol && x < endCol) return true;
-      }
+  // Note: In Solid, this is synchronous - no stale closure issues
+  const isSearchMatch = (ptyId: string, x: number, absoluteY: number): boolean => {
+    const state = searchState();
+    if (!state || state.ptyId !== ptyId) {
       return false;
-    },
-    []
-  );
+    }
+
+    // O(1) lookup by line using spatial index
+    const lineMatches = matchLookup.get(absoluteY);
+    if (!lineMatches) return false;
+
+    // Check matches on this line (usually very few per line)
+    for (const { startCol, endCol } of lineMatches) {
+      if (x >= startCol && x < endCol) return true;
+    }
+    return false;
+  };
 
   // Check if cell is the current match
-  const isCurrentMatch = useCallback(
-    (ptyId: string, x: number, absoluteY: number): boolean => {
-      const state = searchStateRef.current;
-      if (
-        !state ||
-        state.ptyId !== ptyId ||
-        state.currentMatchIndex < 0 ||
-        state.currentMatchIndex >= state.matches.length
-      ) {
-        return false;
-      }
+  const isCurrentMatch = (ptyId: string, x: number, absoluteY: number): boolean => {
+    const state = searchState();
+    if (
+      !state ||
+      state.ptyId !== ptyId ||
+      state.currentMatchIndex < 0 ||
+      state.currentMatchIndex >= state.matches.length
+    ) {
+      return false;
+    }
 
-      const currentMatch = state.matches[state.currentMatchIndex];
-      return isCellInMatch(x, absoluteY, currentMatch);
-    },
-    []
-  );
+    const currentMatch = state.matches[state.currentMatchIndex];
+    return isCellInMatch(x, absoluteY, currentMatch);
+  };
 
   const value: SearchContextValue = {
-    searchState,
+    get searchState() { return searchState(); },
     enterSearchMode,
     exitSearchMode,
     setSearchQuery,
@@ -266,12 +262,12 @@ export function SearchProvider({ children }: SearchProviderProps) {
     prevMatch,
     isSearchMatch,
     isCurrentMatch,
-    searchVersion,
+    get searchVersion() { return searchVersion(); },
   };
 
   return (
     <SearchContext.Provider value={value}>
-      {children}
+      {props.children}
     </SearchContext.Provider>
   );
 }

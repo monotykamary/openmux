@@ -2,30 +2,33 @@
  * Theme context for styling configuration
  */
 
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, type ParentProps } from 'solid-js';
 import type { Theme } from '../core/types';
 import { DEFAULT_THEME } from '../core/config';
 
 const ThemeContext = createContext<Theme>(DEFAULT_THEME);
 
-interface ThemeProviderProps {
+interface ThemeProviderProps extends ParentProps {
   theme?: Partial<Theme>;
-  children: ReactNode;
 }
 
-export function ThemeProvider({ theme, children }: ThemeProviderProps) {
+export function ThemeProvider(props: ThemeProviderProps) {
   const mergedTheme: Theme = {
-    pane: { ...DEFAULT_THEME.pane, ...theme?.pane },
-    statusBar: { ...DEFAULT_THEME.statusBar, ...theme?.statusBar },
+    pane: { ...DEFAULT_THEME.pane, ...props.theme?.pane },
+    statusBar: { ...DEFAULT_THEME.statusBar, ...props.theme?.statusBar },
   };
 
   return (
     <ThemeContext.Provider value={mergedTheme}>
-      {children}
+      {props.children}
     </ThemeContext.Provider>
   );
 }
 
 export function useTheme(): Theme {
-  return useContext(ThemeContext);
+  const theme = useContext(ThemeContext);
+  if (!theme) {
+    throw new Error('useTheme must be used within ThemeProvider');
+  }
+  return theme;
 }

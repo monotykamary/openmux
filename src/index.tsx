@@ -2,29 +2,17 @@
  * Terminal multiplexer with master-stack layout
  */
 
-import { createCliRenderer, ConsolePosition } from '@opentui/core';
-import { createRoot } from '@opentui/react';
+import { render, useRenderer } from '@opentui/solid';
+import { ConsolePosition } from '@opentui/core';
 import { App } from './App';
 import { detectHostCapabilities } from './terminal';
+import { onMount } from 'solid-js';
 
-async function main() {
-  try {
-    // Prime host capabilities (including color query) before the renderer takes over stdin
-    await detectHostCapabilities();
+// Wrapper component that handles kitty keyboard setup after render
+function AppWithSetup() {
+  const renderer = useRenderer();
 
-    // Create OpenTUI renderer - exclude SIGINT so Ctrl+C goes to PTY
-    const renderer = await createCliRenderer({
-      exitOnCtrlC: false,
-      exitSignals: ['SIGTERM', 'SIGQUIT', 'SIGABRT'], // No SIGINT
-      useMouse: true, // Enable mouse tracking to properly consume mouse escape sequences
-      enableMouseMovement: true, // Track mouse movement for drag and hover events
-      useConsole: true, // Enable debug console (toggle with prefix + `)
-      consoleOptions: {
-        position: ConsolePosition.BOTTOM,
-        sizePercent: 30,
-      },
-    });
-
+  onMount(() => {
     // Enable kitty keyboard protocol AFTER renderer setup
     // Flag 1 = disambiguate escape codes (detect Alt+key without breaking regular input)
     // Flag 8 was too aggressive - it reports ALL keys as escape codes, breaking shift
@@ -36,9 +24,28 @@ async function main() {
     if (process.stdout.isTTY) {
       (process.stdout as any)._handle?.flush?.();
     }
+  });
 
-    // Render the app
-    createRoot(renderer).render(<App />);
+  return <App />;
+}
+
+async function main() {
+  try {
+    // Prime host capabilities (including color query) before the renderer takes over stdin
+    await detectHostCapabilities();
+
+    // Render the app with Solid - render creates the renderer internally
+    await render(() => <AppWithSetup />, {
+      exitOnCtrlC: false,
+      exitSignals: ['SIGTERM', 'SIGQUIT', 'SIGABRT'], // No SIGINT - let Ctrl+C go to PTY
+      useMouse: true, // Enable mouse tracking to properly consume mouse escape sequences
+      enableMouseMovement: true, // Track mouse movement for drag and hover events
+      useConsole: true, // Enable debug console (toggle with prefix + `)
+      consoleOptions: {
+        position: ConsolePosition.BOTTOM,
+        sizePercent: 30,
+      },
+    });
   } catch (error) {
     console.error('Failed to start openmux:', error);
     process.exit(1);

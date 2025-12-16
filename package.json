@@ -59,7 +59,6 @@
     "@effect/language-service": "^0.60.0",
     "@effect/vitest": "^0.27.0",
     "@types/bun": "latest",
-    "@types/react": "^19.2.7",
     "@typescript-eslint/eslint-plugin": "^8.50.0",
     "@typescript-eslint/parser": "^8.50.0",
     "eslint": "^9.39.2",
@@ -73,9 +72,9 @@
     "@effect/cli": "^0.72.1",
     "@effect/platform": "^0.93.7",
     "@opentui/core": "^0.1.60",
-    "@opentui/react": "^0.1.60",
+    "@opentui/solid": "^0.1.60",
     "effect": "^3.19.11",
     "ghostty-web": "^0.3.0",
-    "react": "^19.2.3"
+    "solid-js": "^1.9.9"
   }
 }

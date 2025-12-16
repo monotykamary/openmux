@@ -2,8 +2,8 @@
  * Main App component for openmux
  */
 
-import React, { useEffect, useCallback, useRef, useState } from 'react';
-import { useKeyboard, useTerminalDimensions, useRenderer } from '@opentui/react';
+import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+import { useKeyboard, useTerminalDimensions, useRenderer } from '@opentui/solid';
 import type { PasteEvent } from '@opentui/core';
 import {
   ThemeProvider,
@@ -36,124 +36,127 @@ import {
 } from './effect/bridge';
 
 function AppContent() {
-  const { width, height } = useTerminalDimensions();
-  const { dispatch, activeWorkspace, panes, state: layoutState } = useLayout();
-  const { createPTY, resizePTY, setPanePosition, writeToFocused, writeToPTY, pasteToFocused, getFocusedCwd, getFocusedCursorKeyMode, isInitialized, destroyAllPTYs, getSessionCwd } = useTerminal();
-  const { togglePicker, state: sessionState } = useSession();
+  const dimensions = useTerminalDimensions();
+  const width = () => dimensions().width;
+  const height = () => dimensions().height;
+  const layout = useLayout();
+  const { setViewport, newPane, closePane } = layout;
+  // Don't destructure isInitialized - it's a reactive getter that loses reactivity when destructured
+  const terminal = useTerminal();
+  const { createPTY, resizePTY, setPanePosition, writeToFocused, writeToPTY, pasteToFocused, getFocusedCwd, getFocusedCursorKeyMode, destroyAllPTYs, getSessionCwd } = terminal;
+  const { togglePicker, state: sessionState, saveSession } = useSession();
   const { clearAllSelections, copyNotification } = useSelection();
   const { searchState, enterSearchMode, exitSearchMode, setSearchQuery, nextMatch, prevMatch } = useSearch();
   const { state: aggregateState, openAggregateView } = useAggregateView();
-  const { dispatch: kbDispatch } = useKeyboardState();
+  const { enterConfirmMode, exitConfirmMode } = useKeyboardState();
   const renderer = useRenderer();
 
   // Track pending CWD for new panes (captured before NEW_PANE dispatch)
-  const pendingCwdRef = useRef<string | null>(null);
-
-  // Session management (for quit handler)
-  const { saveSession } = useSession();
+  let pendingCwd: string | null = null;
 
   // Confirmation dialog state
-  const [confirmationState, setConfirmationState] = useState<{
+  const [confirmationState, setConfirmationState] = createSignal<{
     visible: boolean;
     type: ConfirmationType;
   }>({ visible: false, type: 'close_pane' });
 
   // Create new pane handler that captures CWD first
-  const handleNewPane = useCallback(async () => {
+  const handleNewPane = async () => {
     // Capture the focused pane's CWD before creating the new pane
     const cwd = await getFocusedCwd();
-    pendingCwdRef.current = cwd;
-    dispatch({ type: 'NEW_PANE' });
+    pendingCwd = cwd;
+    newPane();
     // Session save is triggered automatically via layoutVersion change
-  }, [dispatch, getFocusedCwd]);
+  };
 
   // Create paste handler for manual paste (Ctrl+V, prefix+p/])
-  const handlePaste = useCallback(() => {
+  const handlePaste = () => {
     pasteToFocused();
-  }, [pasteToFocused]);
+  };
 
   // Quit handler - save session and cleanup terminal before exiting
-  const handleQuit = useCallback(async () => {
+  const handleQuit = async () => {
     // Save the current session before quitting
     await saveSession();
     renderer.destroy();
     process.exit(0);
-  }, [renderer, saveSession]);
+  };
 
   // Session picker toggle handler
-  const handleToggleSessionPicker = useCallback(() => {
+  const handleToggleSessionPicker = () => {
     togglePicker();
-  }, [togglePicker]);
+  };
 
   // Toggle debug console
-  const handleToggleConsole = useCallback(() => {
+  const handleToggleConsole = () => {
     renderer.console.toggle();
-  }, [renderer]);
+  };
 
   // Search mode enter handler
-  const handleEnterSearch = useCallback(async () => {
+  const handleEnterSearch = async () => {
     // Clear any existing selection so it doesn't hide search highlights
     clearAllSelections();
 
     // Get the focused pane's PTY ID using centralized utility
-    const focusedPtyId = getFocusedPtyId(activeWorkspace);
+    const focusedPtyId = getFocusedPtyId(layout.activeWorkspace);
     if (focusedPtyId) {
       await enterSearchMode(focusedPtyId);
     }
-  }, [activeWorkspace, enterSearchMode, clearAllSelections]);
+  };
 
   // Aggregate view toggle handler
-  const handleToggleAggregateView = useCallback(() => {
+  const handleToggleAggregateView = () => {
     openAggregateView();
-  }, [openAggregateView]);
+  };
 
   // Request close pane (show confirmation)
-  const handleRequestClosePane = useCallback(() => {
-    kbDispatch({ type: 'ENTER_CONFIRM_MODE', confirmationType: 'close_pane' });
+  const handleRequestClosePane = () => {
+    enterConfirmMode('close_pane');
     setConfirmationState({ visible: true, type: 'close_pane' });
-  }, [kbDispatch]);
+  };
 
   // Request quit (show confirmation)
-  const handleRequestQuit = useCallback(() => {
-    kbDispatch({ type: 'ENTER_CONFIRM_MODE', confirmationType: 'exit' });
+  const handleRequestQuit = () => {
+    enterConfirmMode('exit');
     setConfirmationState({ visible: true, type: 'exit' });
-  }, [kbDispatch]);
+  };
 
   // Confirmation dialog handlers
-  const handleConfirmAction = useCallback(async () => {
-    const { type } = confirmationState;
-    kbDispatch({ type: 'EXIT_CONFIRM_MODE' });
+  const handleConfirmAction = async () => {
+    const { type } = confirmationState();
+    exitConfirmMode();
     setConfirmationState({ visible: false, type: 'close_pane' });
 
     if (type === 'close_pane') {
-      dispatch({ type: 'CLOSE_PANE' });
+      closePane();
     } else if (type === 'exit') {
       await saveSession();
       renderer.destroy();
       process.exit(0);
     }
-  }, [confirmationState, kbDispatch, dispatch, saveSession, renderer]);
+  };
 
-  const handleCancelConfirmation = useCallback(() => {
-    kbDispatch({ type: 'EXIT_CONFIRM_MODE' });
+  const handleCancelConfirmation = () => {
+    exitConfirmMode();
     setConfirmationState({ visible: false, type: 'close_pane' });
-  }, [kbDispatch]);
+  };
 
   // Handle bracketed paste from host terminal (Cmd+V sends this)
-  useEffect(() => {
+  createEffect(() => {
     const handleBracketedPaste = (event: PasteEvent) => {
       // Write the pasted text directly to the focused pane's PTY
-      const focusedPtyId = getFocusedPtyId(activeWorkspace);
+      const focusedPtyId = getFocusedPtyId(layout.activeWorkspace);
       if (focusedPtyId) {
         writeToPTY(focusedPtyId, event.text);
       }
     };
 
     renderer.keyInput.on('paste', handleBracketedPaste);
-    return () => {
+
+    onCleanup(() => {
       renderer.keyInput.off('paste', handleBracketedPaste);
-    };
-  }, [renderer, activeWorkspace, writeToPTY]);
+    });
+  });
 
   const { handleKeyDown, mode } = useKeyboardHandler({
     onPaste: handlePaste,
@@ -168,35 +171,33 @@ function AppContent() {
   });
 
   // Retry counter to trigger effect re-run when PTY creation fails
-  const [ptyRetryCounter, setPtyRetryCounter] = useState(0);
+  const [ptyRetryCounter, setPtyRetryCounter] = createSignal(0);
 
   // Update viewport when terminal resizes
-  useEffect(() => {
-    if (width > 0 && height > 0) {
+  createEffect(() => {
+    const w = width();
+    const h = height();
+    if (w > 0 && h > 0) {
       // Reserve 1 row for status bar
-      dispatch({
-        type: 'SET_VIEWPORT',
-        viewport: { x: 0, y: 0, width, height: height - 1 },
-      });
+      setViewport({ x: 0, y: 0, width: w, height: h - 1 });
     }
-  }, [width, height, dispatch]);
+  });
 
   // Create first pane on mount
-  useEffect(() => {
-    dispatch({
-      type: 'NEW_PANE',
-      title: 'shell',
-    });
-  }, [dispatch]);
+  onMount(() => {
+    newPane('shell');
+  });
 
   // Create PTYs for panes that don't have one
-  useEffect(() => {
-    if (!isInitialized) return;
+  createEffect(() => {
+    if (!terminal.isInitialized) return;
 
+    // Track retry counter to re-trigger effect
+    const _retry = ptyRetryCounter();
     let hadFailure = false;
 
     const createPtysForPanes = async () => {
-      for (const pane of panes) {
+      for (const pane of layout.panes) {
         const alreadyCreated = await isPtyCreated(pane.id);
         if (!pane.ptyId && !alreadyCreated) {
           // Calculate pane dimensions (account for border)
@@ -206,8 +207,8 @@ function AppContent() {
 
           // Check for session-restored CWD first, then pending CWD from new pane
           const sessionCwd = await getSessionCwdFromCoordinator(pane.id);
-          let cwd = sessionCwd ?? pendingCwdRef.current ?? undefined;
-          pendingCwdRef.current = null; // Clear after use
+          let cwd = sessionCwd ?? pendingCwd ?? undefined;
+          pendingCwd = null; // Clear after use
 
           try {
             createPTY(pane.id, cols, rows, cwd);
@@ -230,13 +231,13 @@ function AppContent() {
     };
 
     createPtysForPanes();
-  }, [isInitialized, panes, createPTY, ptyRetryCounter]);
+  });
 
   // Resize PTYs and update positions when pane dimensions change
-  useEffect(() => {
-    if (!isInitialized) return;
+  createEffect(() => {
+    if (!terminal.isInitialized) return;
 
-    for (const pane of panes) {
+    for (const pane of layout.panes) {
       if (pane.ptyId && pane.rectangle) {
         const cols = Math.max(1, pane.rectangle.width - 2);
         const rows = Math.max(1, pane.rectangle.height - 2);
@@ -245,21 +246,21 @@ function AppContent() {
         setPanePosition(pane.ptyId, pane.rectangle.x + 1, pane.rectangle.y + 1);
       }
     }
-  }, [isInitialized, panes, resizePTY, setPanePosition]);
+  });
 
   // Track previous aggregate view state to detect close
-  const prevShowAggregateView = useRef(aggregateState.showAggregateView);
+  let prevShowAggregateView = aggregateState.showAggregateView;
 
   // Restore PTY sizes when aggregate view closes
   // The preview resizes PTYs to preview dimensions, so we need to restore pane dimensions
-  useEffect(() => {
-    const wasOpen = prevShowAggregateView.current;
+  createEffect(() => {
+    const wasOpen = prevShowAggregateView;
     const isOpen = aggregateState.showAggregateView;
-    prevShowAggregateView.current = isOpen;
+    prevShowAggregateView = isOpen;
 
     // Only trigger resize when closing (was open, now closed)
-    if (wasOpen && !isOpen && isInitialized) {
-      for (const pane of panes) {
+    if (wasOpen && !isOpen && terminal.isInitialized) {
+      for (const pane of layout.panes) {
         if (pane.ptyId && pane.rectangle) {
           const cols = Math.max(1, pane.rectangle.width - 2);
           const rows = Math.max(1, pane.rectangle.height - 2);
@@ -267,134 +268,130 @@ function AppContent() {
         }
       }
     }
-  }, [aggregateState.showAggregateView, isInitialized, panes, resizePTY]);
+  });
 
   // Handle keyboard input
   useKeyboard(
-    useCallback(
-      (event: { name: string; ctrl?: boolean; shift?: boolean; option?: boolean; meta?: boolean; sequence?: string }) => {
-        // Route to overlays via KeyboardRouter (handles confirmation, session picker, aggregate view)
-        // Use event.sequence for printable chars (handles shift for uppercase/symbols)
-        // Fall back to event.name for special keys
-        const charCode = event.sequence?.charCodeAt(0) ?? 0;
-        const isPrintableChar = event.sequence?.length === 1 && charCode >= 32 && charCode < 127;
-        const keyToPass = isPrintableChar ? event.sequence! : event.name;
+    (event: { name: string; ctrl?: boolean; shift?: boolean; option?: boolean; meta?: boolean; sequence?: string }) => {
+      // Route to overlays via KeyboardRouter (handles confirmation, session picker, aggregate view)
+      // Use event.sequence for printable chars (handles shift for uppercase/symbols)
+      // Fall back to event.name for special keys
+      const charCode = event.sequence?.charCodeAt(0) ?? 0;
+      const isPrintableChar = event.sequence?.length === 1 && charCode >= 32 && charCode < 127;
+      const keyToPass = isPrintableChar ? event.sequence! : event.name;
 
-        const routeResult = routeKeyboardEventSync({
-          key: keyToPass,
+      const routeResult = routeKeyboardEventSync({
+        key: keyToPass,
+        ctrl: event.ctrl,
+        alt: event.option,
+        shift: event.shift,
+        sequence: event.sequence,
+      });
+
+      // If an overlay handled the key, don't process further
+      if (routeResult.handled) {
+        return;
+      }
+
+      // If in search mode, handle search-specific keys
+      if (mode === 'search') {
+        const key = event.name.toLowerCase();
+
+        if (key === 'escape') {
+          // Cancel search, restore original scroll position
+          exitSearchMode(true);
+          return;
+        }
+
+        if (key === 'return' || key === 'enter') {
+          // Confirm search, stay at current position
+          exitSearchMode(false);
+          return;
+        }
+
+        // Wait for searchState to be initialized before handling navigation/input
+        const currentSearchState = searchState;
+        if (!currentSearchState) {
+          return;
+        }
+
+        if (key === 'n' && event.ctrl && !event.shift && !event.option) {
+          // Next match (Ctrl+n)
+          nextMatch();
+          return;
+        }
+
+        if ((key === 'n' && event.ctrl && event.shift) || (key === 'p' && event.ctrl)) {
+          // Previous match (Ctrl+Shift+N or Ctrl+p)
+          prevMatch();
+          return;
+        }
+
+        if (key === 'backspace') {
+          // Delete last character from query
+          setSearchQuery(currentSearchState.query.slice(0, -1));
+          return;
+        }
+
+        // Single printable character - add to search query
+        const searchCharCode = event.sequence?.charCodeAt(0) ?? 0;
+        const isPrintable = event.sequence?.length === 1 && searchCharCode >= 32 && searchCharCode < 127;
+        if (isPrintable && !event.ctrl && !event.option && !event.meta) {
+          setSearchQuery(currentSearchState.query + event.sequence);
+          return;
+        }
+
+        // Consume all other keys in search mode
+        return;
+      }
+
+      // First, check if this is a multiplexer command
+      const handled = handleKeyDown({
+        key: event.name,
+        ctrl: event.ctrl,
+        shift: event.shift,
+        alt: event.option, // OpenTUI uses 'option' for Alt key
+        meta: event.meta,
+      });
+
+      // If not handled by multiplexer and in normal mode, forward to PTY
+      if (!handled && mode === 'normal' && !sessionState.showSessionPicker) {
+
+        // Clear any active selection when user types
+        clearAllSelections();
+
+        // Get the focused pane's cursor key mode (DECCKM)
+        // This affects how arrow keys are encoded (application vs normal mode)
+        const cursorKeyMode = getFocusedCursorKeyMode();
+        inputHandler.setCursorMode(cursorKeyMode);
+
+        // Convert keyboard event to terminal escape sequence
+        // Use event.sequence for single printable chars (handles shift for uppercase/symbols)
+        // Fall back to event.name for special keys (arrows, function keys, etc.)
+        // Don't use sequence for control chars (< 32) or DEL (127) as we need name for Shift+Tab etc.
+        const keyCharCode = event.sequence?.charCodeAt(0) ?? 0;
+        const isPrintable = event.sequence?.length === 1 && keyCharCode >= 32 && keyCharCode < 127;
+        const keyToEncode = isPrintable ? event.sequence! : event.name;
+        const sequence = inputHandler.encodeKey({
+          key: keyToEncode,
           ctrl: event.ctrl,
+          shift: event.shift,
           alt: event.option,
-          shift: event.shift,
-          sequence: event.sequence,
-        });
-
-        // If an overlay handled the key, don't process further
-        if (routeResult.handled) {
-          return;
-        }
-
-        // If in search mode, handle search-specific keys
-        if (mode === 'search') {
-          const key = event.name.toLowerCase();
-
-          if (key === 'escape') {
-            // Cancel search, restore original scroll position
-            exitSearchMode(true);
-            kbDispatch({ type: 'EXIT_SEARCH_MODE' });
-            return;
-          }
-
-          if (key === 'return' || key === 'enter') {
-            // Confirm search, stay at current position
-            exitSearchMode(false);
-            kbDispatch({ type: 'EXIT_SEARCH_MODE' });
-            return;
-          }
-
-          // Wait for searchState to be initialized before handling navigation/input
-          if (!searchState) {
-            return;
-          }
-
-          if (key === 'n' && event.ctrl && !event.shift && !event.option) {
-            // Next match (Ctrl+n)
-            nextMatch();
-            return;
-          }
-
-          if ((key === 'n' && event.ctrl && event.shift) || (key === 'p' && event.ctrl)) {
-            // Previous match (Ctrl+Shift+N or Ctrl+p)
-            prevMatch();
-            return;
-          }
-
-          if (key === 'backspace') {
-            // Delete last character from query
-            setSearchQuery(searchState.query.slice(0, -1));
-            return;
-          }
-
-          // Single printable character - add to search query
-          const charCode = event.sequence?.charCodeAt(0) ?? 0;
-          const isPrintable = event.sequence?.length === 1 && charCode >= 32 && charCode < 127;
-          if (isPrintable && !event.ctrl && !event.option && !event.meta) {
-            setSearchQuery(searchState.query + event.sequence);
-            return;
-          }
-
-          // Consume all other keys in search mode
-          return;
-        }
-
-        // First, check if this is a multiplexer command
-        const handled = handleKeyDown({
-          key: event.name,
-          ctrl: event.ctrl,
-          shift: event.shift,
-          alt: event.option, // OpenTUI uses 'option' for Alt key
           meta: event.meta,
         });
 
-        // If not handled by multiplexer and in normal mode, forward to PTY
-        if (!handled && mode === 'normal' && !sessionState.showSessionPicker) {
-
-          // Clear any active selection when user types
-          clearAllSelections();
-
-          // Get the focused pane's cursor key mode (DECCKM)
-          // This affects how arrow keys are encoded (application vs normal mode)
-          const cursorKeyMode = getFocusedCursorKeyMode();
-          inputHandler.setCursorMode(cursorKeyMode);
-
-          // Convert keyboard event to terminal escape sequence
-          // Use event.sequence for single printable chars (handles shift for uppercase/symbols)
-          // Fall back to event.name for special keys (arrows, function keys, etc.)
-          // Don't use sequence for control chars (< 32) or DEL (127) as we need name for Shift+Tab etc.
-          const charCode = event.sequence?.charCodeAt(0) ?? 0;
-          const isPrintable = event.sequence?.length === 1 && charCode >= 32 && charCode < 127;
-          const keyToEncode = isPrintable ? event.sequence! : event.name;
-          const sequence = inputHandler.encodeKey({
-            key: keyToEncode,
-            ctrl: event.ctrl,
-            shift: event.shift,
-            alt: event.option,
-            meta: event.meta,
-          });
-
-          if (sequence) {
-            writeToFocused(sequence);
-          }
+        if (sequence) {
+          writeToFocused(sequence);
         }
-      },
-      [handleKeyDown, mode, writeToFocused, getFocusedCursorKeyMode, clearAllSelections, searchState, exitSearchMode, nextMatch, prevMatch, setSearchQuery, kbDispatch]
-    )
+      }
+    }
   );
 
   return (
     <box
       style={{
-        width,
-        height,
+        width: width(),
+        height: height(),
         flexDirection: 'column',
       }}
     >
@@ -402,26 +399,26 @@ function AppContent() {
       <PaneContainer />
 
       {/* Status bar at bottom */}
-      <StatusBar width={width} />
+      <StatusBar width={width()} />
 
       {/* Keyboard hints overlay */}
-      <KeyboardHints width={width} height={height} />
+      <KeyboardHints width={width()} height={height()} />
 
       {/* Session picker overlay */}
-      <SessionPicker width={width} height={height} />
+      <SessionPicker width={width()} height={height()} />
 
       {/* Search overlay */}
-      <SearchOverlay width={width} height={height} />
+      <SearchOverlay width={width()} height={height()} />
 
       {/* Aggregate view overlay */}
-      <AggregateView width={width} height={height} />
+      <AggregateView width={width()} height={height()} />
 
       {/* Confirmation dialog */}
       <ConfirmationDialog
-        visible={confirmationState.visible}
-        type={confirmationState.type}
-        width={width}
-        height={height}
+        visible={confirmationState().visible}
+        type={confirmationState().type}
+        width={width()}
+        height={height()}
         onConfirm={handleConfirmAction}
         onCancel={handleCancelConfirmation}
       />
@@ -432,7 +429,7 @@ function AppContent() {
         charCount={copyNotification.charCount}
         paneRect={
           copyNotification.ptyId
-            ? panes.find(p => p.ptyId === copyNotification.ptyId)?.rectangle ?? null
+            ? layout.panes.find(p => p.ptyId === copyNotification.ptyId)?.rectangle ?? null
             : null
         }
       />

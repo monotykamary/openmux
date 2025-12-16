@@ -6,12 +6,10 @@
 import {
   createContext,
   useContext,
-  useReducer,
-  useCallback,
-  useEffect,
-  type ReactNode,
-  type Dispatch,
-} from 'react';
+  createEffect,
+  type ParentProps,
+} from 'solid-js';
+import { createStore, produce } from 'solid-js/store';
 import { listAllPtysWithMetadata } from '../effect/bridge';
 
 // =============================================================================
@@ -61,22 +59,6 @@ const initialState: AggregateViewState = {
 };
 
 // =============================================================================
-// Actions
-// =============================================================================
-
-type AggregateViewAction =
-  | { type: 'OPEN' }
-  | { type: 'CLOSE' }
-  | { type: 'SET_FILTER_QUERY'; query: string }
-  | { type: 'SET_ALL_PTYS'; ptys: PtyInfo[] }
-  | { type: 'NAVIGATE_UP' }
-  | { type: 'NAVIGATE_DOWN' }
-  | { type: 'SELECT_PTY'; ptyId: string }
-  | { type: 'SET_LOADING'; isLoading: boolean }
-  | { type: 'ENTER_PREVIEW_MODE' }
-  | { type: 'EXIT_PREVIEW_MODE' };
-
-// =============================================================================
 // Helper Functions
 // =============================================================================
 
@@ -94,111 +76,11 @@ function filterPtys(ptys: PtyInfo[], query: string): PtyInfo[] {
 }
 
 // =============================================================================
-// Reducer
-// =============================================================================
-
-function aggregateViewReducer(
-  state: AggregateViewState,
-  action: AggregateViewAction
-): AggregateViewState {
-  switch (action.type) {
-    case 'OPEN':
-      return {
-        ...state,
-        showAggregateView: true,
-        filterQuery: '',
-        selectedIndex: 0,
-        matchedPtys: state.allPtys,
-        selectedPtyId: state.allPtys[0]?.ptyId ?? null,
-      };
-
-    case 'CLOSE':
-      return {
-        ...state,
-        showAggregateView: false,
-        filterQuery: '',
-        selectedIndex: 0,
-        previewMode: false,
-      };
-
-    case 'SET_FILTER_QUERY': {
-      const matchedPtys = filterPtys(state.allPtys, action.query);
-      return {
-        ...state,
-        filterQuery: action.query,
-        matchedPtys,
-        selectedIndex: 0,
-        selectedPtyId: matchedPtys[0]?.ptyId ?? null,
-      };
-    }
-
-    case 'SET_ALL_PTYS': {
-      const matchedPtys = filterPtys(action.ptys, state.filterQuery);
-      const selectedPtyId = matchedPtys[state.selectedIndex]?.ptyId ?? matchedPtys[0]?.ptyId ?? null;
-      return {
-        ...state,
-        allPtys: action.ptys,
-        matchedPtys,
-        selectedPtyId,
-        isLoading: false,
-      };
-    }
-
-    case 'NAVIGATE_UP': {
-      const newIndex = Math.max(0, state.selectedIndex - 1);
-      return {
-        ...state,
-        selectedIndex: newIndex,
-        selectedPtyId: state.matchedPtys[newIndex]?.ptyId ?? null,
-      };
-    }
-
-    case 'NAVIGATE_DOWN': {
-      const newIndex = Math.min(state.matchedPtys.length - 1, state.selectedIndex + 1);
-      return {
-        ...state,
-        selectedIndex: newIndex,
-        selectedPtyId: state.matchedPtys[newIndex]?.ptyId ?? null,
-      };
-    }
-
-    case 'SELECT_PTY':
-      return {
-        ...state,
-        selectedPtyId: action.ptyId,
-        selectedIndex: state.matchedPtys.findIndex((p) => p.ptyId === action.ptyId),
-      };
-
-    case 'SET_LOADING':
-      return {
-        ...state,
-        isLoading: action.isLoading,
-      };
-
-    case 'ENTER_PREVIEW_MODE':
-      return {
-        ...state,
-        previewMode: true,
-      };
-
-    case 'EXIT_PREVIEW_MODE':
-      return {
-        ...state,
-        previewMode: false,
-      };
-
-    default:
-      return state;
-  }
-}
-
-// =============================================================================
 // Context
 // =============================================================================
 
 interface AggregateViewContextValue {
   state: AggregateViewState;
-  dispatch: Dispatch<AggregateViewAction>;
   openAggregateView: () => void;
   closeAggregateView: () => void;
   setFilterQuery: (query: string) => void;
@@ -217,68 +99,100 @@ const AggregateViewContext = createContext<AggregateViewContextValue | null>(nul
 // Provider
 // =============================================================================
 
-interface AggregateViewProviderProps {
-  children: ReactNode;
-}
+interface AggregateViewProviderProps extends ParentProps {}
 
-export function AggregateViewProvider({ children }: AggregateViewProviderProps) {
-  const [state, dispatch] = useReducer(aggregateViewReducer, initialState);
+export function AggregateViewProvider(props: AggregateViewProviderProps) {
+  const [state, setState] = createStore<AggregateViewState>(initialState);
 
   // Fetch all PTYs from all sessions
-  const refreshPtys = useCallback(async () => {
-    dispatch({ type: 'SET_LOADING', isLoading: true });
+  const refreshPtys = async () => {
+    setState('isLoading', true);
     const ptys = await listAllPtysWithMetadata();
-    dispatch({ type: 'SET_ALL_PTYS', ptys });
-  }, []);
+    const matchedPtys = filterPtys(ptys, state.filterQuery);
+    const selectedPtyId = matchedPtys[state.selectedIndex]?.ptyId ?? matchedPtys[0]?.ptyId ?? null;
+    setState(produce((s) => {
+      s.allPtys = ptys;
+      s.matchedPtys = matchedPtys;
+      s.selectedPtyId = selectedPtyId;
+      s.isLoading = false;
+    }));
+  };
 
   // Refresh PTYs when view opens
-  useEffect(() => {
+  createEffect(() => {
     if (state.showAggregateView) {
       refreshPtys();
     }
-  }, [state.showAggregateView, refreshPtys]);
+  });
 
   // Actions
-  const openAggregateView = useCallback(() => {
-    dispatch({ type: 'OPEN' });
-  }, []);
+  const openAggregateView = () => {
+    setState(produce((s) => {
+      s.showAggregateView = true;
+      s.filterQuery = '';
+      s.selectedIndex = 0;
+      s.matchedPtys = s.allPtys;
+      s.selectedPtyId = s.allPtys[0]?.ptyId ?? null;
+    }));
+  };
 
-  const closeAggregateView = useCallback(() => {
-    dispatch({ type: 'CLOSE' });
-  }, []);
+  const closeAggregateView = () => {
+    setState(produce((s) => {
+      s.showAggregateView = false;
+      s.filterQuery = '';
+      s.selectedIndex = 0;
+      s.previewMode = false;
+    }));
+  };
 
-  const setFilterQuery = useCallback((query: string) => {
-    dispatch({ type: 'SET_FILTER_QUERY', query });
-  }, []);
+  const setFilterQuery = (query: string) => {
+    const matchedPtys = filterPtys(state.allPtys, query);
+    setState(produce((s) => {
+      s.filterQuery = query;
+      s.matchedPtys = matchedPtys;
+      s.selectedIndex = 0;
+      s.selectedPtyId = matchedPtys[0]?.ptyId ?? null;
+    }));
+  };
 
-  const navigateUp = useCallback(() => {
-    dispatch({ type: 'NAVIGATE_UP' });
-  }, []);
+  const navigateUp = () => {
+    const newIndex = Math.max(0, state.selectedIndex - 1);
+    setState(produce((s) => {
+      s.selectedIndex = newIndex;
+      s.selectedPtyId = s.matchedPtys[newIndex]?.ptyId ?? null;
+    }));
+  };
 
-  const navigateDown = useCallback(() => {
-    dispatch({ type: 'NAVIGATE_DOWN' });
-  }, []);
+  const navigateDown = () => {
+    const newIndex = Math.min(state.matchedPtys.length - 1, state.selectedIndex + 1);
+    setState(produce((s) => {
+      s.selectedIndex = newIndex;
+      s.selectedPtyId = s.matchedPtys[newIndex]?.ptyId ?? null;
+    }));
+  };
 
-  const selectPty = useCallback((ptyId: string) => {
-    dispatch({ type: 'SELECT_PTY', ptyId });
-  }, []);
+  const selectPty = (ptyId: string) => {
+    setState(produce((s) => {
+      s.selectedPtyId = ptyId;
+      s.selectedIndex = s.matchedPtys.findIndex((p) => p.ptyId === ptyId);
+    }));
+  };
 
-  const getSelectedPty = useCallback((): PtyInfo | null => {
+  const getSelectedPty = (): PtyInfo | null => {
     if (state.selectedPtyId === null) return null;
     return state.matchedPtys.find((p) => p.ptyId === state.selectedPtyId) ?? null;
-  }, [state.selectedPtyId, state.matchedPtys]);
+  };
 
-  const enterPreviewMode = useCallback(() => {
-    dispatch({ type: 'ENTER_PREVIEW_MODE' });
-  }, []);
+  const enterPreviewMode = () => {
+    setState('previewMode', true);
+  };
 
-  const exitPreviewMode = useCallback(() => {
-    dispatch({ type: 'EXIT_PREVIEW_MODE' });
-  }, []);
+  const exitPreviewMode = () => {
+    setState('previewMode', false);
+  };
 
   const value: AggregateViewContextValue = {
     state,
-    dispatch,
     openAggregateView,
     closeAggregateView,
     setFilterQuery,
@@ -293,7 +207,7 @@ export function AggregateViewProvider({ children }: AggregateViewProviderProps) 
 
   return (
     <AggregateViewContext.Provider value={value}>
-      {children}
+      {props.children}
     </AggregateViewContext.Provider>
   );
 }
