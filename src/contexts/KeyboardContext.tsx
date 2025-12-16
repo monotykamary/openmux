@@ -253,7 +253,7 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
     return false;
   };
 
-  return { handleKeyDown, mode: keyboard.state.mode };
+  return { handleKeyDown, get mode() { return keyboard.state.mode; } };
 }
 
 // =============================================================================

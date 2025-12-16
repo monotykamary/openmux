@@ -51,7 +51,7 @@ function AppContent() {
   const search = useSearch();
   const { enterSearchMode, exitSearchMode, setSearchQuery, nextMatch, prevMatch } = search;
   const { state: aggregateState, openAggregateView } = useAggregateView();
-  const { enterConfirmMode, exitConfirmMode } = useKeyboardState();
+  const { enterConfirmMode, exitConfirmMode, exitSearchMode: keyboardExitSearchMode } = useKeyboardState();
   const renderer = useRenderer();
 
   // Track pending CWD for new panes (captured before NEW_PANE dispatch)
@@ -161,7 +161,7 @@ function AppContent() {
     });
   });
 
-  const { handleKeyDown, mode } = useKeyboardHandler({
+  const keyboardHandler = useKeyboardHandler({
     onPaste: handlePaste,
     onNewPane: handleNewPane,
     onQuit: handleQuit,
@@ -172,6 +172,7 @@ function AppContent() {
     onToggleConsole: handleToggleConsole,
     onToggleAggregateView: handleToggleAggregateView,
   });
+  const { handleKeyDown } = keyboardHandler;
 
   // Retry counter to trigger effect re-run when PTY creation fails
   const [ptyRetryCounter, setPtyRetryCounter] = createSignal(0);
@@ -297,18 +298,20 @@ function AppContent() {
       }
 
       // If in search mode, handle search-specific keys
-      if (mode === 'search') {
+      if (keyboardHandler.mode === 'search') {
         const key = event.name.toLowerCase();
 
         if (key === 'escape') {
           // Cancel search, restore original scroll position
           exitSearchMode(true);
+          keyboardExitSearchMode();
           return;
         }
 
         if (key === 'return' || key === 'enter') {
           // Confirm search, stay at current position
           exitSearchMode(false);
+          keyboardExitSearchMode();
           return;
         }
 
@@ -358,7 +361,7 @@ function AppContent() {
       });
 
       // If not handled by multiplexer and in normal mode, forward to PTY
-      if (!handled && mode === 'normal' && !sessionState.showSessionPicker) {
+      if (!handled && keyboardHandler.mode === 'normal' && !sessionState.showSessionPicker) {
 
         // Clear any active selection when user types
         clearAllSelections();
