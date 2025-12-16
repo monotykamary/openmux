@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.6](https://github.com/monotykamary/openmux/compare/v0.2.5...v0.2.6) (2025-12-16)
+
+
+### Bug Fixes
+
+* **render:** add fallback space for empty cell chars to prevent artifacts ([04801ae](https://github.com/monotykamary/openmux/commit/04801ae9e8378f039642e12d088f6f80020dbbd2))
+* **tsconfig:** add include/exclude to prevent node_modules type resolution ([867c2c4](https://github.com/monotykamary/openmux/commit/867c2c45c8fed9ba0840c887aeb52c7384663ba2))
+
 ### [0.2.5](https://github.com/monotykamary/openmux/compare/v0.2.4...v0.2.5) (2025-12-16)
 
 
