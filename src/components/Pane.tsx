@@ -57,6 +57,11 @@ export function Pane(props: PaneProps) {
     scrollOffset: number;
   } | null = null;
 
+  // Track scroll direction with hysteresis to prevent jitter from trackpad micro-movements
+  let committedDirection: 'up' | 'down' | null = null;
+  let pendingDirection: 'up' | 'down' | null = null;
+  let consecutiveCount = 0;
+
   // Cleanup auto-scroll interval on unmount
   onCleanup(() => {
     if (autoScroll.intervalId) {
@@ -305,21 +310,38 @@ export function Pane(props: PaneProps) {
     const shouldForwardToApp = isAlternateScreen(props.ptyId) || isMouseTrackingEnabled(props.ptyId);
 
     if (shouldForwardToApp && props.onMouseInput) {
-      // Forward to PTY as SGR mouse sequences (existing behavior)
-      const scrollUp = event.scroll?.direction === 'up';
-      const button = scrollUp ? 4 : 5; // 4 = scroll up, 5 = scroll down
+      const eventDir = event.scroll?.direction === 'up' ? 'up' : 'down' as const;
+      const threshold = 2; // Consecutive events needed to commit/change direction
 
-      const sequence = inputHandler.encodeMouse({
-        type: 'scroll',
-        button,
-        x: relX,
-        y: relY,
-        shift: event.modifiers?.shift,
-        alt: event.modifiers?.alt,
-        ctrl: event.modifiers?.ctrl,
-      });
+      // Track consecutive events in the same direction
+      if (eventDir === pendingDirection) {
+        consecutiveCount++;
+      } else {
+        pendingDirection = eventDir;
+        consecutiveCount = 1;
+      }
 
-      props.onMouseInput(sequence);
+      // Commit direction once threshold reached
+      if (consecutiveCount >= threshold && committedDirection !== eventDir) {
+        committedDirection = eventDir;
+      }
+
+      // Only send if we have a committed direction and event matches it
+      if (committedDirection !== null && eventDir === committedDirection) {
+        const button = committedDirection === 'up' ? 4 : 5;
+
+        const sequence = inputHandler.encodeMouse({
+          type: 'scroll',
+          button,
+          x: relX,
+          y: relY,
+          shift: event.modifiers?.shift,
+          alt: event.modifiers?.alt,
+          ctrl: event.modifiers?.ctrl,
+        });
+
+        props.onMouseInput(sequence);
+      }
     } else {
       // Handle scroll locally - scroll through scrollback buffer
       // OpenTUI scroll events have direction: "up" | "down" | "left" | "right"
