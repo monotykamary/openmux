@@ -240,18 +240,27 @@ install_binary() {
         cp "$DIST_DIR/libzig_pty.$LIB_EXT" "$LIB_INSTALL_DIR/libzig_pty.$LIB_EXT"
     fi
 
+    # Copy empty bunfig.toml to prevent parent config from being used
+    cp "$DIST_DIR/bunfig.toml" "$LIB_INSTALL_DIR/bunfig.toml"
+
     # Create wrapper in bin directory
+    # Note: cd to LIB_INSTALL_DIR to avoid reading bunfig.toml from user's cwd
+    # OPENMUX_ORIGINAL_CWD preserves the user's directory for initial shell
     if [[ "$OS" == "windows" ]]; then
         cat > "$INSTALL_DIR/$BINARY_NAME.cmd" << WRAPPER
 @echo off
 set "ZIG_PTY_LIB=$LIB_INSTALL_DIR\\zig_pty.dll"
+if not defined OPENMUX_ORIGINAL_CWD set "OPENMUX_ORIGINAL_CWD=%CD%"
+cd /d "$LIB_INSTALL_DIR"
 "$LIB_INSTALL_DIR\\$BINARY_NAME-bin.exe" %*
 WRAPPER
     else
         cat > "$INSTALL_DIR/$BINARY_NAME" << WRAPPER
 #!/usr/bin/env bash
 export ZIG_PTY_LIB="\${ZIG_PTY_LIB:-$LIB_INSTALL_DIR/libzig_pty.$LIB_EXT}"
-exec "$LIB_INSTALL_DIR/$BINARY_NAME-bin" "\$@"
+export OPENMUX_ORIGINAL_CWD="\${OPENMUX_ORIGINAL_CWD:-\$(pwd)}"
+cd "$LIB_INSTALL_DIR"
+exec "./$BINARY_NAME-bin" "\$@"
 WRAPPER
         chmod +x "$INSTALL_DIR/$BINARY_NAME"
     fi
