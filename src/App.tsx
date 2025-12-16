@@ -209,9 +209,10 @@ function AppContent() {
           const cols = Math.max(1, rect.width - 2);
           const rows = Math.max(1, rect.height - 2);
 
-          // Check for session-restored CWD first, then pending CWD from new pane
+          // Check for session-restored CWD first, then pending CWD from new pane,
+          // then OPENMUX_ORIGINAL_CWD (set by wrapper to preserve user's cwd)
           const sessionCwd = await getSessionCwdFromCoordinator(pane.id);
-          let cwd = sessionCwd ?? pendingCwd ?? undefined;
+          let cwd = sessionCwd ?? pendingCwd ?? process.env.OPENMUX_ORIGINAL_CWD ?? undefined;
           pendingCwd = null; // Clear after use
 
           try {

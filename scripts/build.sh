@@ -161,6 +161,9 @@ build() {
         exit 1
     fi
 
+    # Create empty bunfig.toml in dist to prevent parent config from being used
+    echo "# openmux runtime config (empty - preload already compiled in)" > "$DIST_DIR/bunfig.toml"
+
     # Create wrapper script
     create_wrapper "$DIST_DIR/$BINARY_NAME"
 
@@ -173,19 +176,25 @@ create_wrapper() {
 
     if [[ "$OS" == "windows" ]]; then
         # Windows batch file
+        # Note: cd to SCRIPT_DIR to avoid reading bunfig.toml from user's cwd
+        # OPENMUX_ORIGINAL_CWD preserves the user's directory for initial shell
         cat > "${wrapper_path}.cmd" << 'WRAPPER'
 @echo off
 set "SCRIPT_DIR=%~dp0"
 set "ZIG_PTY_LIB=%SCRIPT_DIR%zig_pty.dll"
+if not defined OPENMUX_ORIGINAL_CWD set "OPENMUX_ORIGINAL_CWD=%CD%"
+cd /d "%SCRIPT_DIR%"
 "%SCRIPT_DIR%openmux-bin.exe" %*
 WRAPPER
     else
         # Unix shell script
         # Note: cd to SCRIPT_DIR to avoid reading bunfig.toml from user's cwd
+        # OPENMUX_ORIGINAL_CWD preserves the user's directory for initial shell
         cat > "$wrapper_path" << WRAPPER
 #!/usr/bin/env bash
 SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 export ZIG_PTY_LIB="\${ZIG_PTY_LIB:-\$SCRIPT_DIR/libzig_pty.$LIB_EXT}"
+export OPENMUX_ORIGINAL_CWD="\${OPENMUX_ORIGINAL_CWD:-\$(pwd)}"
 cd "\$SCRIPT_DIR"
 exec "./openmux-bin" "\$@"
 WRAPPER
