@@ -317,16 +317,22 @@ export function Pane(props: PaneProps) {
       if (eventDir === pendingDirection) {
         consecutiveCount++;
       } else {
+        // Direction changed - reset and require re-confirmation
         pendingDirection = eventDir;
         consecutiveCount = 1;
+        // Uncommit direction when we see a different direction
+        // This prevents sending stale direction events during slow direction changes
+        if (committedDirection !== null && eventDir !== committedDirection) {
+          committedDirection = null;
+        }
       }
 
       // Commit direction once threshold reached
-      if (consecutiveCount >= threshold && committedDirection !== eventDir) {
+      if (consecutiveCount >= threshold) {
         committedDirection = eventDir;
       }
 
-      // Only send if we have a committed direction and event matches it
+      // Only send if direction is committed and matches current event
       if (committedDirection !== null && eventDir === committedDirection) {
         const button = committedDirection === 'up' ? 4 : 5;
 
