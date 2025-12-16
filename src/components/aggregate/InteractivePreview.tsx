@@ -5,6 +5,7 @@
  */
 
 import { Show, createSignal, createEffect, onCleanup } from 'solid-js';
+import { useRenderer } from '@opentui/solid';
 import { type OptimizedBuffer } from '@opentui/core';
 import { resizePty, subscribeUnifiedToPty } from '../../effect/bridge';
 import {
@@ -28,6 +29,8 @@ interface InteractivePreviewProps {
 }
 
 export function InteractivePreview(props: InteractivePreviewProps) {
+  const renderer = useRenderer();
+
   // Plain variables (in Solid, no stale closure issues)
   let lastResize: { ptyId: string; width: number; height: number } | null = null;
   let terminalState: TerminalState | null = null;
@@ -79,6 +82,7 @@ export function InteractivePreview(props: InteractivePreviewProps) {
           if (mounted) {
             renderRequested = false;
             setVersion(v => v + 1);
+            renderer.requestRender();  // Trigger OpenTUI render
           }
         });
       }

@@ -114,6 +114,7 @@ export function TerminalView(props: TerminalViewProps) {
           if (mounted) {
             renderRequested = false;
             setVersion(v => v + 1);
+            renderer.requestRender();  // Trigger OpenTUI render
           }
         });
       }
@@ -352,20 +353,6 @@ export function TerminalView(props: TerminalViewProps) {
       }
     }
   };
-
-  // Force periodic renders to ensure terminal updates are displayed
-  // This works around Solid's reactivity not triggering OpenTUI renders
-  createEffect(() => {
-    const intervalId = setInterval(() => {
-      if (terminalState) {
-        renderer.requestRender();
-      }
-    }, 16); // ~60fps
-
-    onCleanup(() => {
-      clearInterval(intervalId);
-    });
-  });
 
   // Request render when selection or search version changes
   createEffect(() => {
