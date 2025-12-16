@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.1](https://github.com/monotykamary/openmux/compare/v0.2.0...v0.2.1) (2025-12-16)
+
+
+### Bug Fixes
+
+* **build:** isolate runtime from project bunfig.toml ([a7496e0](https://github.com/monotykamary/openmux/commit/a7496e09a01d3f6262465af53efabd6cd19b4d46))
+
 ## [0.2.0](https://github.com/monotykamary/openmux/compare/v0.1.41...v0.2.0) (2025-12-16)
 
 
