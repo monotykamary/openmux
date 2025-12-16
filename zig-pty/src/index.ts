@@ -186,6 +186,7 @@ export class Terminal implements IPty {
   private _rows: number = DEFAULT_ROWS;
   private _readLoop: boolean = false;
   private _closing: boolean = false;
+  private _exitFired: boolean = false;
   private _onData = new EventEmitter<string>();
   private _onExit = new EventEmitter<IExitEvent>();
   // Streaming TextDecoder handles incomplete UTF-8 sequences across reads
@@ -266,7 +267,10 @@ export class Terminal implements IPty {
     this._closing = true;
     lib.symbols.bun_pty_kill(this.handle);
     lib.symbols.bun_pty_close(this.handle);
-    this._onExit.fire({ exitCode: 0, signal });
+    if (!this._exitFired) {
+      this._exitFired = true;
+      this._onExit.fire({ exitCode: 0, signal });
+    }
   }
 
   private async _startReadLoop(): Promise<void> {
@@ -290,10 +294,15 @@ export class Terminal implements IPty {
         // Yield briefly to let UI render
         await Bun.sleep(0);
       } else if (n === -2) {
-        // Child exited - flush decoder and fire exit
+        // Child exited - flush decoder, close handle, and fire exit
         const remaining = this._decoder.decode();
         if (remaining.length > 0) this._onData.fire(remaining);
-        this._onExit.fire({ exitCode: lib.symbols.bun_pty_get_exit_code(this.handle) });
+        const exitCode = lib.symbols.bun_pty_get_exit_code(this.handle);
+        lib.symbols.bun_pty_close(this.handle);
+        if (!this._exitFired) {
+          this._exitFired = true;
+          this._onExit.fire({ exitCode });
+        }
         return;
       } else if (n < 0) {
         // Error

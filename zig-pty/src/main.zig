@@ -332,6 +332,12 @@ const Pty = struct {
             _ = c.close(self.master_fd);
             self.master_fd = -1;
         }
+
+        // Reap child process to prevent zombies
+        // Use blocking waitpid since WNOHANG in checkChild may have missed it
+        if (self.pid > 0 and !self.exited.load(.acquire)) {
+            _ = c.waitpid(self.pid, null, 0);
+        }
     }
 };
 
