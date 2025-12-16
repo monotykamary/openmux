@@ -255,12 +255,27 @@ export function TerminalView(props: TerminalViewProps) {
       // Calculate absolute Y for selection check (accounts for scrollback)
       const absoluteY = scrollbackLength - viewportOffset + y;
 
+      // Track the previous cell to detect spacer cells after wide characters
+      let prevCellWasWide = false;
+      let prevCellBg: RGBA | null = null;
+
       for (let x = 0; x < cols; x++) {
         const cell = row?.[x] ?? null;
 
         if (!cell) {
           // No cell data - use fallback
           buffer.setCell(x + offsetX, y + offsetY, ' ', fallbackFg, fallbackBg, 0);
+          prevCellWasWide = false;
+          prevCellBg = null;
+          continue;
+        }
+
+        // If previous cell was wide (width=2), this is a spacer cell
+        // Use drawChar with codepoint 0 to mark as continuation without overwriting the wide char
+        if (prevCellWasWide && prevCellBg) {
+          buffer.drawChar(0, x + offsetX, y + offsetY, prevCellBg, prevCellBg, 0);
+          prevCellWasWide = false;
+          prevCellBg = null;
           continue;
         }
 
@@ -325,6 +340,10 @@ export function TerminalView(props: TerminalViewProps) {
         // Write cell directly to buffer (with offset for pane position)
         // Use fallback space if char is empty to ensure cell is always overwritten
         buffer.setCell(x + offsetX, y + offsetY, cell.char || ' ', fg, bg, attributes);
+
+        // Track if this cell was wide for next iteration
+        prevCellWasWide = cell.width === 2;
+        prevCellBg = prevCellWasWide ? bg : null;
       }
     }
 

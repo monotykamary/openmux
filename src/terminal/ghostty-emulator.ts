@@ -286,11 +286,12 @@ export class GhosttyEmulator {
       return cached;
     }
 
-    // Fetch from terminal and convert
+    // Fetch from terminal and convert with proper EOL padding
     const line = this.terminal.getScrollbackLine(offset);
     if (!line) return null;
 
-    const converted = line.map((cell) => convertCell(cell));
+    // Use convertLine to properly pad with EOL fill cells
+    const converted = convertLine(line, this._cols, this.colors);
 
     // Cache the converted line
     this.scrollbackCache.set(offset, converted);
