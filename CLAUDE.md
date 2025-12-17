@@ -9,6 +9,7 @@ bun install           # Install dependencies
 bun start             # Run the terminal multiplexer
 bun dev               # Run with watch mode (--watch)
 bun run typecheck     # Type check without emitting
+bun run lint          # Lint Effect code (effect-language-service)
 bun run build         # Build standalone binary (./scripts/build.sh)
 bun run install:local # Build and install locally
 bun run test          # Run tests (vitest)
