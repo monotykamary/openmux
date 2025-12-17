@@ -11,26 +11,27 @@ import {
   onCleanup,
   type ParentProps,
 } from 'solid-js';
-import { initGhostty, isGhosttyInitialized, detectHostCapabilities, EmulatorPool } from '../terminal';
+import { initGhostty, detectHostCapabilities, EmulatorPool } from '../terminal';
 import { getHostColors } from '../terminal/terminal-colors';
 import type { TerminalState, TerminalScrollState } from '../core/types';
-import { createScrollHandlers } from './terminal';
+import {
+  createScrollHandlers,
+  createPtyLifecycleHandlers,
+  createCacheAccessors,
+} from './terminal';
 import { getFocusedPtyId as getWorkspaceFocusedPtyId } from '../core/workspace-utils';
 import { useLayout } from './LayoutContext';
 import {
-  createPtySession,
   writeToPty,
   resizePty,
   destroyPty,
   destroyAllPtys,
-  getPtyCwd,
   setPanePosition,
   readFromClipboard,
   subscribeToAllTitleChanges,
 } from '../effect/bridge';
 import {
   subscribeToPtyWithCaches,
-  clearPtyCaches,
   clearAllPtyCaches,
   type PtyCaches,
 } from '../hooks/usePtySubscription';
@@ -120,8 +121,32 @@ export function TerminalProvider(props: TerminalProviderProps) {
   // Track global title subscription
   let titleSubscriptionUnsub: (() => void) | null = null;
 
+  // Helper to get focused PTY ID (uses centralized utility)
+  const getFocusedPtyId = (): string | undefined => {
+    return getWorkspaceFocusedPtyId(layout.activeWorkspace);
+  };
+
   // Create scroll handlers (extracted for reduced file size)
   const scrollHandlers = createScrollHandlers(ptyCaches);
+
+  // Create PTY lifecycle handlers (extracted for reduced file size)
+  const ptyLifecycleHandlers = createPtyLifecycleHandlers({
+    ptyToPaneMap,
+    sessionPtyMap,
+    ptyToSessionMap,
+    ptyCaches,
+    unsubscribeFns,
+    closePaneById,
+    setPanePty,
+  });
+
+  // Create cache accessors (extracted for reduced file size)
+  const cacheAccessors = createCacheAccessors({
+    ptyCaches,
+    ptyToPaneMap,
+    ptyToSessionMap,
+    getFocusedPtyId,
+  });
 
   // Initialize ghostty and detect host terminal capabilities on mount
   onMount(() => {
@@ -176,113 +201,6 @@ export function TerminalProvider(props: TerminalProviderProps) {
     EmulatorPool.dispose();
   });
 
-  // Handle PTY exit callback (when shell exits via Ctrl+D, `exit`, etc.)
-  const handlePtyExit = (ptyId: string, _paneId: string) => {
-    const mappedPaneId = ptyToPaneMap.get(ptyId);
-    if (mappedPaneId) {
-      closePaneById(mappedPaneId);
-    }
-
-    // Clean up PTY subscription and caches
-    const unsub = unsubscribeFns.get(ptyId);
-    if (unsub) {
-      unsub();
-      unsubscribeFns.delete(ptyId);
-    }
-    clearPtyCaches(ptyId, ptyCaches);
-    ptyToPaneMap.delete(ptyId);
-
-    // O(1) removal from session mappings using reverse index
-    const sessionInfo = ptyToSessionMap.get(ptyId);
-    if (sessionInfo) {
-      const mapping = sessionPtyMap.get(sessionInfo.sessionId);
-      if (mapping) {
-        mapping.delete(sessionInfo.paneId);
-      }
-      ptyToSessionMap.delete(ptyId);
-    }
-
-    // Destroy the PTY from the service (removes from HashMap, emits lifecycle event)
-    destroyPty(ptyId);
-  };
-
-  // Create a PTY session
-  const createPTY = async (paneId: string, cols: number, rows: number, cwd?: string): Promise<string> => {
-    if (!isGhosttyInitialized()) {
-      throw new Error('Ghostty not initialized');
-    }
-
-    const ptyId = await createPtySession({ cols, rows, cwd });
-
-    // Track the mapping
-    ptyToPaneMap.set(ptyId, paneId);
-
-    // Subscribe to PTY with unified caches
-    const unsub = await subscribeToPtyWithCaches(
-      ptyId,
-      paneId,
-      ptyCaches,
-      handlePtyExit
-    );
-
-    // Store unsubscribe function
-    unsubscribeFns.set(ptyId, unsub);
-
-    // Update the pane with the PTY ID
-    setPanePty(paneId, ptyId);
-
-    return ptyId;
-  };
-
-  // Destroy a PTY session (also closes associated pane if one exists)
-  const handleDestroyPTY = (ptyId: string) => {
-    // Close associated pane if this PTY is in the current session
-    const paneId = ptyToPaneMap.get(ptyId);
-    if (paneId) {
-      closePaneById(paneId);
-    }
-
-    // Unsubscribe from updates
-    const unsub = unsubscribeFns.get(ptyId);
-    if (unsub) {
-      unsub();
-      unsubscribeFns.delete(ptyId);
-    }
-
-    // Clear caches
-    clearPtyCaches(ptyId, ptyCaches);
-    ptyToPaneMap.delete(ptyId);
-
-    // O(1) removal from session mappings using reverse index
-    const sessionInfo = ptyToSessionMap.get(ptyId);
-    if (sessionInfo) {
-      const mapping = sessionPtyMap.get(sessionInfo.sessionId);
-      if (mapping) {
-        mapping.delete(sessionInfo.paneId);
-      }
-      ptyToSessionMap.delete(ptyId);
-    }
-
-    // Destroy the PTY (fire and forget)
-    destroyPty(ptyId);
-  };
-
-  // Destroy all PTY sessions
-  const handleDestroyAllPTYs = () => {
-    // Unsubscribe all
-    for (const unsub of unsubscribeFns.values()) {
-      unsub();
-    }
-    unsubscribeFns.clear();
-    clearAllPtyCaches(ptyCaches);
-    ptyToPaneMap.clear();
-    ptyToSessionMap.clear();
-    sessionPtyMap.clear();
-
-    // Destroy all PTYs (fire and forget)
-    destroyAllPtys();
-  };
-
   // Suspend a session: save PTY mapping and unsubscribe (but don't destroy PTYs)
   const handleSuspendSession = (sessionId: string) => {
     // Save current pane→pty mapping for this session
@@ -319,7 +237,7 @@ export function TerminalProvider(props: TerminalProviderProps) {
           ptyId,
           paneId,
           ptyCaches,
-          handlePtyExit
+          ptyLifecycleHandlers.handlePtyExit
         );
 
         // Store unsubscribe function
@@ -349,21 +267,11 @@ export function TerminalProvider(props: TerminalProviderProps) {
         }
         // Clean up reverse index
         ptyToSessionMap.delete(ptyId);
-        // Destroy the PTY
+        // Destroy the PTY directly (don't use lifecycle handler as it closes panes)
         destroyPty(ptyId);
       }
       sessionPtyMap.delete(sessionId);
     }
-  };
-
-  // Get CWD for a specific PTY session
-  const getSessionCwd = async (ptyId: string): Promise<string> => {
-    return getPtyCwd(ptyId);
-  };
-
-  // Helper to get focused PTY ID (uses centralized utility)
-  const getFocusedPtyId = (): string | undefined => {
-    return getWorkspaceFocusedPtyId(layout.activeWorkspace);
   };
 
   // Write to the focused pane's PTY
@@ -411,13 +319,6 @@ export function TerminalProvider(props: TerminalProviderProps) {
     writeToPty(ptyId, data);
   };
 
-  // Get the current working directory of the focused pane
-  const getFocusedCwd = async (): Promise<string | null> => {
-    const focusedPtyId = getFocusedPtyId();
-    if (!focusedPtyId) return null;
-    return getPtyCwd(focusedPtyId);
-  };
-
   // Paste from clipboard to the focused PTY
   const pasteToFocused = async (): Promise<boolean> => {
     const focusedPtyId = getFocusedPtyId();
@@ -439,61 +340,10 @@ export function TerminalProvider(props: TerminalProviderProps) {
     return true;
   };
 
-  // Get the cursor key mode from the focused pane (sync - uses cache)
-  const getFocusedCursorKeyMode = (): 'normal' | 'application' => {
-    const focusedPtyId = getFocusedPtyId();
-    if (!focusedPtyId) return 'normal';
-
-    const terminalState = ptyCaches.terminalStates.get(focusedPtyId);
-    return terminalState?.cursorKeyMode ?? 'normal';
-  };
-
-  // Check if mouse tracking is enabled for a PTY (sync - uses cache)
-  const handleIsMouseTrackingEnabled = (ptyId: string): boolean => {
-    const terminalState = ptyCaches.terminalStates.get(ptyId);
-    return terminalState?.mouseTracking ?? false;
-  };
-
-  // Check if terminal is in alternate screen mode (sync - uses cache)
-  const handleIsAlternateScreen = (ptyId: string): boolean => {
-    const terminalState = ptyCaches.terminalStates.get(ptyId);
-    return terminalState?.alternateScreen ?? false;
-  };
-
-  // Get cached emulator synchronously (for selection text extraction)
-  const getEmulatorSync = (ptyId: string): GhosttyEmulator | null => {
-    return ptyCaches.emulators.get(ptyId) ?? null;
-  };
-
-  // Get cached terminal state synchronously (for selection text extraction)
-  const getTerminalStateSync = (ptyId: string): TerminalState | null => {
-    return ptyCaches.terminalStates.get(ptyId) ?? null;
-  };
-
-  // Find which session owns a PTY - O(1) using reverse index
-  const findSessionForPty = (ptyId: string): { sessionId: string; paneId: string } | null => {
-    // O(1) lookup using reverse index
-    const sessionInfo = ptyToSessionMap.get(ptyId);
-    if (sessionInfo) {
-      return sessionInfo;
-    }
-
-    // If not in reverse index, check current session's ptyToPaneMap (active PTYs)
-    // These may not be in sessionPtyMap yet if session hasn't been suspended
-    const currentPaneId = ptyToPaneMap.get(ptyId);
-    if (currentPaneId) {
-      // PTY is in the current (unsaved) session - return null
-      // The caller should handle current session separately
-      return null;
-    }
-
-    return null;
-  };
-
   const value: TerminalContextValue = {
-    createPTY,
-    destroyPTY: handleDestroyPTY,
-    destroyAllPTYs: handleDestroyAllPTYs,
+    createPTY: ptyLifecycleHandlers.createPTY,
+    destroyPTY: ptyLifecycleHandlers.handleDestroyPTY,
+    destroyAllPTYs: ptyLifecycleHandlers.handleDestroyAllPTYs,
     suspendSession: handleSuspendSession,
     resumeSession: handleResumeSession,
     cleanupSessionPtys: handleCleanupSessionPtys,
@@ -502,19 +352,19 @@ export function TerminalProvider(props: TerminalProviderProps) {
     pasteToFocused,
     resizePTY: handleResizePTY,
     setPanePosition: handleSetPanePosition,
-    getFocusedCwd,
-    getSessionCwd,
-    getFocusedCursorKeyMode,
-    isMouseTrackingEnabled: handleIsMouseTrackingEnabled,
-    isAlternateScreen: handleIsAlternateScreen,
+    getFocusedCwd: cacheAccessors.getFocusedCwd,
+    getSessionCwd: cacheAccessors.getSessionCwd,
+    getFocusedCursorKeyMode: cacheAccessors.getFocusedCursorKeyMode,
+    isMouseTrackingEnabled: cacheAccessors.isMouseTrackingEnabled,
+    isAlternateScreen: cacheAccessors.isAlternateScreen,
     getScrollState: scrollHandlers.handleGetScrollState,
     scrollTerminal: scrollHandlers.scrollTerminal,
     setScrollOffset: scrollHandlers.handleSetScrollOffset,
     scrollToBottom: scrollHandlers.handleScrollToBottom,
-    getEmulatorSync,
-    getTerminalStateSync,
+    getEmulatorSync: cacheAccessors.getEmulatorSync,
+    getTerminalStateSync: cacheAccessors.getTerminalStateSync,
     get isInitialized() { return isInitialized(); },
-    findSessionForPty,
+    findSessionForPty: cacheAccessors.findSessionForPty,
   };
 
   return (
