@@ -159,6 +159,54 @@ export class XtwinopsQueryParser implements QueryParser {
 }
 
 /**
+ * Parser for other XTWINOPS sequences to drop silently (ESC[Ps;...t)
+ * Catches window manipulation commands like resize (8;rows;cols;t) that
+ * ghostty-web doesn't support and would log warnings.
+ * This parser should come AFTER XtwinopsQueryParser to not intercept queries.
+ */
+export class XtwinopsDropParser implements QueryParser {
+  // CSI followed by digits/semicolons ending in 't'
+  private readonly csiPattern = '\x1b[';
+
+  canParse(data: string, index: number): boolean {
+    if (!data.startsWith(this.csiPattern, index)) return false;
+    // Look ahead to see if this looks like a CSI...t sequence
+    let pos = index + this.csiPattern.length;
+    while (pos < data.length) {
+      const char = data[pos];
+      if (char === 't') return true;
+      if (!/[\d;]/.test(char)) return false;
+      pos++;
+    }
+    return false;
+  }
+
+  parse(data: string, index: number): ParseResult | null {
+    if (!data.startsWith(this.csiPattern, index)) return null;
+
+    let pos = index + this.csiPattern.length;
+    // Parse digits and semicolons until we hit 't'
+    while (pos < data.length) {
+      const char = data[pos];
+      if (char === 't') {
+        const totalLength = pos + 1 - index;
+        return {
+          query: {
+            type: 'xtwinops-drop',
+            startIndex: index,
+            endIndex: index + totalLength,
+          },
+          length: totalLength,
+        };
+      }
+      if (!/[\d;]/.test(char)) return null;
+      pos++;
+    }
+    return null;
+  }
+}
+
+/**
  * Get all CSI query parsers in the order they should be checked.
  * Order matters for patterns that share prefixes (e.g., DA2 before DA1).
  */
@@ -176,6 +224,8 @@ export function getCsiParsers(): QueryParser[] {
     new DecxcprQueryParser(),
     new DecrqmQueryParser(),
     new KittyKeyboardQueryParser(),
+    // XTWINOPS queries first, then drop parser for unhandled CSI...t sequences
     new XtwinopsQueryParser(),
+    new XtwinopsDropParser(),
   ];
 }

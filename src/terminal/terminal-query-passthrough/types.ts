@@ -15,6 +15,7 @@ export type QueryType =
   | 'xtgettcap'     // Termcap Query (DCS+q...ST)
   | 'kitty-keyboard' // Kitty Keyboard Protocol (ESC[?u)
   | 'xtwinops'      // Window Operations (ESC[14t, 16t, 18t)
+  | 'xtwinops-drop' // Other Window Operations to drop silently (ESC[Ps;...t)
   | 'osc-palette'   // OSC 4 Palette Query
   | 'osc-fg'        // OSC 10 Foreground Query
   | 'osc-bg'        // OSC 11 Background Query

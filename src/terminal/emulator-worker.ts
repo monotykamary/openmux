@@ -101,6 +101,7 @@ function getModes(terminal: GhosttyTerminal): TerminalModes {
       terminal.getMode(1003, false),
     cursorKeyMode: terminal.getMode(1, false) ? 'application' : 'normal',
     alternateScreen: terminal.isAlternateScreen(),
+    inBandResize: terminal.getMode(2048, false),
   };
 }
 
@@ -112,7 +113,8 @@ function checkModeChanges(sessionId: string, session: WorkerSession): void {
   if (
     newModes.mouseTracking !== session.lastModes.mouseTracking ||
     newModes.cursorKeyMode !== session.lastModes.cursorKeyMode ||
-    newModes.alternateScreen !== session.lastModes.alternateScreen
+    newModes.alternateScreen !== session.lastModes.alternateScreen ||
+    newModes.inBandResize !== session.lastModes.inBandResize
   ) {
     session.lastModes = newModes;
     sendMessage({ type: 'modeChange', sessionId, modes: newModes });
@@ -161,6 +163,7 @@ function sendDirtyUpdate(sessionId: string, session: WorkerSession): void {
     alternateScreen: terminal.isAlternateScreen(),
     mouseTracking: session.lastModes.mouseTracking,
     cursorKeyMode: session.lastModes.cursorKeyMode,
+    inBandResize: session.lastModes.inBandResize,
   };
 
   // Pack and send
@@ -219,6 +222,7 @@ function sendFullUpdate(sessionId: string, session: WorkerSession): void {
     alternateScreen: modes.alternateScreen,
     mouseTracking: modes.mouseTracking,
     cursorKeyMode: modes.cursorKeyMode,
+    inBandResize: modes.inBandResize,
   };
 
   const packed = packDirtyUpdate(update);

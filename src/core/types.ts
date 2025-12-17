@@ -181,6 +181,8 @@ export interface DirtyTerminalUpdate {
   alternateScreen: boolean;
   mouseTracking: boolean;
   cursorKeyMode: 'normal' | 'application';
+  /** DECSET 2048 - in-band resize notifications (used by neovim) */
+  inBandResize: boolean;
 }
 
 /**

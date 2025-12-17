@@ -53,8 +53,9 @@ export function mightContainQueries(data: string): boolean {
     if (data.includes(`${ESC}[?6n`)) {
       return true;
     }
-    // XTWINOPS: specific patterns 14t, 16t, 18t
-    if (data.includes('14t') || data.includes('16t') || data.includes('18t')) {
+    // XTWINOPS: specific patterns 14t, 16t, 18t for queries
+    // Also check for generic CSI...t sequences (digit followed by 't') to filter commands
+    if (data.includes('14t') || data.includes('16t') || data.includes('18t') || /\dt/.test(data)) {
       return true;
     }
   }

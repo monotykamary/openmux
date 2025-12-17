@@ -483,4 +483,56 @@ describe('parseTerminalQueries', () => {
       expect(result.textSegments).toEqual(['text with 6n in it']);
     });
   });
+
+  describe('XTWINOPS drop parser (filters non-query CSI...t sequences)', () => {
+    test('filters CSI 8;rows;cols;t (resize command)', () => {
+      const result = parseTerminalQueries(`${ESC}[8;51;181t`);
+      expect(result.queries).toHaveLength(1);
+      expect(result.queries[0].type).toBe('xtwinops-drop');
+      expect(result.textSegments).toEqual([]);
+    });
+
+    test('filters CSI 4;height;width;t (resize in pixels response format)', () => {
+      const result = parseTerminalQueries(`${ESC}[4;800;1200t`);
+      expect(result.queries).toHaveLength(1);
+      expect(result.queries[0].type).toBe('xtwinops-drop');
+    });
+
+    test('filters CSI 6;h;w;t (cell size response format)', () => {
+      const result = parseTerminalQueries(`${ESC}[6;16;8t`);
+      expect(result.queries).toHaveLength(1);
+      expect(result.queries[0].type).toBe('xtwinops-drop');
+    });
+
+    test('filters CSI 1t (deiconify window)', () => {
+      const result = parseTerminalQueries(`${ESC}[1t`);
+      expect(result.queries).toHaveLength(1);
+      expect(result.queries[0].type).toBe('xtwinops-drop');
+    });
+
+    test('does NOT filter XTWINOPS queries (14t, 16t, 18t)', () => {
+      // These should be parsed as 'xtwinops' type, not 'xtwinops-drop'
+      const result14 = parseTerminalQueries(XTWINOPS_14T);
+      expect(result14.queries[0].type).toBe('xtwinops');
+
+      const result16 = parseTerminalQueries(XTWINOPS_16T);
+      expect(result16.queries[0].type).toBe('xtwinops');
+
+      const result18 = parseTerminalQueries(XTWINOPS_18T);
+      expect(result18.queries[0].type).toBe('xtwinops');
+    });
+
+    test('filters CSI with mixed params ending in t', () => {
+      const result = parseTerminalQueries(`${ESC}[3;100;200t`);
+      expect(result.queries).toHaveLength(1);
+      expect(result.queries[0].type).toBe('xtwinops-drop');
+    });
+
+    test('preserves text around filtered sequences', () => {
+      const result = parseTerminalQueries(`hello${ESC}[8;51;181tworld`);
+      expect(result.queries).toHaveLength(1);
+      expect(result.queries[0].type).toBe('xtwinops-drop');
+      expect(result.textSegments).toEqual(['hello', 'world']);
+    });
+  });
 });

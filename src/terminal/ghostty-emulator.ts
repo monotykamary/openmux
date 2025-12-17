@@ -470,6 +470,7 @@ export class GhosttyEmulator implements ITerminalEmulator {
         alternateScreen,
         mouseTracking: this.isMouseTrackingEnabled(),
         cursorKeyMode: this.getCursorKeyMode(),
+        inBandResize: this.getMode(2048),
       };
     }
 
@@ -502,6 +503,7 @@ export class GhosttyEmulator implements ITerminalEmulator {
       alternateScreen,
       mouseTracking: this.isMouseTrackingEnabled(),
       cursorKeyMode: this.getCursorKeyMode(),
+      inBandResize: this.getMode(2048),
     };
   }
 

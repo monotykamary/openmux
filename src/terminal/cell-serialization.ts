@@ -367,6 +367,7 @@ export function packDirtyUpdate(update: DirtyTerminalUpdate): SerializedDirtyUpd
     alternateScreen: update.alternateScreen,
     mouseTracking: update.mouseTracking,
     cursorKeyMode: update.cursorKeyMode === 'application' ? 1 : 0,
+    inBandResize: update.inBandResize,
   };
 }
 
@@ -426,6 +427,7 @@ export function unpackDirtyUpdate(
     alternateScreen: packed.alternateScreen,
     mouseTracking: packed.mouseTracking,
     cursorKeyMode: packed.cursorKeyMode === 1 ? 'application' : 'normal',
+    inBandResize: packed.inBandResize,
   };
 }
 

@@ -160,6 +160,8 @@ export interface TerminalModes {
   mouseTracking: boolean;
   cursorKeyMode: 'normal' | 'application';
   alternateScreen: boolean;
+  /** DECSET 2048 - in-band resize notifications (used by neovim) */
+  inBandResize: boolean;
 }
 
 /**
@@ -187,6 +189,8 @@ export interface SerializedDirtyUpdate {
   mouseTracking: boolean;
   /** 0 = normal, 1 = application */
   cursorKeyMode: 0 | 1;
+  /** DECSET 2048 - in-band resize notifications */
+  inBandResize: boolean;
 }
 
 // ============================================================================

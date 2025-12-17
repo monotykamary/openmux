@@ -505,6 +505,7 @@ export class Pty extends Context.Tag("@openmux/Pty")<
             alternateScreen: fullState.alternateScreen,
             mouseTracking: fullState.mouseTracking,
             cursorKeyMode: fullState.cursorKeyMode ?? 'normal',
+            inBandResize: session.emulator.getMode(2048),
           },
           scrollState,
         }

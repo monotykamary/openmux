@@ -48,6 +48,7 @@ export class WorkerEmulator implements ITerminalEmulator {
     mouseTracking: false,
     cursorKeyMode: 'normal',
     alternateScreen: false,
+    inBandResize: false,
   };
 
   // Title state
@@ -118,6 +119,7 @@ export class WorkerEmulator implements ITerminalEmulator {
       mouseTracking: update.mouseTracking,
       cursorKeyMode: update.cursorKeyMode,
       alternateScreen: update.alternateScreen,
+      inBandResize: update.inBandResize ?? false,
     };
 
     // If full update, cache the full state
@@ -285,6 +287,7 @@ export class WorkerEmulator implements ITerminalEmulator {
       alternateScreen: this.modes.alternateScreen,
       mouseTracking: this.modes.mouseTracking,
       cursorKeyMode: this.modes.cursorKeyMode,
+      inBandResize: this.modes.inBandResize,
     };
   }
 
@@ -362,6 +365,8 @@ export class WorkerEmulator implements ITerminalEmulator {
       case 1002:
       case 1003:
         return this.modes.mouseTracking;
+      case 2048: // DECSET 2048 - in-band resize notifications
+        return this.modes.inBandResize;
       default:
         return false;
     }
