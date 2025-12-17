@@ -16,10 +16,10 @@ export const WHITE = RGBA.fromInts(255, 255, 255);
 export const BLACK = RGBA.fromInts(0, 0, 0);
 
 /**
- * RGBA cache to avoid per-cell allocations
+ * RGBA cache to avoid per-cell allocations (internal implementation detail)
  * Map key is (r << 16) | (g << 8) | b
  */
-export const RGBA_CACHE = new Map<number, RGBA>();
+const RGBA_CACHE = new Map<number, RGBA>();
 
 // Pre-populate common colors
 RGBA_CACHE.set(0x000000, BLACK);

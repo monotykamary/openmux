@@ -1,17 +1,10 @@
 /**
  * Layout utilities for AggregateView
- * Provides dimension calculations and style mappings
+ * Provides dimension calculations for the aggregate layout
  */
 
-/**
- * Border style mapping for OpenTUI
- */
-export const borderStyleMap: Record<string, 'single' | 'double' | 'rounded'> = {
-  single: 'single',
-  double: 'double',
-  rounded: 'rounded',
-  bold: 'single',
-};
+// Re-export borderStyleMap from Pane for convenience
+export { borderStyleMap } from '../Pane';
 
 /**
  * Layout dimension configuration

@@ -12,6 +12,17 @@ import { TerminalView } from './TerminalView';
 import { inputHandler } from '../terminal';
 import { createTerminalMouseHandler } from './shared/terminal-mouse-handler';
 
+/**
+ * Border style mapping for OpenTUI
+ * Maps theme border style names to OpenTUI BorderStyle type
+ */
+export const borderStyleMap: Record<string, 'single' | 'double' | 'rounded'> = {
+  single: 'single',
+  double: 'double',
+  rounded: 'rounded',
+  bold: 'single', // fallback
+};
+
 interface PaneProps {
   id: string;
   title?: string;
@@ -101,14 +112,6 @@ export function Pane(props: PaneProps) {
       ? `● ${props.title}`
       : props.title
     : undefined;
-
-  // Map borderStyle to OpenTUI BorderStyle type
-  const borderStyleMap: Record<string, 'single' | 'double' | 'rounded'> = {
-    single: 'single',
-    double: 'double',
-    rounded: 'rounded',
-    bold: 'single', // fallback
-  };
 
   // Calculate relative coordinates
   const getRelativeCoords = (event: OpenTUIMouseEvent) => {
