@@ -4,7 +4,6 @@
 
 import { createSignal, createEffect, onCleanup, on } from 'solid-js';
 import { useKeyboard, useTerminalDimensions, useRenderer } from '@opentui/solid';
-import type { PasteEvent } from '@opentui/core';
 import {
   ThemeProvider,
   LayoutProvider,
@@ -25,8 +24,6 @@ import { SessionPicker } from './components/SessionPicker';
 import { SearchOverlay } from './components/SearchOverlay';
 import { AggregateView } from './components/AggregateView';
 import { SessionBridge } from './components/SessionBridge';
-import { inputHandler } from './terminal';
-import type { WorkspaceId } from './core/types';
 import { getFocusedPtyId } from './core/workspace-utils';
 import {
   routeKeyboardEventSync,
@@ -34,6 +31,13 @@ import {
   isPtyCreated,
   getSessionCwd as getSessionCwdFromCoordinator,
 } from './effect/bridge';
+import { inputHandler } from './terminal';
+import type { PasteEvent } from '@opentui/core';
+import {
+  createConfirmationHandlers,
+  createPaneResizeHandlers,
+  createPasteHandler,
+} from './components/app';
 
 function AppContent() {
   const dimensions = useTerminalDimensions();
@@ -65,6 +69,34 @@ function AppContent() {
 
   // Track pending kill PTY ID for aggregate view kill confirmation
   const [pendingKillPtyId, setPendingKillPtyId] = createSignal<string | null>(null);
+
+  // Create confirmation handlers
+  const confirmationHandlers = createConfirmationHandlers({
+    confirmationState,
+    setConfirmationState,
+    pendingKillPtyId,
+    setPendingKillPtyId,
+    closePane,
+    getFocusedPtyId: () => getFocusedPtyId(layout.activeWorkspace),
+    destroyPTY,
+    enterConfirmMode,
+    exitConfirmMode,
+    saveSession,
+    destroyRenderer: () => renderer.destroy(),
+  });
+
+  // Create paste handler for bracketed paste from host terminal
+  const pasteHandler = createPasteHandler({
+    getFocusedPtyId: () => getFocusedPtyId(layout.activeWorkspace),
+    writeToPTY,
+  });
+
+  // Create pane resize handlers
+  const paneResizeHandlers = createPaneResizeHandlers({
+    getPanes: () => layout.panes,
+    resizePTY,
+    setPanePosition,
+  });
 
   // Create new pane handler that captures CWD first
   const handleNewPane = async () => {
@@ -115,73 +147,13 @@ function AppContent() {
     openAggregateView();
   };
 
-  // Request close pane (show confirmation)
-  const handleRequestClosePane = () => {
-    enterConfirmMode('close_pane');
-    setConfirmationState({ visible: true, type: 'close_pane' });
-  };
-
-  // Request quit (show confirmation)
-  const handleRequestQuit = () => {
-    enterConfirmMode('exit');
-    setConfirmationState({ visible: true, type: 'exit' });
-  };
-
-  // Request kill PTY (show confirmation) - from aggregate view
-  const handleRequestKillPty = (ptyId: string) => {
-    setPendingKillPtyId(ptyId);
-    enterConfirmMode('kill_pty');
-    setConfirmationState({ visible: true, type: 'kill_pty' });
-  };
-
-  // Confirmation dialog handlers
-  const handleConfirmAction = async () => {
-    const { type } = confirmationState();
-    exitConfirmMode();
-    setConfirmationState({ visible: false, type: 'close_pane' });
-
-    if (type === 'close_pane') {
-      // Get the focused pane's PTY ID before closing (so we can destroy it)
-      const ptyId = getFocusedPtyId(layout.activeWorkspace);
-      closePane();
-      // Destroy the PTY to kill the terminal process
-      if (ptyId) {
-        destroyPTY(ptyId);
-      }
-    } else if (type === 'exit') {
-      await saveSession();
-      renderer.destroy();
-      process.exit(0);
-    } else if (type === 'kill_pty') {
-      // Kill PTY from aggregate view
-      const ptyId = pendingKillPtyId();
-      if (ptyId) {
-        destroyPTY(ptyId);
-        setPendingKillPtyId(null);
-      }
-    }
-  };
-
-  const handleCancelConfirmation = () => {
-    exitConfirmMode();
-    setConfirmationState({ visible: false, type: 'close_pane' });
-    setPendingKillPtyId(null);
-  };
 
   // Handle bracketed paste from host terminal (Cmd+V sends this)
   createEffect(() => {
-    const handleBracketedPaste = (event: PasteEvent) => {
-      // Write the pasted text directly to the focused pane's PTY
-      const focusedPtyId = getFocusedPtyId(layout.activeWorkspace);
-      if (focusedPtyId) {
-        writeToPTY(focusedPtyId, event.text);
-      }
-    };
-
-    renderer.keyInput.on('paste', handleBracketedPaste);
+    renderer.keyInput.on('paste', pasteHandler.handleBracketedPaste);
 
     onCleanup(() => {
-      renderer.keyInput.off('paste', handleBracketedPaste);
+      renderer.keyInput.off('paste', pasteHandler.handleBracketedPaste);
     });
   });
 
@@ -189,8 +161,8 @@ function AppContent() {
     onPaste: handlePaste,
     onNewPane: handleNewPane,
     onQuit: handleQuit,
-    onRequestQuit: handleRequestQuit,
-    onRequestClosePane: handleRequestClosePane,
+    onRequestQuit: confirmationHandlers.handleRequestQuit,
+    onRequestClosePane: confirmationHandlers.handleRequestClosePane,
     onToggleSessionPicker: handleToggleSessionPicker,
     onEnterSearch: handleEnterSearch,
     onToggleConsole: handleToggleConsole,
@@ -300,40 +272,21 @@ function AppContent() {
   // Resize PTYs and update positions when pane dimensions change
   createEffect(() => {
     if (!terminal.isInitialized) return;
-
-    // Resize all panes with PTYs
-    for (const pane of layout.panes) {
-      if (!pane.ptyId || !pane.rectangle) continue;
-
-      const cols = Math.max(1, pane.rectangle.width - 2);
-      const rows = Math.max(1, pane.rectangle.height - 2);
-      const x = pane.rectangle.x + 1;
-      const y = pane.rectangle.y + 1;
-
-      resizePTY(pane.ptyId, cols, rows);
-      setPanePosition(pane.ptyId, x, y);
-    }
+    // Access layout.panes to create reactive dependency
+    const _panes = layout.panes;
+    paneResizeHandlers.resizeAllPanes();
   });
 
   // Restore PTY sizes when aggregate view closes
   // The preview resizes PTYs to preview dimensions, so we need to restore pane dimensions
   // Using on() for explicit dependency - only runs when showAggregateView changes
-  // Previous value is provided automatically by on() as second argument
   createEffect(
     on(
       () => aggregateState.showAggregateView,
       (isOpen, wasOpen) => {
         // Only trigger resize when closing (was open, now closed)
-        // Note: on() isolates deps, so reading terminal.isInitialized and layout.panes
-        // inside the callback doesn't create additional subscriptions
         if (wasOpen && !isOpen && terminal.isInitialized) {
-          for (const pane of layout.panes) {
-            if (pane.ptyId && pane.rectangle) {
-              const cols = Math.max(1, pane.rectangle.width - 2);
-              const rows = Math.max(1, pane.rectangle.height - 2);
-              resizePTY(pane.ptyId, cols, rows);
-            }
-          }
+          paneResizeHandlers.restorePaneSizes();
         }
       },
       { defer: true } // Skip initial run - we only care about transitions
@@ -483,7 +436,7 @@ function AppContent() {
       <SearchOverlay width={width()} height={height()} />
 
       {/* Aggregate view overlay */}
-      <AggregateView width={width()} height={height()} onRequestQuit={handleRequestQuit} onRequestKillPty={handleRequestKillPty} />
+      <AggregateView width={width()} height={height()} onRequestQuit={confirmationHandlers.handleRequestQuit} onRequestKillPty={confirmationHandlers.handleRequestKillPty} />
 
       {/* Confirmation dialog */}
       <ConfirmationDialog
@@ -491,8 +444,8 @@ function AppContent() {
         type={confirmationState().type}
         width={width()}
         height={height()}
-        onConfirm={handleConfirmAction}
-        onCancel={handleCancelConfirmation}
+        onConfirm={confirmationHandlers.handleConfirmAction}
+        onCancel={confirmationHandlers.handleCancelConfirmation}
       />
 
       {/* Copy notification toast */}
