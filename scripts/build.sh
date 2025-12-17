@@ -89,6 +89,9 @@ build_zig_pty() {
 
 cleanup() {
     find "$PROJECT_DIR" -maxdepth 1 -name "*.bun-build" -type f -delete 2>/dev/null || true
+    # Clean up intermediate bundle artifacts (keep binary, libs, wasm, etc.)
+    rm -f "$DIST_DIR"/index.js "$DIST_DIR"/emulator-worker.ts 2>/dev/null || true
+    rm -rf "$DIST_DIR"/chunk-*.js "$DIST_DIR"/terminal 2>/dev/null || true
 }
 
 usage() {
@@ -131,8 +134,9 @@ build() {
     fi
 
     # Compile the bundled output into a standalone binary
+    # bundle.ts creates both index.js and emulator-worker.ts in dist/
     local compile_status=0
-    bun build --compile --minify "$DIST_DIR/index.js" --outfile "$DIST_DIR/$BINARY_NAME-bin" || compile_status=$?
+    bun build --compile --minify "$DIST_DIR/index.js" "$DIST_DIR/emulator-worker.ts" --outfile "$DIST_DIR/$BINARY_NAME-bin" || compile_status=$?
 
     # Restore bunfig.toml
     if [[ -f "$bunfig_backup_path" ]]; then

@@ -5,19 +5,38 @@
 
 import solidTransformPlugin from "@opentui/solid/bun-plugin";
 
-const result = await Bun.build({
+// Bundle main entry with Solid.js plugin
+const mainResult = await Bun.build({
   entrypoints: ["./src/index.tsx"],
   outdir: "./dist",
   minify: true,
   target: "bun",
-  // Bundle all packages (don't mark node_modules as external)
   packages: "bundle",
   plugins: [solidTransformPlugin],
 });
 
-if (!result.success) {
-  console.error("Build failed:");
-  for (const log of result.logs) {
+if (!mainResult.success) {
+  console.error("Main bundle failed:");
+  for (const log of mainResult.logs) {
+    console.error(log);
+  }
+  process.exit(1);
+}
+
+// Bundle worker separately (no Solid plugin needed, no JSX)
+// Output as emulator-worker.ts to match the URL reference in worker-pool.ts
+const workerResult = await Bun.build({
+  entrypoints: ["./src/terminal/emulator-worker.ts"],
+  outdir: "./dist",
+  minify: true,
+  target: "bun",
+  packages: "bundle",
+  naming: "emulator-worker.ts", // Keep .ts extension to match URL reference
+});
+
+if (!workerResult.success) {
+  console.error("Worker bundle failed:");
+  for (const log of workerResult.logs) {
     console.error(log);
   }
   process.exit(1);

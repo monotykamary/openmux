@@ -85,12 +85,12 @@ export class EmulatorWorkerPool {
       return;
     }
 
-    const workerUrl = new URL('./emulator-worker.ts', import.meta.url);
-
     const workerPromises: Promise<void>[] = [];
 
     for (let i = 0; i < workerCount; i++) {
-      const worker = new Worker(workerUrl, { type: 'module' });
+      // Use string literal instead of new URL() - workaround for Bun compiled binary bug
+      // See: https://github.com/oven-sh/bun/issues/16869
+      const worker = new Worker('./emulator-worker.ts', { type: 'module' });
       this.workers.push(worker);
       this.workersReady.push(false);
 
