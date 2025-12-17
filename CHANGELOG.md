@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.14](https://github.com/monotykamary/openmux/compare/v0.2.13...v0.2.14) (2025-12-17)
+
+
+### Features
+
+* **terminal:** add DECSET 2048 in-band resize support ([f5bd133](https://github.com/monotykamary/openmux/commit/f5bd13386340d3b892a0dc5634cf9608c6a5d463))
+* **terminal:** move terminal emulation to Web Workers ([6273912](https://github.com/monotykamary/openmux/commit/627391253e322eeb4e1e1270c59533b774494a3b))
+
+
+### Bug Fixes
+
+* **terminal:** prevent flash when resizing panes while scrolled up ([53bc9d5](https://github.com/monotykamary/openmux/commit/53bc9d5f2ed9d57fff4bcd5226c0aa74bfa5f89d))
+* **terminal:** prevent scrollback clear on click when scrolled up ([2a0554d](https://github.com/monotykamary/openmux/commit/2a0554ddde4e8c785c0fda61f76628877a08befc))
+
+
+### Refactoring
+
+* consolidate duplicated code and fix exports ([de31634](https://github.com/monotykamary/openmux/commit/de316346aabb99b93ce2daf6a5f56a06814d04ca))
+* **terminal:** move DECSET 2048 detection to modeChange callbacks ([90864fe](https://github.com/monotykamary/openmux/commit/90864fed8827fc050ed2d0ec963a7cf7c50f0e21))
+* **terminal:** remove dead main-thread emulator code ([3f4d612](https://github.com/monotykamary/openmux/commit/3f4d612a2d7f66e88a29dbeca290616b52021c0b))
+
 ### [0.2.13](https://github.com/monotykamary/openmux/compare/v0.2.12...v0.2.13) (2025-12-17)
 
 
