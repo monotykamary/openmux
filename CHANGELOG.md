@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.15](https://github.com/monotykamary/openmux/compare/v0.2.14...v0.2.15) (2025-12-17)
+
+
+### Bug Fixes
+
+* **build:** resolve worker path for compiled binary ([e8ee6af](https://github.com/monotykamary/openmux/commit/e8ee6affbe1d44c8ea215a7202a8d2c4d7d3d018)), closes [#16869](https://github.com/monotykamary/openmux/issues/16869)
+
 ### [0.2.14](https://github.com/monotykamary/openmux/compare/v0.2.13...v0.2.14) (2025-12-17)
 
 
