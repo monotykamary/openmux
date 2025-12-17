@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.11](https://github.com/monotykamary/openmux/compare/v0.2.10...v0.2.11) (2025-12-17)
+
+
+### Bug Fixes
+
+* **pane:** destroy PTY when closing pane with alt+x ([97661ba](https://github.com/monotykamary/openmux/commit/97661ba92a6a0e5b41ed432b42e7ff57d2f6bc79))
+
 ### [0.2.10](https://github.com/monotykamary/openmux/compare/v0.2.9...v0.2.10) (2025-12-17)
 
 
