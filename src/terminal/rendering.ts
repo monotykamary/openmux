@@ -62,6 +62,34 @@ export const ATTR_UNDERLINE = 8;
 /** Strikethrough text attribute flag */
 export const ATTR_STRIKETHROUGH = 128;
 
+// =============================================================================
+// UI Colors (Scrollbar, Selection, Search)
+// =============================================================================
+
+/** Scrollbar track color */
+export const SCROLLBAR_TRACK = RGBA.fromInts(40, 40, 40);
+
+/** Scrollbar thumb color */
+export const SCROLLBAR_THUMB = RGBA.fromInts(100, 100, 100);
+
+/** Selection background color */
+export const SELECTION_BG = RGBA.fromInts(80, 120, 200);
+
+/** Selection foreground color */
+export const SELECTION_FG = RGBA.fromInts(255, 255, 255);
+
+/** Search match background color (muted brown for other matches) */
+export const SEARCH_MATCH_BG = RGBA.fromInts(100, 80, 60);
+
+/** Search match foreground color (light tan text) */
+export const SEARCH_MATCH_FG = RGBA.fromInts(200, 180, 160);
+
+/** Current search match background color (bright magenta/pink) */
+export const SEARCH_CURRENT_BG = RGBA.fromInts(255, 50, 150);
+
+/** Current search match foreground color (white text) */
+export const SEARCH_CURRENT_FG = RGBA.fromInts(255, 255, 255);
+
 /**
  * Calculate combined attributes from a terminal cell
  */

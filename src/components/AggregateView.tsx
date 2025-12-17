@@ -15,6 +15,8 @@ import { useLayout } from '../contexts/LayoutContext';
 import { useSession } from '../contexts/SessionContext';
 import { useTerminal } from '../contexts/TerminalContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSelection } from '../contexts/SelectionContext';
+import { useSearch } from '../contexts/SearchContext';
 import { getHostBackgroundColor, writeToPty, registerKeyboardHandler } from '../effect/bridge';
 import { inputHandler } from '../terminal/input-handler';
 import { findPtyLocation, findPaneLocation } from './aggregate/utils';
@@ -24,6 +26,7 @@ import { InteractivePreview } from './aggregate/InteractivePreview';
 interface AggregateViewProps {
   width: number;
   height: number;
+  onRequestQuit?: () => void;
 }
 
 export function AggregateView(props: AggregateViewProps) {
@@ -36,11 +39,15 @@ export function AggregateView(props: AggregateViewProps) {
     enterPreviewMode,
     exitPreviewMode,
   } = useAggregateView();
-  const { exitAggregateMode } = useKeyboardState();
+  const { exitAggregateMode, enterSearchMode: keyboardEnterSearchMode } = useKeyboardState();
   const { state: layoutState, switchWorkspace, focusPane, clearAll } = useLayout();
   const { state: sessionState, switchSession } = useSession();
-  const { findSessionForPty } = useTerminal();
+  const { findSessionForPty, scrollTerminal, isMouseTrackingEnabled, isAlternateScreen } = useTerminal();
   const theme = useTheme();
+  const { clearAllSelections } = useSelection();
+  // Keep search context to access searchState reactively (it's a getter)
+  const search = useSearch();
+  const { enterSearchMode, exitSearchMode, setSearchQuery, nextMatch, prevMatch } = search;
 
   // Track prefix mode for prefix+esc to exit interactive mode
   const [prefixActive, setPrefixActive] = createSignal(false);
@@ -110,6 +117,23 @@ export function AggregateView(props: AggregateViewProps) {
     return false;
   };
 
+  // Track if we're in search mode within aggregate view
+  const [inSearchMode, setInSearchMode] = createSignal(false);
+
+  // Helper to enter search mode for the selected PTY
+  const handleEnterSearch = async () => {
+    const selectedPtyId = state.selectedPtyId;
+    if (!selectedPtyId) return;
+
+    // Clear any existing selection
+    clearAllSelections();
+
+    // Enter search mode for the selected PTY
+    await enterSearchMode(selectedPtyId);
+    keyboardEnterSearchMode();
+    setInSearchMode(true);
+  };
+
   // Handle keyboard input when aggregate view is open
   const handleKeyDown = (event: { key: string; ctrl?: boolean; alt?: boolean; shift?: boolean; sequence?: string }) => {
     if (!state.showAggregateView) return false;
@@ -117,28 +141,117 @@ export function AggregateView(props: AggregateViewProps) {
     const { key } = event;
     const normalizedKey = key.toLowerCase();
 
-    // In preview mode, most keys go to the PTY
-    if (state.previewMode) {
-      // Check for prefix key (Ctrl+B) to enter prefix mode
-      if (event.ctrl && normalizedKey === 'b') {
-        setPrefixActive(true);
-        // Set timeout to clear prefix mode after 2 seconds
-        if (prefixTimeout) {
-          clearTimeout(prefixTimeout);
-        }
-        prefixTimeout = setTimeout(() => {
-          setPrefixActive(false);
-        }, 2000);
+    // Handle search mode first (when active in preview)
+    if (inSearchMode() && state.previewMode) {
+      if (normalizedKey === 'escape') {
+        // Cancel search, restore original scroll position
+        exitSearchMode(true);
+        setInSearchMode(false);
         return true;
       }
 
-      // Prefix+Escape exits preview mode (allows programs to use plain Esc)
+      if (normalizedKey === 'return' || normalizedKey === 'enter') {
+        // Confirm search, stay at current position
+        exitSearchMode(false);
+        setInSearchMode(false);
+        return true;
+      }
+
+      // Wait for searchState to be initialized before handling navigation/input
+      const currentSearchState = search.searchState;
+      if (!currentSearchState) {
+        return true;
+      }
+
+      if (normalizedKey === 'n' && event.ctrl && !event.shift && !event.alt) {
+        // Next match (Ctrl+n)
+        nextMatch();
+        return true;
+      }
+
+      if ((normalizedKey === 'n' && event.ctrl && event.shift) || (normalizedKey === 'p' && event.ctrl)) {
+        // Previous match (Ctrl+Shift+N or Ctrl+p)
+        prevMatch();
+        return true;
+      }
+
+      if (normalizedKey === 'backspace') {
+        // Delete last character from query
+        setSearchQuery(currentSearchState.query.slice(0, -1));
+        return true;
+      }
+
+      // Single printable character - add to search query
+      const searchCharCode = event.sequence?.charCodeAt(0) ?? 0;
+      const isPrintable = event.sequence?.length === 1 && searchCharCode >= 32 && searchCharCode < 127;
+      if (isPrintable && !event.ctrl && !event.alt) {
+        setSearchQuery(currentSearchState.query + event.sequence);
+        return true;
+      }
+
+      // Consume all other keys in search mode
+      return true;
+    }
+
+    // Global prefix key handling (Ctrl+B) - works in both list and preview mode
+    if (event.ctrl && normalizedKey === 'b') {
+      setPrefixActive(true);
+      // Set timeout to clear prefix mode after 2 seconds
+      if (prefixTimeout) {
+        clearTimeout(prefixTimeout);
+      }
+      prefixTimeout = setTimeout(() => {
+        setPrefixActive(false);
+      }, 2000);
+      return true;
+    }
+
+    // Global prefix commands (work in both list and preview mode)
+    if (prefixActive()) {
+      // Prefix+q to quit the app (show confirmation modal)
+      if (normalizedKey === 'q') {
+        setPrefixActive(false);
+        if (prefixTimeout) {
+          clearTimeout(prefixTimeout);
+        }
+        if (props.onRequestQuit) {
+          props.onRequestQuit();
+        }
+        return true;
+      }
+    }
+
+    // In preview mode, most keys go to the PTY
+    if (state.previewMode) {
+
+      // Alt+F to enter search mode
+      if (event.alt && normalizedKey === 'f') {
+        handleEnterSearch();
+        return true;
+      }
+
+      // Alt+Escape or Prefix+Escape exits preview mode back to list (allows programs to use plain Esc)
+      if (event.alt && normalizedKey === 'escape') {
+        exitPreviewMode();
+        return true;
+      }
+
       if (prefixActive() && normalizedKey === 'escape') {
         setPrefixActive(false);
         if (prefixTimeout) {
           clearTimeout(prefixTimeout);
         }
         exitPreviewMode();
+        return true;
+      }
+
+      // Prefix+/ to enter search mode (vim-style)
+      if (prefixActive() && key === '/') {
+        setPrefixActive(false);
+        if (prefixTimeout) {
+          clearTimeout(prefixTimeout);
+        }
+        handleEnterSearch();
         return true;
       }
 
@@ -167,7 +280,8 @@ export function AggregateView(props: AggregateViewProps) {
     }
 
     // List mode keyboard handling
-    if (normalizedKey === 'escape') {
+    // Alt+Esc closes aggregate view
+    if (event.alt && normalizedKey === 'escape') {
       closeAggregateView();
       exitAggregateMode();
       return true;
@@ -318,13 +432,54 @@ export function AggregateView(props: AggregateViewProps) {
   };
 
   const handlePreviewMouseScroll = (event: OpenTUIMouseEvent) => {
-    handlePreviewMouseEvent(event, 'scroll');
+    if (!state.previewMode || !state.selectedPtyId) return;
+
+    // Calculate coordinates relative to preview content (subtract border and pane position)
+    const previewX = listPaneWidth();
+    const previewY = 0;
+    const relX = event.x - previewX - 1;
+    const relY = event.y - previewY - 1;
+
+    // Check if the app has mouse tracking enabled - if so, forward scroll to it
+    const shouldForwardToApp = isAlternateScreen(state.selectedPtyId) || isMouseTrackingEnabled(state.selectedPtyId);
+
+    if (shouldForwardToApp) {
+      // Forward scroll event to the PTY
+      const scrollUp = event.scroll?.direction === 'up';
+      const button = scrollUp ? 4 : 5;
+      const sequence = inputHandler.encodeMouse({
+        type: 'scroll',
+        button,
+        x: relX,
+        y: relY,
+        shift: event.modifiers?.shift,
+        alt: event.modifiers?.alt,
+        ctrl: event.modifiers?.ctrl,
+      });
+      writeToPty(state.selectedPtyId, sequence);
+    } else {
+      // Handle scroll locally - scroll through scrollback buffer
+      const scrollSpeed = 3;
+      const direction = event.scroll?.direction;
+      if (direction === 'up') {
+        // Scroll up = look at older content = increase viewport offset
+        scrollTerminal(state.selectedPtyId, scrollSpeed);
+      } else if (direction === 'down') {
+        // Scroll down = look at newer content = decrease viewport offset
+        scrollTerminal(state.selectedPtyId, -scrollSpeed);
+      }
+    }
   };
 
   // Build hints text based on mode
-  const hintsText = () => state.previewMode
-    ? 'Prefix+Esc: back to list'
-    : '↑↓/jk: navigate | Enter: interact | Tab: jump | Esc: close';
+  const hintsText = () => {
+    if (inSearchMode()) {
+      return 'Enter: confirm | Esc: cancel | ^n/^p: next/prev';
+    }
+    return state.previewMode
+      ? 'Alt+Esc: back | Alt+F: search'
+      : '↑↓/jk: navigate | Enter: interact | Tab: jump | Alt+Esc: close';
+  };
 
   // Build search/filter text
   const filterText = () => `Filter: ${state.filterQuery}_`;

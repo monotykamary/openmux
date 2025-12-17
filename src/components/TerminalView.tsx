@@ -16,6 +16,23 @@ import {
 import { useSelection } from '../contexts/SelectionContext';
 import { useSearch } from '../contexts/SearchContext';
 import { useTerminal } from '../contexts/TerminalContext';
+import {
+  WHITE,
+  BLACK,
+  getCachedRGBA,
+  ATTR_BOLD,
+  ATTR_ITALIC,
+  ATTR_UNDERLINE,
+  ATTR_STRIKETHROUGH,
+  SCROLLBAR_TRACK,
+  SCROLLBAR_THUMB,
+  SELECTION_BG,
+  SELECTION_FG,
+  SEARCH_MATCH_BG,
+  SEARCH_MATCH_FG,
+  SEARCH_CURRENT_BG,
+  SEARCH_CURRENT_FG,
+} from '../terminal/rendering';
 
 interface TerminalViewProps {
   ptyId: string;
@@ -27,52 +44,6 @@ interface TerminalViewProps {
   /** Y offset in the parent buffer (for direct buffer rendering) */
   offsetY?: number;
 }
-
-const WHITE = RGBA.fromInts(255, 255, 255);
-const BLACK = RGBA.fromInts(0, 0, 0);
-
-// Scrollbar colors
-const SCROLLBAR_TRACK = RGBA.fromInts(40, 40, 40);
-const SCROLLBAR_THUMB = RGBA.fromInts(100, 100, 100);
-
-// Selection colors
-const SELECTION_BG = RGBA.fromInts(80, 120, 200);
-const SELECTION_FG = RGBA.fromInts(255, 255, 255);
-
-// Search highlight colors
-const SEARCH_MATCH_BG = RGBA.fromInts(100, 80, 60);    // Muted brown for other matches
-const SEARCH_MATCH_FG = RGBA.fromInts(200, 180, 160);  // Light tan text
-const SEARCH_CURRENT_BG = RGBA.fromInts(255, 50, 150); // Bright magenta/pink for current match
-const SEARCH_CURRENT_FG = RGBA.fromInts(255, 255, 255); // White text
-
-// RGBA cache to avoid per-cell allocations (pack RGB into single number as key)
-// Pre-cache common colors to skip Map lookup entirely
-const rgbaCache = new Map<number, RGBA>();
-rgbaCache.set(0x000000, BLACK);  // Pre-cache black
-rgbaCache.set(0xFFFFFF, WHITE);  // Pre-cache white
-
-function getCachedRGBA(r: number, g: number, b: number): RGBA {
-  // Fast path for black (most common background)
-  if ((r | g | b) === 0) return BLACK;
-  // Fast path for white
-  if (r === 255 && g === 255 && b === 255) return WHITE;
-
-  const key = (r << 16) | (g << 8) | b;
-  let cached = rgbaCache.get(key);
-  if (!cached) {
-    cached = RGBA.fromInts(r, g, b);
-    rgbaCache.set(key, cached);
-  }
-  return cached;
-}
-
-// Text attributes for buffer API - must match OpenTUI's TextAttributes
-// See: @opentui/core TextAttributes { BOLD: 1, DIM: 2, ITALIC: 4, UNDERLINE: 8, BLINK: 16, INVERSE: 32, HIDDEN: 64, STRIKETHROUGH: 128 }
-const ATTR_BOLD = 1;
-const ATTR_DIM = 2;
-const ATTR_ITALIC = 4;
-const ATTR_UNDERLINE = 8;
-const ATTR_STRIKETHROUGH = 128;
 
 /**
  * TerminalView component - uses direct buffer rendering for maximum performance
