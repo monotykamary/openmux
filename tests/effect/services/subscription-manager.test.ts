@@ -3,7 +3,7 @@
  * Verifies Effect-based subscription management with synchronous cleanup
  */
 import { describe, test, expect, vi } from 'vitest'
-import { Effect, Scope } from 'effect'
+import { Effect, Scope, Logger, LogLevel } from 'effect'
 import {
   makeSubscriptionRegistry,
   makeSubscriptionId,
@@ -178,7 +178,7 @@ describe('SubscriptionRegistry', () => {
           expect(callback1).toHaveBeenCalled()
           expect(callback2).toHaveBeenCalled()
           expect(callback3).toHaveBeenCalled()
-        })
+        }).pipe(Logger.withMinimumLogLevel(LogLevel.None))
       )
     })
   })
