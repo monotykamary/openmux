@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.10](https://github.com/monotykamary/openmux/compare/v0.2.9...v0.2.10) (2025-12-17)
+
+
+### Features
+
+* **aggregate:** add full feature parity to interactive preview ([1404a54](https://github.com/monotykamary/openmux/commit/1404a54d2328ec4d142b05d72b98da22cba314a1))
+
+
+### Bug Fixes
+
+* **session:** add zIndex to SessionPicker to prevent content overlap ([ee2ab0a](https://github.com/monotykamary/openmux/commit/ee2ab0aaf8ee5614b8ef2eaa8e391d784abb8ee6))
+
 ### [0.2.9](https://github.com/monotykamary/openmux/compare/v0.2.8...v0.2.9) (2025-12-16)
 
 
