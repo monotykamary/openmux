@@ -197,6 +197,7 @@ export function SessionPicker(props: SessionPickerProps) {
           borderStyle: 'rounded',
           borderColor: '#00AAFF',
           padding: 1,
+          zIndex: 100,
         }}
         backgroundColor="#1a1a1a"
         title=" Sessions "
