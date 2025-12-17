@@ -1,9 +1,14 @@
 /**
  * Subscription management utilities for PTY service.
  * Provides Effect-based subscription tracking with synchronous cleanup support.
+ *
+ * Uses a mutable Map as the source of truth for subscriptions. This enables:
+ * - Synchronous cleanup (required for SolidJS onCleanup)
+ * - Synchronous notifications (for non-Effect contexts)
+ * - Effect-based API for consistency with the rest of the codebase
  */
 
-import { Effect, Ref, HashMap, Scope } from "effect"
+import { Effect } from "effect"
 
 // =============================================================================
 // Types
@@ -34,10 +39,9 @@ export interface Subscription<T> {
  * - `notify`/`notifySync`: Event broadcasting
  */
 export const makeSubscriptionRegistry = <T>() =>
-  Effect.gen(function* () {
-    const subscriptionsRef = yield* Ref.make(
-      HashMap.empty<SubscriptionId, Subscription<T>>()
-    )
+  Effect.sync(() => {
+    // Mutable map as source of truth - enables synchronous operations
+    const subscriptions = new Map<SubscriptionId, Subscription<T>>()
 
     /**
      * Subscribe with manual cleanup function.
@@ -45,20 +49,18 @@ export const makeSubscriptionRegistry = <T>() =>
      * The returned cleanup function is synchronous.
      */
     const subscribe = (callback: (value: T) => void) =>
-      Effect.gen(function* () {
+      Effect.sync(() => {
         const id = makeSubscriptionId()
-        yield* Ref.update(subscriptionsRef, HashMap.set(id, {
+        const sub: Subscription<T> = {
           id,
           callback,
           createdAt: Date.now(),
-        }))
+        }
+        subscriptions.set(id, sub)
 
-        // Return SYNCHRONOUS cleanup function
-        // This is safe because Ref.update with HashMap.remove is synchronous
+        // Return SYNCHRONOUS cleanup function (for SolidJS onCleanup)
         return () => {
-          Effect.runSync(
-            Ref.update(subscriptionsRef, HashMap.remove(id))
-          )
+          subscriptions.delete(id)
         }
       })
 
@@ -69,17 +71,20 @@ export const makeSubscriptionRegistry = <T>() =>
     const subscribeScoped = (callback: (value: T) => void) =>
       Effect.acquireRelease(
         // Acquire: add subscription
-        Effect.gen(function* () {
+        Effect.sync(() => {
           const id = makeSubscriptionId()
-          yield* Ref.update(subscriptionsRef, HashMap.set(id, {
+          const sub: Subscription<T> = {
             id,
             callback,
             createdAt: Date.now(),
-          }))
+          }
+          subscriptions.set(id, sub)
           return id
         }),
         // Release: remove subscription (runs when Scope closes)
-        (id) => Ref.update(subscriptionsRef, HashMap.remove(id))
+        (id) => Effect.sync(() => {
+          subscriptions.delete(id)
+        })
       )
 
     /**
@@ -88,13 +93,12 @@ export const makeSubscriptionRegistry = <T>() =>
      */
     const notify = (value: T) =>
       Effect.gen(function* () {
-        const subs = yield* Ref.get(subscriptionsRef)
-        for (const [_, sub] of HashMap.entries(subs)) {
-          try {
-            sub.callback(value)
-          } catch (error) {
-            yield* Effect.logWarning("Subscription callback error", { error })
-          }
+        for (const sub of subscriptions.values()) {
+          yield* Effect.try(() => sub.callback(value)).pipe(
+            Effect.catchAll((error) =>
+              Effect.logWarning("Subscription callback error", { error })
+            )
+          )
         }
       })
 
@@ -103,8 +107,7 @@ export const makeSubscriptionRegistry = <T>() =>
      * Use this when called from plain JavaScript callbacks (e.g., emulator events).
      */
     const notifySync = (value: T) => {
-      const subs = Effect.runSync(Ref.get(subscriptionsRef))
-      for (const [_, sub] of HashMap.entries(subs)) {
+      for (const sub of subscriptions.values()) {
         try {
           sub.callback(value)
         } catch (error) {
@@ -117,7 +120,7 @@ export const makeSubscriptionRegistry = <T>() =>
      * Get current subscriber count (for debugging/monitoring).
      */
     const getSubscriberCount = () =>
-      Effect.map(Ref.get(subscriptionsRef), HashMap.size)
+      Effect.sync(() => subscriptions.size)
 
     return {
       subscribe,

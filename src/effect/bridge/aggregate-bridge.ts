@@ -55,10 +55,7 @@ const fetchPtyMetadata = (ptyId: PtyId) =>
       workspaceId: undefined, // Will be enriched by AggregateView
       paneId: undefined,      // Will be enriched by AggregateView
     })
-  }).pipe(
-    // Convert any errors to None (graceful degradation)
-    Effect.catchAll(() => Effect.succeed(Option.none<PtyMetadata>()))
-  )
+  })
 
 /**
  * List all PTYs with their metadata.
