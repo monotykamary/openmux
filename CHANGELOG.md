@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.20](https://github.com/monotykamary/openmux/compare/v0.2.19...v0.2.20) (2025-12-18)
+
+
+### Bug Fixes
+
+* **mouse:** prevent mouse events forwarding when app lacks mouse tracking ([fd3251c](https://github.com/monotykamary/openmux/commit/fd3251cd008e6a4ce476440e51557c33936dd04b))
+* **scroll:** prevent cache flickering during in-place terminal animations ([a010137](https://github.com/monotykamary/openmux/commit/a0101371680ab04f948d140b66b1a8fcc639cd2e))
+
 ### [0.2.19](https://github.com/monotykamary/openmux/compare/v0.2.18...v0.2.19) (2025-12-18)
 
 
