@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.17](https://github.com/monotykamary/openmux/compare/v0.2.16...v0.2.17) (2025-12-18)
+
+
+### Bug Fixes
+
+* **paste:** resolve truncation for large pastes ([a3a7d07](https://github.com/monotykamary/openmux/commit/a3a7d079524fbb8e324e0e0d2477ddd4f1a62658))
+* **scrollback:** invalidate cache when scrollback content shifts ([cfb6834](https://github.com/monotykamary/openmux/commit/cfb68345c5038a6d68c26719df559756bee0bff6))
+
 ### [0.2.16](https://github.com/monotykamary/openmux/compare/v0.2.15...v0.2.16) (2025-12-18)
 
 
