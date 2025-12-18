@@ -52,7 +52,7 @@ export function AggregateView(props: AggregateViewProps) {
   const { exitAggregateMode, enterSearchMode: keyboardEnterSearchMode } = useKeyboardState();
   const { state: layoutState, switchWorkspace, focusPane } = useLayout();
   const { state: sessionState, switchSession } = useSession();
-  const { findSessionForPty, scrollTerminal, isMouseTrackingEnabled, isAlternateScreen, getScrollState, getEmulatorSync, getTerminalStateSync } = useTerminal();
+  const { findSessionForPty, scrollTerminal, isMouseTrackingEnabled, getScrollState, getEmulatorSync, getTerminalStateSync } = useTerminal();
   const theme = useTheme();
   const { clearAllSelections, startSelection, updateSelection, completeSelection, clearSelection, getSelection } = useSelection();
   // Keep search context to access searchState reactively (it's a getter)
@@ -201,7 +201,6 @@ export function AggregateView(props: AggregateViewProps) {
     getPreviewInnerWidth: () => layout().previewInnerWidth,
     getPreviewInnerHeight: () => layout().previewInnerHeight,
     isMouseTrackingEnabled,
-    isAlternateScreen,
     getScrollState,
     scrollTerminal,
     startSelection,

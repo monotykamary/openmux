@@ -16,7 +16,6 @@ export interface SelectionState {
 export interface TerminalMouseDeps {
   // Terminal state checks
   isMouseTrackingEnabled: (ptyId: string) => boolean;
-  isAlternateScreen: (ptyId: string) => boolean;
 
   // Scroll state
   getScrollState: (ptyId: string) => { viewportOffset: number; scrollbackLength: number; isAtBottom: boolean } | undefined;
@@ -49,7 +48,6 @@ export interface PendingSelection {
 export function createTerminalMouseHandler(deps: TerminalMouseDeps) {
   const {
     isMouseTrackingEnabled,
-    isAlternateScreen,
     getScrollState,
     scrollTerminal,
     startSelection,
@@ -76,10 +74,12 @@ export function createTerminalMouseHandler(deps: TerminalMouseDeps) {
   };
 
   /**
-   * Check if app wants mouse input (alternate screen or mouse tracking enabled)
+   * Check if app wants mouse input (mouse tracking explicitly enabled)
+   * Note: Being in alternate screen alone is not sufficient - the app must
+   * have enabled mouse tracking via escape sequences (modes 1000/1002/1003)
    */
   const appWantsMouse = (ptyId: string): boolean => {
-    return isMouseTrackingEnabled(ptyId) || isAlternateScreen(ptyId);
+    return isMouseTrackingEnabled(ptyId);
   };
 
   /**

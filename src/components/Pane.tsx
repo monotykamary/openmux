@@ -42,7 +42,7 @@ interface PaneProps {
 export function Pane(props: PaneProps) {
   const theme = useTheme();
   const terminal = useTerminal();
-  const { isMouseTrackingEnabled, isAlternateScreen, scrollTerminal, getScrollState, setScrollOffset, getEmulatorSync, getTerminalStateSync } = terminal;
+  const { isMouseTrackingEnabled, scrollTerminal, getScrollState, setScrollOffset, getEmulatorSync, getTerminalStateSync } = terminal;
   const selection = useSelection();
   const { startSelection, updateSelection, completeSelection, clearSelection, getSelection } = selection;
   const titleCtx = useTitle();
@@ -54,7 +54,6 @@ export function Pane(props: PaneProps) {
   // Create shared mouse handler for selection logic
   const mouseHandler = createTerminalMouseHandler({
     isMouseTrackingEnabled,
-    isAlternateScreen,
     getScrollState,
     scrollTerminal,
     startSelection,

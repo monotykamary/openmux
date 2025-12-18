@@ -99,6 +99,9 @@ export function createAggregateMouseHandlers(deps: MouseHandlerDeps) {
     );
     if (handled) return;
 
+    // Don't forward if app doesn't want mouse input
+    if (!mouseHandler.appWantsMouse(ptyId)) return;
+
     // Don't forward mouse down when scrolled back - we're in "history viewing" mode
     if (isScrolledBack(ptyId)) return;
 
@@ -117,6 +120,9 @@ export function createAggregateMouseHandlers(deps: MouseHandlerDeps) {
 
     if (!getPreviewMode() || !ptyId) return;
 
+    // Don't forward if app doesn't want mouse input
+    if (!mouseHandler.appWantsMouse(ptyId)) return;
+
     // Don't forward mouse up when scrolled back - we're in "history viewing" mode
     if (isScrolledBack(ptyId)) return;
 
@@ -134,7 +140,6 @@ export function createAggregateMouseHandlers(deps: MouseHandlerDeps) {
     if (!ptyId) return;
 
     // Only forward mouse move if app explicitly wants mouse input
-    // (has mouse tracking enabled or is in alternate screen)
     if (!mouseHandler.appWantsMouse(ptyId)) return;
 
     const { relX, relY } = getRelativeCoords(event);
@@ -157,6 +162,9 @@ export function createAggregateMouseHandlers(deps: MouseHandlerDeps) {
       ptyId, relX, relY, getPreviewInnerHeight()
     );
     if (handled) return;
+
+    // Don't forward if app doesn't want mouse input
+    if (!mouseHandler.appWantsMouse(ptyId)) return;
 
     // Don't forward drag when scrolled back - we're in "history viewing" mode
     if (isScrolledBack(ptyId)) return;
