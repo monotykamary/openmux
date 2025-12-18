@@ -13,7 +13,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "start": "bun run src/index.tsx",
+    "start": "bun run build && ./dist/openmux",
     "dev": "bun run --watch src/index.tsx",
     "typecheck": "tsc --noEmit",
     "build": "./scripts/build.sh",
