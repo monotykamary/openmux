@@ -18,6 +18,7 @@ import { SelectionProvider, useSelection } from './contexts/SelectionContext';
 import { SearchProvider, useSearch } from './contexts/SearchContext';
 import { useSession } from './contexts/SessionContext';
 import { AggregateViewProvider, useAggregateView } from './contexts/AggregateViewContext';
+import { TitleProvider } from './contexts/TitleContext';
 import { PaneContainer, StatusBar, KeyboardHints, CopyNotification, ConfirmationDialog } from './components';
 import type { ConfirmationType } from './core/types';
 import { SessionPicker } from './components/SessionPicker';
@@ -498,17 +499,19 @@ function AppContent() {
 
 function AppWithTerminal() {
   return (
-    <TerminalProvider>
-      <SelectionProvider>
-        <SearchProvider>
-          <SessionBridge>
-            <AggregateViewProvider>
-              <AppContent />
-            </AggregateViewProvider>
-          </SessionBridge>
-        </SearchProvider>
-      </SelectionProvider>
-    </TerminalProvider>
+    <TitleProvider>
+      <TerminalProvider>
+        <SelectionProvider>
+          <SearchProvider>
+            <SessionBridge>
+              <AggregateViewProvider>
+                <AppContent />
+              </AggregateViewProvider>
+            </SessionBridge>
+          </SearchProvider>
+        </SelectionProvider>
+      </TerminalProvider>
+    </TitleProvider>
   );
 }
 

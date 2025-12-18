@@ -9,6 +9,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useTerminal } from '../contexts/TerminalContext';
 import { useSession } from '../contexts/SessionContext';
 import { useAggregateView } from '../contexts/AggregateViewContext';
+import { useTitle } from '../contexts/TitleContext';
 import { getFocusedPane, isMainPaneFocused } from '../core/workspace-utils';
 import { Pane } from './Pane';
 
@@ -187,6 +188,7 @@ interface StackedPanesRendererProps {
 }
 
 function StackedPanesRenderer(props: StackedPanesRendererProps) {
+  const titleCtx = useTitle();
   const activePane = () => props.stackPanes[props.activeStackIndex];
   const rect = () => activePane()?.rectangle ?? { x: 0, y: 0, width: 40, height: 12 };
 
@@ -210,14 +212,18 @@ function StackedPanesRenderer(props: StackedPanesRendererProps) {
 
   // Calculate visible tabs based on scroll offset
   const visibleTabs = createMemo(() => {
+    // Access titleVersion to create reactive dependency on title changes
+    titleCtx.titleVersion();
     const visibleWidth = rect().width;
 
     // Build tab info with positions
     const tabItems = props.stackPanes.map((pane, index) => {
       const isActive = index === props.activeStackIndex;
+      // Get title from TitleContext (avoids layout store re-renders)
+      const title = titleCtx.getTitle(pane.id) ?? pane.title ?? 'pane';
       const label = isActive
-        ? `[${pane.title ?? 'pane'}]`
-        : ` ${pane.title ?? 'pane'} `;
+        ? `[${title}]`
+        : ` ${title} `;
       return { pane, label, width: label.length, isActive, index };
     });
 

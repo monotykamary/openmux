@@ -11,6 +11,7 @@ import {
   onCleanup,
   type ParentProps,
 } from 'solid-js';
+
 import { detectHostCapabilities } from '../terminal';
 import { getHostColors } from '../terminal/terminal-colors';
 import type { TerminalState, TerminalScrollState } from '../core/types';
@@ -21,6 +22,7 @@ import {
 } from './terminal';
 import { getFocusedPtyId as getWorkspaceFocusedPtyId } from '../core/workspace-utils';
 import { useLayout } from './LayoutContext';
+import { useTitle } from './TitleContext';
 import {
   writeToPty,
   resizePty,
@@ -94,7 +96,8 @@ interface TerminalProviderProps extends ParentProps {}
 
 export function TerminalProvider(props: TerminalProviderProps) {
   const layout = useLayout();
-  const { setPanePty, setPaneTitle, closePaneById } = layout;
+  const { setPanePty, closePaneById } = layout;
+  const titleContext = useTitle();
   let initialized = false;
   const [isInitialized, setIsInitialized] = createSignal(false);
 
@@ -163,11 +166,14 @@ export function TerminalProvider(props: TerminalProviderProps) {
       .then(() => {
         setIsInitialized(true);
         // Subscribe to title changes across all PTYs
+        // Titles are stored in TitleContext (plain Map) to avoid layout store updates
+        // which cause SolidJS reactivity cascades and screen flash
         subscribeToAllTitleChanges((event) => {
           // Find the pane associated with this PTY
           const paneId = ptyToPaneMap.get(event.ptyId);
           if (paneId && event.title) {
-            setPaneTitle(paneId, event.title);
+            // Update title in TitleContext (doesn't trigger layout re-renders)
+            titleContext.setTitle(paneId, event.title);
           }
         }).then((unsub) => {
           titleSubscriptionUnsub = unsub;

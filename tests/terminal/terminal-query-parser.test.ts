@@ -96,6 +96,10 @@ describe('mightContainQueries', () => {
     test('OSC clipboard query', () => {
       expect(mightContainQueries(`${ESC}]52;c;?${BEL}`)).toBe(true);
     });
+
+    test('OSC 66 query (to be dropped)', () => {
+      expect(mightContainQueries(`${ESC}]66;w=1;${BEL}`)).toBe(true);
+    });
   });
 
   describe('returns true for DCS queries', () => {
@@ -533,6 +537,49 @@ describe('parseTerminalQueries', () => {
       expect(result.queries).toHaveLength(1);
       expect(result.queries[0].type).toBe('xtwinops-drop');
       expect(result.textSegments).toEqual(['hello', 'world']);
+    });
+  });
+
+  describe('OSC drop parser (filters unknown OSC sequences like OSC 66)', () => {
+    test('filters OSC 66 with BEL terminator', () => {
+      const result = parseTerminalQueries(`${ESC}]66;w=1;${BEL}`);
+      expect(result.queries).toHaveLength(1);
+      expect(result.queries[0].type).toBe('osc-drop');
+      expect(result.textSegments).toEqual([]);
+    });
+
+    test('filters OSC 66 with ST terminator', () => {
+      const result = parseTerminalQueries(`${ESC}]66;s=2;${ST}`);
+      expect(result.queries).toHaveLength(1);
+      expect(result.queries[0].type).toBe('osc-drop');
+      expect(result.textSegments).toEqual([]);
+    });
+
+    test('filters multiple OSC 66 sequences', () => {
+      const result = parseTerminalQueries(`${ESC}]66;w=1;${BEL}${ESC}]66;s=2;${BEL}`);
+      expect(result.queries).toHaveLength(2);
+      expect(result.queries[0].type).toBe('osc-drop');
+      expect(result.queries[1].type).toBe('osc-drop');
+      expect(result.textSegments).toEqual([]);
+    });
+
+    test('preserves text around OSC 66 sequences', () => {
+      const result = parseTerminalQueries(`hello${ESC}]66;w=1;${BEL}world`);
+      expect(result.queries).toHaveLength(1);
+      expect(result.queries[0].type).toBe('osc-drop');
+      expect(result.textSegments).toEqual(['hello', 'world']);
+    });
+
+    test('does NOT filter handled OSC codes (10, 11, 12)', () => {
+      // These should be parsed as specific osc types, not osc-drop
+      const resultFg = parseTerminalQueries(`${ESC}]10;?${BEL}`);
+      expect(resultFg.queries[0].type).toBe('osc-fg');
+
+      const resultBg = parseTerminalQueries(`${ESC}]11;?${BEL}`);
+      expect(resultBg.queries[0].type).toBe('osc-bg');
+
+      const resultCursor = parseTerminalQueries(`${ESC}]12;?${BEL}`);
+      expect(resultCursor.queries[0].type).toBe('osc-cursor');
     });
   });
 });

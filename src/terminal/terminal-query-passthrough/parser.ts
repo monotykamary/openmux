@@ -59,9 +59,9 @@ export function mightContainQueries(data: string): boolean {
       return true;
     }
   }
-  // Check for OSC queries (ESC]4;, ESC]10;?, ESC]11;?, ESC]12;?, ESC]52;)
+  // Check for OSC queries (ESC]4;, ESC]10;?, ESC]11;?, ESC]12;?, ESC]52;, ESC]66;)
   if (data.includes(`${ESC}]`)) {
-    if (data.includes(';?') || data.includes(']4;') || data.includes(']52;')) {
+    if (data.includes(';?') || data.includes(']4;') || data.includes(']52;') || data.includes(']66;')) {
       return true;
     }
   }

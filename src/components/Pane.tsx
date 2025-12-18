@@ -3,11 +3,12 @@
  * Uses shared terminal-mouse-handler for selection logic
  */
 
-import { onCleanup, type JSX } from 'solid-js';
+import { onCleanup, createMemo, type JSX } from 'solid-js';
 import type { MouseEvent as OpenTUIMouseEvent } from '@opentui/core';
 import { useTheme } from '../contexts/ThemeContext';
 import { useTerminal } from '../contexts/TerminalContext';
 import { useSelection } from '../contexts/SelectionContext';
+import { useTitle } from '../contexts/TitleContext';
 import { TerminalView } from './TerminalView';
 import { inputHandler } from '../terminal';
 import { createTerminalMouseHandler } from './shared/terminal-mouse-handler';
@@ -43,6 +44,7 @@ export function Pane(props: PaneProps) {
   const { isMouseTrackingEnabled, isAlternateScreen, scrollTerminal, getScrollState, setScrollOffset, getEmulatorSync, getTerminalStateSync } = terminal;
   const selection = useSelection();
   const { startSelection, updateSelection, completeSelection, clearSelection, getSelection } = selection;
+  const titleCtx = useTitle();
 
   // Calculate inner dimensions (account for border)
   const innerWidth = () => Math.max(1, props.width - 2);
@@ -107,11 +109,15 @@ export function Pane(props: PaneProps) {
     : theme.pane.borderColor;
 
   // Title with focus indicator
-  const displayTitle = () => props.title
-    ? props.isFocused
-      ? `● ${props.title}`
-      : props.title
-    : undefined;
+  // Read from TitleContext (non-reactive Map + version signal) to avoid layout store re-renders
+  const displayTitle = createMemo(() => {
+    // Access titleVersion to create reactive dependency on title changes
+    titleCtx.titleVersion();
+    // Get title from TitleContext, fall back to prop for backwards compatibility
+    const title = titleCtx.getTitle(props.id) ?? props.title;
+    if (!title) return undefined;
+    return props.isFocused ? `● ${title}` : title;
+  });
 
   // Calculate relative coordinates
   const getRelativeCoords = (event: OpenTUIMouseEvent) => {

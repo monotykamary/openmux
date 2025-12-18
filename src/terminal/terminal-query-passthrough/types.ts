@@ -20,7 +20,8 @@ export type QueryType =
   | 'osc-fg'        // OSC 10 Foreground Query
   | 'osc-bg'        // OSC 11 Background Query
   | 'osc-cursor'    // OSC 12 Cursor Color Query
-  | 'osc-clipboard'; // OSC 52 Clipboard Query
+  | 'osc-clipboard' // OSC 52 Clipboard Query
+  | 'osc-drop';     // Unknown OSC sequences to drop silently (e.g., OSC 66)
 
 export interface TerminalQuery {
   type: QueryType;

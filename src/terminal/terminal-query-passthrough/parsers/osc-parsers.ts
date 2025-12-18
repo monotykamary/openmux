@@ -6,6 +6,9 @@
 import type { ParseResult, QueryParser } from './base';
 import { FixedPatternParser, TerminatedSequenceParser } from './base';
 import {
+  ESC,
+  BEL,
+  ST,
   OSC_PALETTE_PREFIX,
   OSC_FG_QUERY_BEL,
   OSC_FG_QUERY_ST,
@@ -133,6 +136,87 @@ export class OscClipboardQueryParser extends TerminatedSequenceParser {
 }
 
 /**
+ * Parser for unhandled OSC sequences to drop silently (e.g., OSC 66)
+ * Catches OSC sequences that ghostty-web doesn't support and would log warnings.
+ *
+ * Note: OSC 0/1/2 (title sequences) are NOT dropped here because the title parser
+ * in the worker needs to see them. They are stripped in the worker after title parsing.
+ *
+ * Format: ESC]number;params;terminator where terminator is BEL or ST
+ */
+export class OscDropParser implements QueryParser {
+  private readonly oscPrefix = `${ESC}]`;
+  // List of OSC codes to drop silently (codes not handled by other parsers)
+  private readonly dropCodes = [66];
+
+  canParse(data: string, index: number): boolean {
+    if (!data.startsWith(this.oscPrefix, index)) return false;
+
+    // Parse the OSC code number
+    let pos = index + this.oscPrefix.length;
+    let codeStr = '';
+    while (pos < data.length && /\d/.test(data[pos])) {
+      codeStr += data[pos];
+      pos++;
+    }
+
+    if (codeStr.length === 0) return false;
+    const code = parseInt(codeStr, 10);
+
+    return this.dropCodes.includes(code);
+  }
+
+  parse(data: string, index: number): ParseResult | null {
+    if (!data.startsWith(this.oscPrefix, index)) return null;
+
+    let pos = index + this.oscPrefix.length;
+
+    // Parse the OSC code number
+    let codeStr = '';
+    while (pos < data.length && /\d/.test(data[pos])) {
+      codeStr += data[pos];
+      pos++;
+    }
+
+    if (codeStr.length === 0) return null;
+    const code = parseInt(codeStr, 10);
+    if (!this.dropCodes.includes(code)) return null;
+
+    // Find the terminator (BEL or ST)
+    while (pos < data.length) {
+      if (data[pos] === BEL) {
+        // Found BEL terminator
+        const totalLength = pos + 1 - index;
+        return {
+          query: {
+            type: 'osc-drop',
+            startIndex: index,
+            endIndex: index + totalLength,
+          },
+          length: totalLength,
+        };
+      }
+      if (data.startsWith(ST, pos)) {
+        // Found ST terminator
+        const totalLength = pos + ST.length - index;
+        return {
+          query: {
+            type: 'osc-drop',
+            startIndex: index,
+            endIndex: index + totalLength,
+          },
+          length: totalLength,
+        };
+      }
+      pos++;
+    }
+
+    // No terminator found yet - sequence may be incomplete
+    return null;
+  }
+}
+
+/**
  * Get all OSC query parsers
  */
 export function getOscParsers(): QueryParser[] {
@@ -142,5 +226,7 @@ export function getOscParsers(): QueryParser[] {
     new OscCursorQueryParser(),
     new OscPaletteQueryParser(),
     new OscClipboardQueryParser(),
+    // Drop parser must come last to not intercept handled sequences
+    new OscDropParser(),
   ];
 }
