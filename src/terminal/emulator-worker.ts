@@ -35,6 +35,9 @@ import type { TerminalColors } from './terminal-colors';
 // Worker Session
 // ============================================================================
 
+// Scrollback limit constant - ghostty-web default
+const SCROLLBACK_LIMIT = 2000;
+
 interface WorkerSession {
   terminal: GhosttyTerminal;
   cols: number;
@@ -159,10 +162,12 @@ function sendDirtyUpdate(sessionId: string, session: WorkerSession): void {
   terminal.clearDirty();
 
   // Build update
+  const scrollbackLength = terminal.getScrollbackLength();
   const scrollState: TerminalScrollState = {
     viewportOffset: 0,
-    scrollbackLength: terminal.getScrollbackLength(),
+    scrollbackLength,
     isAtBottom: true,
+    isAtScrollbackLimit: scrollbackLength >= SCROLLBACK_LIMIT,
   };
 
   const update = {
@@ -222,10 +227,12 @@ function sendFullUpdate(sessionId: string, session: WorkerSession): void {
     cursorKeyMode: modes.cursorKeyMode,
   };
 
+  const scrollbackLength = terminal.getScrollbackLength();
   const scrollState: TerminalScrollState = {
     viewportOffset: 0,
-    scrollbackLength: terminal.getScrollbackLength(),
+    scrollbackLength,
     isAtBottom: true,
+    isAtScrollbackLimit: scrollbackLength >= SCROLLBACK_LIMIT,
   };
 
   const update = {

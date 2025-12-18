@@ -148,11 +148,15 @@ export function TerminalView(props: TerminalViewProps) {
             const oldScrollbackLength = scrollState.scrollbackLength;
             const newScrollbackLength = update.scrollState.scrollbackLength;
             const scrollbackDelta = newScrollbackLength - oldScrollbackLength;
+            const isAtScrollbackLimit = update.scrollState.isAtScrollbackLimit ?? false;
 
             // Handle transition cache based on scrollback changes:
             // - When scrollback GROWS (delta > 0): capture lines moving from live terminal to scrollback
-            // - When scrollback stays same or shrinks (delta <= 0): content shifted, clear stale cache
-            //   This happens when scrollback is at its limit and old lines are evicted.
+            // - When scrollback shrinks (delta < 0): reset occurred, clear stale cache
+            // - When scrollback stays same (delta == 0) AND at scrollback limit: content shifted
+            //   (old lines evicted, new lines added), clear stale cache
+            // - When scrollback stays same (delta == 0) but NOT at limit: just in-place updates
+            //   (animations, cursor moves), cache is still valid, don't clear
             if (scrollbackDelta > 0 && terminalState && scrollState.viewportOffset > 0) {
               // Capture lines transitioning from live terminal to scrollback BEFORE updating state.
               // We capture them so we can render them immediately without waiting for async prefetch.
@@ -162,8 +166,9 @@ export function TerminalView(props: TerminalViewProps) {
                   transitionCache.set(oldScrollbackLength + i, row);
                 }
               }
-            } else if (scrollbackDelta <= 0 && oldScrollbackLength > 0) {
-              // Content shifted (at scrollback limit) - clear stale transition cache entries
+            } else if (scrollbackDelta < 0 ||
+                       (scrollbackDelta === 0 && isAtScrollbackLimit && oldScrollbackLength > 0)) {
+              // Content shifted (at scrollback limit) or reset - clear stale transition cache entries
               // to prevent returning wrong data for offsets that now have different content
               transitionCache.clear();
             }

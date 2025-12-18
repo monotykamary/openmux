@@ -157,6 +157,8 @@ export interface TerminalScrollState {
   scrollbackLength: number;
   /** Whether currently at the bottom (for sticky scroll detection) */
   isAtBottom: boolean;
+  /** Whether scrollback buffer is at its maximum capacity (content will shift on new lines) */
+  isAtScrollbackLimit?: boolean;
 }
 
 /**

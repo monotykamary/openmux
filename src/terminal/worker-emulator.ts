@@ -121,17 +121,21 @@ export class WorkerEmulator implements ITerminalEmulator {
 
     const newScrollbackLength = update.scrollState.scrollbackLength;
     const scrollbackDelta = newScrollbackLength - this.lastScrollbackLength;
+    const isAtScrollbackLimit = update.scrollState.isAtScrollbackLimit ?? false;
 
     // Smart cache invalidation to prevent flicker when scrolled back:
     // - When scrollback GROWS (delta > 0): existing cached lines at their absolute
     //   offsets are still valid, no need to clear cache
-    // - When scrollback stays same (delta == 0) while receiving updates: we're at the
-    //   scrollback limit and old lines are being evicted, content shifts, must clear
+    // - When scrollback stays same (delta == 0) AND at scrollback limit: old lines
+    //   are being evicted as new ones arrive, content shifts, must clear cache
+    // - When scrollback stays same (delta == 0) but NOT at limit: just in-place
+    //   updates (animations, cursor moves), cache is still valid, don't clear
     // - When scrollback shrinks (delta < 0): reset occurred, must clear
     //
     // Note: We don't clear cache just because scrollback grew - this prevents
     // flicker when user is scrolled back viewing history while new content arrives.
-    const contentShifted = scrollbackDelta <= 0 && this.lastScrollbackLength > 0;
+    const contentShifted = scrollbackDelta < 0 ||
+      (scrollbackDelta === 0 && isAtScrollbackLimit && this.lastScrollbackLength > 0);
 
     if (contentShifted) {
       this.scrollbackCache.clear();
@@ -312,9 +316,15 @@ export class WorkerEmulator implements ITerminalEmulator {
     // Return cached update or create empty one
     if (this.cachedUpdate) {
       // Return and clear the cached update
+      // Merge scroll states: preserve isAtScrollbackLimit from cached update (set by worker)
+      // while using viewportOffset and isAtBottom from the passed scrollState
+      const mergedScrollState: TerminalScrollState = {
+        ...scrollState,
+        isAtScrollbackLimit: this.cachedUpdate.scrollState.isAtScrollbackLimit,
+      };
       const update = {
         ...this.cachedUpdate,
-        scrollState,
+        scrollState: mergedScrollState,
       };
       this.cachedUpdate = null;
       return update;
