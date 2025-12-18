@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.21](https://github.com/monotykamary/openmux/compare/v0.2.20...v0.2.21) (2025-12-18)
+
+
+### Features
+
+* **aggregate:** add numbered items and git diff stats to PTY list ([0f27efe](https://github.com/monotykamary/openmux/commit/0f27efe9bae1148a0e7f949ade9eead87dbbf4ea))
+
 ### [0.2.20](https://github.com/monotykamary/openmux/compare/v0.2.19...v0.2.20) (2025-12-18)
 
 
