@@ -285,6 +285,11 @@ const Pty = struct {
             } else if (n == -1) {
                 const err = std.c._errno().*;
                 if (err == c.EINTR) continue;
+                // Handle buffer full - sleep briefly and retry
+                if (err == c.EAGAIN or err == c.EWOULDBLOCK) {
+                    std.Thread.sleep(1 * std.time.ns_per_ms); // 1ms
+                    continue;
+                }
                 return ERROR;
             } else {
                 break;

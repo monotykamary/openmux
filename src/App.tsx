@@ -2,7 +2,7 @@
  * Main App component for openmux
  */
 
-import { createSignal, createEffect, createMemo, onCleanup, on } from 'solid-js';
+import { createSignal, createEffect, createMemo, onCleanup, onMount, on } from 'solid-js';
 import { useKeyboard, useTerminalDimensions, useRenderer } from '@opentui/solid';
 import {
   ThemeProvider,
@@ -41,6 +41,8 @@ import {
   createPasteHandler,
 } from './components/app';
 import { calculateLayoutDimensions } from './components/aggregate';
+import { setFocusedPty, setClipboardPasteHandler } from './terminal/focused-pty-registry';
+import { readFromClipboard } from './effect/bridge';
 
 function AppContent() {
   const dimensions = useTerminalDimensions();
@@ -50,7 +52,7 @@ function AppContent() {
   const { setViewport, newPane, closePane } = layout;
   // Don't destructure isInitialized - it's a reactive getter that loses reactivity when destructured
   const terminal = useTerminal();
-  const { createPTY, destroyPTY, resizePTY, setPanePosition, writeToFocused, writeToPTY, pasteToFocused, getFocusedCwd, getFocusedCursorKeyMode, destroyAllPTYs, getSessionCwd } = terminal;
+  const { createPTY, destroyPTY, resizePTY, setPanePosition, writeToFocused, writeToPTY, pasteToFocused, getFocusedCwd, getFocusedCursorKeyMode, destroyAllPTYs, getSessionCwd, getEmulatorSync } = terminal;
   const { togglePicker, state: sessionState, saveSession } = useSession();
   // Keep selection/search contexts to access reactive getters
   const selection = useSelection();
@@ -99,6 +101,39 @@ function AppContent() {
     getPanes: () => layout.panes,
     resizePTY,
     setPanePosition,
+  });
+
+  // Connect focused PTY registry for clipboard passthrough
+  // This bridges the stdin-level paste trigger with the SolidJS context
+  // Key insight: We read from clipboard (always complete) instead of unreliable stdin data
+  onMount(() => {
+    // Bracketed paste mode sequences
+    const PASTE_START = '\x1b[200~';
+    const PASTE_END = '\x1b[201~';
+
+    // Register clipboard paste handler
+    // This is called when paste start marker is detected in stdin
+    // We read from clipboard (always complete, no chunking issues) instead of stdin data
+    setClipboardPasteHandler(async (ptyId) => {
+      try {
+        // Read directly from system clipboard - always complete, no chunking issues
+        const clipboardText = await readFromClipboard();
+        if (!clipboardText) return;
+
+        // Send complete paste atomically with brackets
+        // Apps with bracketed paste mode expect the entire paste between markers
+        const fullPaste = PASTE_START + clipboardText + PASTE_END;
+        await writeToPTY(ptyId, fullPaste);
+      } catch (err) {
+        console.error('Clipboard paste error:', err);
+      }
+    });
+  });
+
+  // Keep the focused PTY registry in sync with the current workspace focus
+  createEffect(() => {
+    const focusedPtyId = getFocusedPtyId(layout.activeWorkspace);
+    setFocusedPty(focusedPtyId ?? null);
   });
 
   // Create new pane handler that captures CWD first
