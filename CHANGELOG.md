@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.18](https://github.com/monotykamary/openmux/compare/v0.2.17...v0.2.18) (2025-12-18)
+
+
+### Features
+
+* **ui:** redesign stacked mode tabs with background fill ([3f4e397](https://github.com/monotykamary/openmux/commit/3f4e397c1ff2dddf8eb0fcfa76e9614811d8803e))
+
+
+### Bug Fixes
+
+* **scroll:** stabilize scroll position when new content is added ([a11315b](https://github.com/monotykamary/openmux/commit/a11315b0535166bfb005245f705e07dfdb83bca2))
+* **terminal:** mitigate ghostty-wasm memory exhaustion ([6b75ef4](https://github.com/monotykamary/openmux/commit/6b75ef44a2559edbe1bdc06e27f91cd618bfd494))
+* **ui:** improve pane title display consistency ([29b63cd](https://github.com/monotykamary/openmux/commit/29b63cdcac821ac2abdeaf7c38d2e0d437b7579a))
+
 ### [0.2.17](https://github.com/monotykamary/openmux/compare/v0.2.16...v0.2.17) (2025-12-18)
 
 
