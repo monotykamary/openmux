@@ -9,17 +9,23 @@
 //! - JS polls the ring buffer, getting complete chunks
 //!
 //! Module structure:
-//! - constants.zig: Shared constants
-//! - posix.zig: POSIX bindings
-//! - ring_buffer.zig: Lock-free SPSC ring buffer
-//! - pty.zig: PTY handle with background reader
-//! - handle_registry.zig: PTY handle management
-//! - spawn.zig: PTY creation
-//! - async_spawn.zig: Background thread spawn infrastructure
-//! - exports.zig: FFI export implementations
+//! - core/           Core PTY implementation
+//!   - pty.zig       PTY handle with background reader
+//!   - spawn.zig     PTY creation
+//!   - async_spawn.zig  Background thread spawn
+//!   - handle_registry.zig  Handle management
+//!   - ring_buffer.zig  Lock-free SPSC ring buffer
+//! - ffi/            FFI layer
+//!   - exports.zig   FFI export implementations
+//!   - pty_ops.zig   PTY operations
+//!   - spawn_ops.zig Spawn operations
+//!   - process_info.zig  Process inspection
+//! - util/           Utilities
+//!   - constants.zig Shared constants
+//!   - posix.zig     POSIX bindings
 
 const std = @import("std");
-const exports = @import("exports.zig");
+const exports = @import("ffi/exports.zig");
 
 // ============================================================================
 // FFI Exports - These must be `export fn` to create symbols in the shared lib
@@ -102,5 +108,5 @@ export fn bun_pty_get_process_name(pid: c_int, buf: [*]u8, len: c_int) c_int {
 // ============================================================================
 
 test {
-    _ = @import("tests.zig");
+    _ = @import("tests/main.zig");
 }

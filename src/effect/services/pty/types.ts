@@ -2,7 +2,7 @@
  * Internal types for PTY service
  */
 
-import type { IPty } from "../../../../zig-pty/src/index"
+import type { IPty } from "../../../../zig-pty/ts/index"
 import type { TerminalState, UnifiedTerminalUpdate } from "../../../core/types"
 import type { ITerminalEmulator } from "../../../terminal/emulator-interface"
 import type { GraphicsPassthrough } from "../../../terminal/graphics-passthrough"

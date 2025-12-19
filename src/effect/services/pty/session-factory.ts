@@ -2,7 +2,7 @@
  * PTY Session Factory - creates new PTY sessions with all required components
  */
 import { Effect } from "effect"
-import { spawnAsync } from "../../../../zig-pty/src/index"
+import { spawnAsync } from "../../../../zig-pty/ts/index"
 import { createWorkerEmulator } from "../../../terminal/worker-emulator"
 import { GraphicsPassthrough } from "../../../terminal/graphics-passthrough"
 import { TerminalQueryPassthrough } from "../../../terminal/terminal-query-passthrough"

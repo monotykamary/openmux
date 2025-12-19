@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const Pty = @import("pty.zig").Pty;
-const constants = @import("constants.zig");
+const constants = @import("../util/constants.zig");
 
 var handles: [constants.MAX_HANDLES]?Pty = [_]?Pty{null} ** constants.MAX_HANDLES;
 var next_handle: u32 = 1;

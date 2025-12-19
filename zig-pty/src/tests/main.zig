@@ -1,10 +1,10 @@
 //! Tests for zig-pty
 
 const std = @import("std");
-const spawn_module = @import("spawn.zig");
-const exports = @import("exports.zig");
-const constants = @import("constants.zig");
-const handle_registry = @import("handle_registry.zig");
+const spawn_module = @import("../core/spawn.zig");
+const exports = @import("../ffi/exports.zig");
+const constants = @import("../util/constants.zig");
+const handle_registry = @import("../core/handle_registry.zig");
 
 // ============================================================================
 // Basic PTY Tests

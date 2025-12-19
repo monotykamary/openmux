@@ -34,7 +34,8 @@ function resolveLibPath(): string {
   const base = Bun.fileURLToPath(import.meta.url);
   const fileDir = dirname(base);
   const dirName = basename(fileDir);
-  const here = dirName === "src" || dirName === "dist" ? dirname(fileDir) : fileDir;
+  // Handle ts/, src/, or dist/ directory
+  const here = dirName === "ts" || dirName === "src" || dirName === "dist" ? dirname(fileDir) : fileDir;
 
   const basePaths = [
     // Compiled binary: library next to executable (set by wrapper or manual)

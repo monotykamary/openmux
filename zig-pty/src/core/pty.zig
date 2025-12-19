@@ -2,9 +2,9 @@
 
 const std = @import("std");
 const RingBuffer = @import("ring_buffer.zig").RingBuffer;
-const posix = @import("posix.zig");
+const posix = @import("../util/posix.zig");
 const c = posix.c;
-const constants = @import("constants.zig");
+const constants = @import("../util/constants.zig");
 
 pub const Pty = struct {
     master_fd: c_int,

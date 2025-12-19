@@ -2,10 +2,10 @@
 //! Synchronous and asynchronous PTY spawning.
 
 const std = @import("std");
-const constants = @import("constants.zig");
-const spawn_module = @import("spawn.zig");
-const async_spawn = @import("async_spawn.zig");
-const handle_registry = @import("handle_registry.zig");
+const constants = @import("../util/constants.zig");
+const spawn_module = @import("../core/spawn.zig");
+const async_spawn = @import("../core/async_spawn.zig");
+const handle_registry = @import("../core/handle_registry.zig");
 
 // ============================================================================
 // Synchronous Spawn

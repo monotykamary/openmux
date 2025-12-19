@@ -12,8 +12,8 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const constants = @import("constants.zig");
-const posix = @import("posix.zig");
+const constants = @import("../util/constants.zig");
+const posix = @import("../util/posix.zig");
 const c = posix.c;
 
 // ============================================================================

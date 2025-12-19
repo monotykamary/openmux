@@ -2,7 +2,7 @@
  * Query passthrough setup for PTY sessions
  * Configures the TerminalQueryPassthrough with all necessary getters/setters
  */
-import type { IPty } from "../../../../zig-pty/src/index"
+import type { IPty } from "../../../../zig-pty/ts/index"
 import type { ITerminalEmulator } from "../../../terminal/emulator-interface"
 import type { TerminalQueryPassthrough } from "../../../terminal/terminal-query-passthrough"
 

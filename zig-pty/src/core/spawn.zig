@@ -1,9 +1,9 @@
 //! PTY Spawn - Creates new PTY sessions
 
 const std = @import("std");
-const posix = @import("posix.zig");
+const posix = @import("../util/posix.zig");
 const c = posix.c;
-const constants = @import("constants.zig");
+const constants = @import("../util/constants.zig");
 const Pty = @import("pty.zig").Pty;
 const handle_registry = @import("handle_registry.zig");
 

@@ -7,9 +7,9 @@
 //! - This prevents use-after-free when close races with other operations
 
 const std = @import("std");
-const constants = @import("constants.zig");
-const handle_registry = @import("handle_registry.zig");
-const posix = @import("posix.zig");
+const constants = @import("../util/constants.zig");
+const handle_registry = @import("../core/handle_registry.zig");
+const posix = @import("../util/posix.zig");
 const process_info = @import("process_info.zig");
 const c = posix.c;
 

@@ -2,7 +2,7 @@
 //! Allows PTY spawning on a background thread to avoid blocking the main thread
 
 const std = @import("std");
-const constants = @import("constants.zig");
+const constants = @import("../util/constants.zig");
 const spawn_module = @import("spawn.zig");
 
 pub const SpawnState = enum(u8) {
