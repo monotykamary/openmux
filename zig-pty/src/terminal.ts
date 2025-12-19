@@ -126,6 +126,68 @@ export class Terminal implements IPty {
     }
   }
 
+  // ==========================================================================
+  // Process Inspection (Native APIs - no subprocess spawning)
+  // ==========================================================================
+
+  /**
+   * Get the foreground process group ID.
+   * Uses tcgetpgrp() on the PTY master fd.
+   * @returns The foreground process group PID, or -1 on error.
+   */
+  getForegroundPid(): number {
+    if (this._closing || this.handle < 0) return -1;
+    return lib.symbols.bun_pty_get_foreground_pid(this.handle);
+  }
+
+  /**
+   * Get the current working directory of a process.
+   * Uses native APIs: proc_pidinfo on macOS, /proc on Linux.
+   * @param pid The process ID (defaults to shell PID)
+   * @returns The CWD path, or null on error.
+   */
+  getCwd(pid?: number): string | null {
+    const targetPid = pid ?? this._pid;
+    if (targetPid <= 0) return null;
+
+    const buf = Buffer.alloc(1024);
+    const len = lib.symbols.bun_pty_get_cwd(targetPid, ptr(buf), buf.length);
+    if (len <= 0) return null;
+
+    return buf.toString("utf8", 0, len);
+  }
+
+  /**
+   * Get the name of a process.
+   * Uses native APIs: proc_name on macOS, /proc on Linux.
+   * @param pid The process ID (defaults to foreground process)
+   * @returns The process name, or null on error.
+   */
+  getProcessName(pid?: number): string | null {
+    const targetPid = pid ?? this.getForegroundPid();
+    if (targetPid <= 0) return null;
+
+    const buf = Buffer.alloc(256);
+    const len = lib.symbols.bun_pty_get_process_name(targetPid, ptr(buf), buf.length);
+    if (len <= 0) return null;
+
+    return buf.toString("utf8", 0, len);
+  }
+
+  /**
+   * Get the foreground process name (convenience method).
+   * Combines getForegroundPid() and getProcessName().
+   * @returns The foreground process name, or null if no foreground process.
+   */
+  getForegroundProcessName(): string | null {
+    const fgPid = this.getForegroundPid();
+    if (fgPid <= 0 || fgPid === this._pid) {
+      // No foreground process or it's the shell itself
+      return this.getProcessName(this._pid);
+    }
+    return this.getProcessName(fgPid);
+  }
+
   private async _startReadLoop(): Promise<void> {
     if (this._readLoop) return;
     this._readLoop = true;

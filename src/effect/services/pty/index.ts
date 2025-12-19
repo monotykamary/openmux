@@ -4,7 +4,7 @@
  */
 
 export type { InternalPtySession } from "./types"
-export { getForegroundProcess, getGitBranch, getProcessCwd } from "./helpers"
+export { getGitBranch } from "./helpers"
 export { getCurrentScrollState, notifySubscribers, notifyScrollSubscribers } from "./notification"
 export { createDataHandler } from "./data-handler"
 export { setupQueryPassthrough } from "./query-setup"

@@ -3,11 +3,11 @@
  */
 import { Effect } from "effect"
 import type { TerminalState, UnifiedTerminalUpdate } from "../../../core/types"
-import { PtyNotFoundError, PtyCwdError } from "../../errors"
+import { PtyNotFoundError } from "../../errors"
 import { PtyId } from "../../types"
 import type { InternalPtySession } from "./types"
 import { getCurrentScrollState } from "./notification"
-import { getForegroundProcess, getGitBranch, getProcessCwd } from "./helpers"
+import { getGitBranch } from "./helpers"
 import type { SubscriptionRegistry } from "./subscription-manager"
 
 export interface SubscriptionsDeps {
@@ -93,18 +93,15 @@ export function createSubscriptions(deps: SubscriptionsDeps) {
 
   const getForegroundProcessFn = Effect.fn("Pty.getForegroundProcess")(function* (id: PtyId) {
     const session = yield* getSessionOrFail(id)
-    if (session.pty.pid === undefined) {
-      return undefined
-    }
-    return yield* getForegroundProcess(session.pty.pid)
+    // Use native zig-pty method directly (no subprocess spawning)
+    return session.pty.getForegroundProcessName() ?? undefined
   })
 
   const getGitBranchFn = Effect.fn("Pty.getGitBranch")(function* (id: PtyId) {
     const session = yield* getSessionOrFail(id)
-    if (session.pty.pid === undefined) {
-      return undefined
-    }
-    const cwd = yield* getProcessCwd(session.pty.pid)
+    // Use native zig-pty method directly (no subprocess spawning)
+    const cwd = session.pty.getCwd()
+    if (!cwd) return undefined
     return yield* getGitBranch(cwd)
   })
 

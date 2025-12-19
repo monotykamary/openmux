@@ -16,6 +16,11 @@ pub fn build(b: *std.Build) void {
         .linkage = .dynamic,
     });
 
+    // Link libproc on macOS for proc_name, proc_pidinfo, etc.
+    if (target.result.os.tag == .macos) {
+        lib.root_module.linkSystemLibrary("proc", .{});
+    }
+
     // Install the library
     b.installArtifact(lib);
 
@@ -28,6 +33,11 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
+
+    // Link libproc on macOS for tests too
+    if (target.result.os.tag == .macos) {
+        main_tests.root_module.linkSystemLibrary("proc", .{});
+    }
 
     const run_main_tests = b.addRunArtifact(main_tests);
     const test_step = b.step("test", "Run unit tests");

@@ -3,12 +3,11 @@
  */
 import { Effect, Ref, HashMap, Option } from "effect"
 import type { TerminalState } from "../../../core/types"
-import { PtyNotFoundError, PtyCwdError } from "../../errors"
+import { PtyNotFoundError } from "../../errors"
 import { PtyId, Cols, Rows } from "../../types"
 import { PtySession } from "../../models"
 import type { InternalPtySession } from "./types"
 import { notifySubscribers, notifyScrollSubscribers } from "./notification"
-import { getProcessCwd } from "./helpers"
 import type { SubscriptionRegistry } from "./subscription-manager"
 
 export interface OperationsDeps {
@@ -68,9 +67,9 @@ export function createOperations(deps: OperationsDeps) {
       return session.cwd
     }
 
-    return yield* getProcessCwd(session.pty.pid).pipe(
-      Effect.catchAll(() => Effect.succeed(session.cwd))
-    )
+    // Use native zig-pty method directly (no subprocess spawning)
+    const cwd = session.pty.getCwd()
+    return cwd ?? session.cwd
   })
 
   const destroy = Effect.fn("Pty.destroy")(function* (id: PtyId) {

@@ -29,6 +29,11 @@ export interface IPty {
   write(data: string): void;
   resize(columns: number, rows: number): void;
   kill(signal?: string): void;
+  // Process inspection (native APIs - no subprocess spawning)
+  getForegroundPid(): number;
+  getCwd(pid?: number): string | null;
+  getProcessName(pid?: number): string | null;
+  getForegroundProcessName(): string | null;
 }
 
 // Legacy aliases

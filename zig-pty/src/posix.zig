@@ -15,6 +15,8 @@ pub const c = @cImport({
     if (builtin.os.tag == .macos) {
         @cInclude("util.h");
         @cInclude("crt_externs.h");
+        @cInclude("libproc.h"); // For proc_pidinfo, proc_listpids
+        @cInclude("sys/sysctl.h"); // For KERN_PROCARGS2 (argv[0] detection)
     } else {
         @cInclude("pty.h");
     }

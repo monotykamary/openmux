@@ -1,28 +1,12 @@
 /**
  * Helper functions for PTY service
- * Platform-specific utilities for process inspection
+ * Git-related utilities and other PTY helpers
  *
- * Uses native APIs (FFI on macOS, /proc on Linux) for zero subprocess overhead.
+ * Note: Process inspection (CWD, foreground process) now uses zig-pty native APIs directly.
  */
 
 import { Effect } from "effect"
-import { PtyCwdError } from "../../errors"
-import { PtyId } from "../../types"
-import {
-  getProcessCwdNative,
-  getForegroundProcessNative,
-  getGitBranchNative,
-} from "./native-process"
-
-/**
- * Get the foreground process name for a PTY's shell
- * Uses native APIs - no subprocess spawning.
- */
-export const getForegroundProcess = (shellPid: number): Effect.Effect<string | undefined> =>
-  Effect.tryPromise(async () => {
-    const result = await getForegroundProcessNative(shellPid)
-    return result ?? undefined
-  }).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
+import { getGitBranchNative } from "./native-process"
 
 /**
  * Get the git branch for a directory
@@ -89,21 +73,3 @@ export const getGitDiffStats = (cwd: string): Effect.Effect<GitDiffStats | undef
 
     return { added, removed }
   }).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
-
-/**
- * Get the current working directory of a process by PID
- * Uses native APIs - no subprocess spawning.
- */
-export const getProcessCwd = (pid: number): Effect.Effect<string, PtyCwdError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const result = await getProcessCwdNative(pid)
-      if (result !== null) return result
-      throw new Error("Native getProcessCwd returned null")
-    },
-    catch: (error) =>
-      PtyCwdError.make({
-        ptyId: PtyId.make(`pid-${pid}`),
-        cause: error,
-      }),
-  })

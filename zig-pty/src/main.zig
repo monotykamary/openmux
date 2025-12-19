@@ -82,6 +82,22 @@ export fn bun_pty_close(handle: c_int) void {
 }
 
 // ============================================================================
+// Process Inspection
+// ============================================================================
+
+export fn bun_pty_get_foreground_pid(handle: c_int) c_int {
+    return exports.bun_pty_get_foreground_pid(handle);
+}
+
+export fn bun_pty_get_cwd(pid: c_int, buf: [*]u8, len: c_int) c_int {
+    return exports.bun_pty_get_cwd(pid, buf, len);
+}
+
+export fn bun_pty_get_process_name(pid: c_int, buf: [*]u8, len: c_int) c_int {
+    return exports.bun_pty_get_process_name(pid, buf, len);
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
