@@ -3,15 +3,9 @@
  * Wraps zig-pty with ghostty-web VT parsing.
  */
 import { Context, Effect, Layer, Ref, HashMap, Option } from "effect"
-import { spawnAsync } from "../../../zig-pty/src/index"
 import type { TerminalState, UnifiedTerminalUpdate } from "../../core/types"
 import type { ITerminalEmulator } from "../../terminal/emulator-interface"
-import { createWorkerEmulator } from "../../terminal/worker-emulator"
 import { getWorkerPool, initWorkerPool } from "../../terminal/worker-pool"
-import { GraphicsPassthrough } from "../../terminal/graphics-passthrough"
-import { TerminalQueryPassthrough } from "../../terminal/terminal-query-passthrough"
-import { createSyncModeParser } from "../../terminal/sync-mode-parser"
-import { getCapabilityEnvironment } from "../../terminal/capabilities"
 import { getHostColors, getDefaultColors } from "../../terminal/terminal-colors"
 import { PtySpawnError, PtyNotFoundError, PtyCwdError } from "../errors"
 import { PtyId, Cols, Rows, makePtyId } from "../types"
@@ -20,11 +14,10 @@ import { AppConfig } from "../Config"
 
 // Import extracted modules
 import type { InternalPtySession } from "./pty/types"
-import { getForegroundProcess, getGitBranch, getProcessCwd } from "./pty/helpers"
-import { getCurrentScrollState, notifySubscribers, notifyScrollSubscribers } from "./pty/notification"
-import { createDataHandler } from "./pty/data-handler"
-import { setupQueryPassthrough } from "./pty/query-setup"
 import { makeSubscriptionRegistry } from "./pty/subscription-manager"
+import { createSession } from "./pty/session-factory"
+import { createOperations } from "./pty/operations"
+import { createSubscriptions } from "./pty/subscriptions"
 
 // =============================================================================
 // PTY Service
@@ -155,6 +148,9 @@ export class Pty extends Context.Tag("@openmux/Pty")<
       yield* Effect.promise(() => initWorkerPool(2))
       const workerPool = getWorkerPool()
 
+      // Get host colors (required for worker emulator)
+      const colors = getHostColors() ?? getDefaultColors()
+
       // Internal session storage
       const sessionsRef = yield* Ref.make(
         HashMap.empty<PtyId, InternalPtySession>()
@@ -179,486 +175,71 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           return session.value
         })
 
-      // Debug timing flag - set to true to see PTY creation timing
-      const DEBUG_PTY_TIMING = false
-
+      // Create session factory
       const create = Effect.fn("Pty.create")(function* (options: {
         cols: Cols
         rows: Rows
         cwd?: string
         env?: Record<string, string>
       }) {
-        const startTime = DEBUG_PTY_TIMING ? performance.now() : 0
-
-        const id = makePtyId()
-        const cols = options.cols
-        const rows = options.rows
-        const cwd = options.cwd ?? process.cwd()
-        const shell = config.defaultShell
-
-        // Get host colors (required for worker emulator)
-        const colors = getHostColors() ?? getDefaultColors()
-
-        const afterColors = DEBUG_PTY_TIMING ? performance.now() : 0
-
-        // Create worker-based emulator (non-blocking - worker buffers until initialized)
-        const emulator = yield* Effect.try({
-          try: () => createWorkerEmulator(workerPool, cols, rows, colors),
-          catch: (error) =>
-            PtySpawnError.make({ shell, cwd, cause: error }),
-        })
-
-        const afterEmulator = DEBUG_PTY_TIMING ? performance.now() : 0
-
-        // Create graphics passthrough
-        const graphicsPassthrough = new GraphicsPassthrough()
-
-        // Create terminal query passthrough for handling terminal queries
-        const queryPassthrough = new TerminalQueryPassthrough()
-
-        // Get capability environment
-        const capabilityEnv = getCapabilityEnvironment()
-
-        // Spawn PTY asynchronously (fork happens off main thread)
-        const pty = yield* Effect.tryPromise({
-          try: () =>
-            spawnAsync(shell, [], {
-              name: "xterm-256color",
-              cols,
-              rows,
-              cwd,
-              env: {
-                ...process.env,
-                ...capabilityEnv,
-                ...options.env,
-                TERM: "xterm-256color",
-                COLORTERM: "truecolor",
-              } as Record<string, string>,
-            }),
-          catch: (error) =>
-            PtySpawnError.make({ shell, cwd, cause: error }),
-        })
-
-        const afterSpawn = DEBUG_PTY_TIMING ? performance.now() : 0
-
-        const session: InternalPtySession = {
-          id,
-          pty,
-          emulator,
-          graphicsPassthrough,
-          queryPassthrough,
-          cols,
-          rows,
-          cwd,
-          shell,
-          subscribers: new Set(),
-          scrollSubscribers: new Set(),
-          unifiedSubscribers: new Set(),
-          exitCallbacks: new Set(),
-          titleSubscribers: new Set(),
-          pendingNotify: false,
-          scrollState: { viewportOffset: 0, lastScrollbackLength: 0 },
-        }
-
-        // Subscribe to emulator title changes and propagate to subscribers
-        emulator.onTitleChange((title: string) => {
-          // Notify per-PTY title subscribers
-          for (const callback of session.titleSubscribers) {
-            callback(title)
-          }
-          // Notify global title subscribers (sync for non-Effect callback context)
-          globalTitleRegistry.notifySync({ ptyId: id, title })
-        })
-
-        // Subscribe to emulator updates (critical for async workers)
-        // This fires when write() processing completes, enabling proper notification timing
-        emulator.onUpdate(() => {
-          notifySubscribers(session)
-        })
-
-        // Set up query passthrough using extracted helper
-        setupQueryPassthrough({
-          queryPassthrough,
-          emulator,
-          pty,
-          getSessionDimensions: () => ({ cols: session.cols, rows: session.rows }),
-        })
-
-        // Create sync mode parser for DEC Mode 2026 (synchronized output)
-        const syncParser = createSyncModeParser()
-
-        // Set up data handler using extracted helper
-        const { handleData } = createDataHandler({
-          session,
-          syncParser,
-        })
-
-        // Wire up PTY data handler
-        pty.onData(handleData)
-
-        // Wire up mode change handler for DECSET 2048 (in-band resize notifications)
-        // When mode 2048 is first enabled, we must immediately send the current size
-        emulator.onModeChange((modes, prevModes) => {
-          if (modes.inBandResize && !prevModes?.inBandResize) {
-            // Mode just got enabled - send initial size notification
-            // Format: CSI 48 ; height ; width ; pixelHeight ; pixelWidth t
-            const cellWidth = 8
-            const cellHeight = 16
-            const pixelWidth = session.cols * cellWidth
-            const pixelHeight = session.rows * cellHeight
-            const resizeNotification = `\x1b[48;${session.rows};${session.cols};${pixelHeight};${pixelWidth}t`
-            pty.write(resizeNotification)
-          }
-        })
-
-        // Wire up exit handler
-        pty.onExit(({ exitCode }) => {
-          for (const callback of session.exitCallbacks) {
-            callback(exitCode)
-          }
-        })
+        const { id, session } = yield* createSession(
+          {
+            workerPool,
+            colors,
+            defaultShell: config.defaultShell,
+            onLifecycleEvent: (event) => lifecycleRegistry.notify(event),
+            onTitleChange: (ptyId, title) => globalTitleRegistry.notifySync({ ptyId, title }),
+          },
+          options
+        )
 
         // Store session
         yield* Ref.update(sessionsRef, HashMap.set(id, session))
 
-        // Emit lifecycle event using registry
+        // Emit lifecycle event
         yield* lifecycleRegistry.notify({ type: 'created', ptyId: id })
-
-        const afterSetup = DEBUG_PTY_TIMING ? performance.now() : 0
-
-        if (DEBUG_PTY_TIMING) {
-          console.log(`[PTY.create] Colors: ${(afterColors - startTime).toFixed(2)}ms, Emulator: ${(afterEmulator - afterColors).toFixed(2)}ms, Spawn: ${(afterSpawn - afterEmulator).toFixed(2)}ms, Setup: ${(afterSetup - afterSpawn).toFixed(2)}ms, Total: ${(afterSetup - startTime).toFixed(2)}ms`)
-        }
 
         return id
       })
 
-      const write = Effect.fn("Pty.write")(function* (id: PtyId, data: string) {
-        const session = yield* getSessionOrFail(id)
-
-        // Auto-scroll to bottom when user types
-        if (session.scrollState.viewportOffset > 0) {
-          session.scrollState.viewportOffset = 0
-          // Notify both terminal state and scroll subscribers
-          notifySubscribers(session)
-          notifyScrollSubscribers(session)
-        }
-
-        session.pty.write(data)
+      // Create operations using factory
+      const operations = createOperations({
+        sessionsRef,
+        getSessionOrFail,
+        lifecycleRegistry,
       })
 
-      const resize = Effect.fn("Pty.resize")(function* (
-        id: PtyId,
-        cols: Cols,
-        rows: Rows
-      ) {
-        const session = yield* getSessionOrFail(id)
-
-        session.pty.resize(cols, rows)
-        session.cols = cols
-        session.rows = rows
-        session.emulator.resize(cols, rows)
-
-        // Check if DECSET 2048 (in-band resize notifications) is enabled.
-        // When enabled, the terminal must send CSI 48 resize notifications
-        // instead of relying on SIGWINCH. This is used by Neovim and other
-        // applications that prefer escape sequence-based resize detection.
-        // Format: CSI 48 ; height ; width ; pixelHeight ; pixelWidth t
-        yield* Effect.try(() => {
-          const inBandResizeEnabled = session.emulator.getMode(2048)
-          if (inBandResizeEnabled) {
-            // Estimate cell size (typical terminal font is ~8x16 pixels)
-            const cellWidth = 8
-            const cellHeight = 16
-            const pixelWidth = cols * cellWidth
-            const pixelHeight = rows * cellHeight
-            const resizeNotification = `\x1b[48;${rows};${cols};${pixelHeight};${pixelWidth}t`
-            session.pty.write(resizeNotification)
-          }
-        }).pipe(Effect.ignore)
-
-        notifySubscribers(session)
-      })
-
-      const getCwd = Effect.fn("Pty.getCwd")(function* (id: PtyId) {
-        const session = yield* getSessionOrFail(id)
-
-        if (session.pty.pid === undefined) {
-          return session.cwd
-        }
-
-        return yield* getProcessCwd(session.pty.pid).pipe(
-          Effect.catchAll(() => Effect.succeed(session.cwd))
-        )
-      })
-
-      const destroy = Effect.fn("Pty.destroy")(function* (id: PtyId) {
-        const destroyStart = performance.now();
-        const sessions = yield* Ref.get(sessionsRef)
-        const sessionOpt = HashMap.get(sessions, id)
-
-        if (Option.isSome(sessionOpt)) {
-          const session = sessionOpt.value
-
-          // Clear subscribers
-          const subStart = performance.now();
-          for (const callback of session.subscribers) {
-            callback(null as unknown as TerminalState)
-          }
-          session.subscribers.clear()
-          console.log(`[PTY.destroy] clearSubscribers: ${(performance.now() - subStart).toFixed(2)}ms`);
-
-          // Kill PTY and dispose emulator (cleans up worker session)
-          const killStart = performance.now();
-          session.pty.kill()
-          console.log(`[PTY.destroy] pty.kill: ${(performance.now() - killStart).toFixed(2)}ms`);
-
-          const disposeStart = performance.now();
-          session.emulator.dispose()
-          console.log(`[PTY.destroy] emulator.dispose: ${(performance.now() - disposeStart).toFixed(2)}ms`);
-
-          const queryStart = performance.now();
-          session.queryPassthrough.dispose()
-          console.log(`[PTY.destroy] queryPassthrough.dispose: ${(performance.now() - queryStart).toFixed(2)}ms`);
-
-          // Remove from map BEFORE emitting lifecycle event
-          // This ensures refreshPtys() sees the updated list
-          const refStart = performance.now();
-          yield* Ref.update(sessionsRef, HashMap.remove(id))
-          console.log(`[PTY.destroy] Ref.update: ${(performance.now() - refStart).toFixed(2)}ms`);
-
-          // Emit lifecycle event AFTER removal so listeners see updated state
-          const notifyStart = performance.now();
-          yield* lifecycleRegistry.notify({ type: 'destroyed', ptyId: id })
-          console.log(`[PTY.destroy] lifecycleRegistry.notify: ${(performance.now() - notifyStart).toFixed(2)}ms`);
-        }
-        console.log(`[PTY.destroy] total: ${(performance.now() - destroyStart).toFixed(2)}ms`);
-      })
-
-      const getSession = Effect.fn("Pty.getSession")(function* (id: PtyId) {
-        const session = yield* getSessionOrFail(id)
-
-        return PtySession.make({
-          id: session.id,
-          pid: session.pty.pid ?? 0,
-          cols: Cols.make(session.cols),
-          rows: Rows.make(session.rows),
-          cwd: session.cwd,
-          shell: session.shell,
-        })
-      })
-
-      const getTerminalState = Effect.fn("Pty.getTerminalState")(function* (
-        id: PtyId
-      ) {
-        const session = yield* getSessionOrFail(id)
-        return session.emulator.getTerminalState()
-      })
-
-      const subscribe = Effect.fn("Pty.subscribe")(function* (
-        id: PtyId,
-        callback: (state: TerminalState) => void
-      ) {
-        const session = yield* getSessionOrFail(id)
-
-        session.subscribers.add(callback)
-        callback(session.emulator.getTerminalState())
-
-        return () => {
-          session.subscribers.delete(callback)
-        }
-      })
-
-      const onExit = Effect.fn("Pty.onExit")(function* (
-        id: PtyId,
-        callback: (exitCode: number) => void
-      ) {
-        const session = yield* getSessionOrFail(id)
-
-        session.exitCallbacks.add(callback)
-
-        return () => {
-          session.exitCallbacks.delete(callback)
-        }
-      })
-
-      const setPanePosition = Effect.fn("Pty.setPanePosition")(function* (
-        id: PtyId,
-        x: number,
-        y: number
-      ) {
-        const session = yield* getSessionOrFail(id)
-        session.graphicsPassthrough.setPanePosition(x, y)
-      })
-
-      const getScrollState = Effect.fn("Pty.getScrollState")(function* (
-        id: PtyId
-      ) {
-        const session = yield* getSessionOrFail(id)
-        const scrollbackLength = session.emulator.getScrollbackLength()
-
-        return {
-          viewportOffset: session.scrollState.viewportOffset,
-          scrollbackLength,
-          isAtBottom: session.scrollState.viewportOffset === 0,
-        }
-      })
-
-      const setScrollOffset = Effect.fn("Pty.setScrollOffset")(function* (
-        id: PtyId,
-        offset: number
-      ) {
-        const session = yield* getSessionOrFail(id)
-        const maxOffset = session.emulator.getScrollbackLength()
-        session.scrollState.viewportOffset = Math.max(
-          0,
-          Math.min(offset, maxOffset)
-        )
-        // Use scroll-only notification - doesn't rebuild terminal state
-        notifyScrollSubscribers(session)
-      })
-
-      const subscribeToScroll = Effect.fn("Pty.subscribeToScroll")(function* (
-        id: PtyId,
-        callback: () => void
-      ) {
-        const session = yield* getSessionOrFail(id)
-        session.scrollSubscribers.add(callback)
-
-        return () => {
-          session.scrollSubscribers.delete(callback)
-        }
-      })
-
-      const subscribeUnified = Effect.fn("Pty.subscribeUnified")(function* (
-        id: PtyId,
-        callback: (update: UnifiedTerminalUpdate) => void
-      ) {
-        const session = yield* getSessionOrFail(id)
-        session.unifiedSubscribers.add(callback)
-
-        // Send initial full state
-        const scrollState = getCurrentScrollState(session)
-        const fullState = session.emulator.getTerminalState()
-        const initialUpdate: UnifiedTerminalUpdate = {
-          terminalUpdate: {
-            dirtyRows: new Map(),
-            cursor: fullState.cursor,
-            scrollState,
-            cols: fullState.cols,
-            rows: fullState.rows,
-            isFull: true,
-            fullState,
-            alternateScreen: fullState.alternateScreen,
-            mouseTracking: fullState.mouseTracking,
-            cursorKeyMode: fullState.cursorKeyMode ?? 'normal',
-            inBandResize: session.emulator.getMode(2048),
-          },
-          scrollState,
-        }
-        callback(initialUpdate)
-
-        return () => {
-          session.unifiedSubscribers.delete(callback)
-        }
-      })
-
-      const getEmulator = Effect.fn("Pty.getEmulator")(function* (id: PtyId) {
-        const session = yield* getSessionOrFail(id)
-        return session.emulator
-      })
-
-      const destroyAll = Effect.fn("Pty.destroyAll")(function* () {
-        const sessions = yield* Ref.get(sessionsRef)
-        const ids = Array.from(HashMap.keys(sessions))
-
-        for (const id of ids) {
-          yield* destroy(id)
-        }
-      })
-
-      const listAll = Effect.fn("Pty.listAll")(function* () {
-        const sessions = yield* Ref.get(sessionsRef)
-        return Array.from(HashMap.keys(sessions))
-      })
-
-      const getForegroundProcessFn = Effect.fn("Pty.getForegroundProcess")(function* (
-        id: PtyId
-      ) {
-        const session = yield* getSessionOrFail(id)
-        if (session.pty.pid === undefined) {
-          return undefined
-        }
-        return yield* getForegroundProcess(session.pty.pid)
-      })
-
-      const getGitBranchFn = Effect.fn("Pty.getGitBranch")(function* (id: PtyId) {
-        const session = yield* getSessionOrFail(id)
-        if (session.pty.pid === undefined) {
-          return undefined
-        }
-        // Get the CWD first
-        const cwd = yield* getProcessCwd(session.pty.pid)
-        return yield* getGitBranch(cwd)
-      })
-
-      const subscribeToLifecycle = Effect.fn("Pty.subscribeToLifecycle")(function* (
-        callback: (event: { type: 'created' | 'destroyed'; ptyId: PtyId }) => void
-      ) {
-        return yield* lifecycleRegistry.subscribe(callback)
-      })
-
-      const getTitleFn = Effect.fn("Pty.getTitle")(function* (id: PtyId) {
-        const session = yield* getSessionOrFail(id)
-        return session.emulator.getTitle()
-      })
-
-      const subscribeToTitleChange = Effect.fn("Pty.subscribeToTitleChange")(function* (
-        id: PtyId,
-        callback: (title: string) => void
-      ) {
-        const session = yield* getSessionOrFail(id)
-        session.titleSubscribers.add(callback)
-        // Immediately call with current title if set
-        const currentTitle = session.emulator.getTitle()
-        if (currentTitle) {
-          callback(currentTitle)
-        }
-        return () => {
-          session.titleSubscribers.delete(callback)
-        }
-      })
-
-      const subscribeToAllTitleChanges = Effect.fn("Pty.subscribeToAllTitleChanges")(function* (
-        callback: (event: { ptyId: PtyId; title: string }) => void
-      ) {
-        return yield* globalTitleRegistry.subscribe(callback)
+      // Create subscriptions using factory
+      const subscriptions = createSubscriptions({
+        getSessionOrFail,
+        lifecycleRegistry,
+        globalTitleRegistry,
       })
 
       return Pty.of({
         create,
-        write,
-        resize,
-        getCwd,
-        destroy,
-        getSession,
-        getTerminalState,
-        subscribe,
-        subscribeToScroll,
-        subscribeUnified,
-        onExit,
-        setPanePosition,
-        getScrollState,
-        setScrollOffset,
-        getEmulator,
-        destroyAll,
-        listAll,
-        getForegroundProcess: getForegroundProcessFn,
-        getGitBranch: getGitBranchFn,
-        subscribeToLifecycle,
-        getTitle: getTitleFn,
-        subscribeToTitleChange,
-        subscribeToAllTitleChanges,
+        write: operations.write,
+        resize: operations.resize,
+        getCwd: operations.getCwd,
+        destroy: operations.destroy,
+        getSession: operations.getSession,
+        getTerminalState: operations.getTerminalState,
+        subscribe: subscriptions.subscribe,
+        subscribeToScroll: subscriptions.subscribeToScroll,
+        subscribeUnified: subscriptions.subscribeUnified,
+        onExit: subscriptions.onExit,
+        setPanePosition: operations.setPanePosition,
+        getScrollState: operations.getScrollState,
+        setScrollOffset: operations.setScrollOffset,
+        getEmulator: operations.getEmulator,
+        destroyAll: operations.destroyAll,
+        listAll: operations.listAll,
+        getForegroundProcess: subscriptions.getForegroundProcess,
+        getGitBranch: subscriptions.getGitBranch,
+        subscribeToLifecycle: subscriptions.subscribeToLifecycle,
+        getTitle: operations.getTitle,
+        subscribeToTitleChange: subscriptions.subscribeToTitleChange,
+        subscribeToAllTitleChanges: subscriptions.subscribeToAllTitleChanges,
       })
     })
   )

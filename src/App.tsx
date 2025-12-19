@@ -33,12 +33,13 @@ import {
   getSessionCwd as getSessionCwdFromCoordinator,
 } from './effect/bridge';
 import { disposeRuntime } from './effect/runtime';
-import { inputHandler } from './terminal';
 import type { PasteEvent } from '@opentui/core';
 import {
   createConfirmationHandlers,
   createPaneResizeHandlers,
   createPasteHandler,
+  handleSearchKeyboard,
+  processNormalModeKey,
 } from './components/app';
 import { calculateLayoutDimensions } from './components/aggregate';
 import { setFocusedPty, setClipboardPasteHandler } from './terminal/focused-pty-registry';
@@ -395,55 +396,14 @@ function AppContent() {
 
       // If in search mode, handle search-specific keys
       if (keyboardHandler.mode === 'search') {
-        const key = event.name.toLowerCase();
-
-        if (key === 'escape') {
-          // Cancel search, restore original scroll position
-          exitSearchMode(true);
-          keyboardExitSearchMode();
-          return;
-        }
-
-        if (key === 'return' || key === 'enter') {
-          // Confirm search, stay at current position
-          exitSearchMode(false);
-          keyboardExitSearchMode();
-          return;
-        }
-
-        // Wait for searchState to be initialized before handling navigation/input
-        const currentSearchState = search.searchState;
-        if (!currentSearchState) {
-          return;
-        }
-
-        if (key === 'n' && event.ctrl && !event.shift && !event.option) {
-          // Next match (Ctrl+n)
-          nextMatch();
-          return;
-        }
-
-        if ((key === 'n' && event.ctrl && event.shift) || (key === 'p' && event.ctrl)) {
-          // Previous match (Ctrl+Shift+N or Ctrl+p)
-          prevMatch();
-          return;
-        }
-
-        if (key === 'backspace') {
-          // Delete last character from query
-          setSearchQuery(currentSearchState.query.slice(0, -1));
-          return;
-        }
-
-        // Single printable character - add to search query
-        const searchCharCode = event.sequence?.charCodeAt(0) ?? 0;
-        const isPrintable = event.sequence?.length === 1 && searchCharCode >= 32 && searchCharCode < 127;
-        if (isPrintable && !event.ctrl && !event.option && !event.meta) {
-          setSearchQuery(currentSearchState.query + event.sequence);
-          return;
-        }
-
-        // Consume all other keys in search mode
+        handleSearchKeyboard(event, {
+          exitSearchMode,
+          keyboardExitSearchMode,
+          setSearchQuery,
+          nextMatch,
+          prevMatch,
+          getSearchState: () => search.searchState,
+        });
         return;
       }
 
@@ -458,33 +418,11 @@ function AppContent() {
 
       // If not handled by multiplexer and in normal mode, forward to PTY
       if (!handled && keyboardHandler.mode === 'normal' && !sessionState.showSessionPicker) {
-
-        // Clear any active selection when user types
-        clearAllSelections();
-
-        // Get the focused pane's cursor key mode (DECCKM)
-        // This affects how arrow keys are encoded (application vs normal mode)
-        const cursorKeyMode = getFocusedCursorKeyMode();
-        inputHandler.setCursorMode(cursorKeyMode);
-
-        // Convert keyboard event to terminal escape sequence
-        // Use event.sequence for single printable chars (handles shift for uppercase/symbols)
-        // Fall back to event.name for special keys (arrows, function keys, etc.)
-        // Don't use sequence for control chars (< 32) or DEL (127) as we need name for Shift+Tab etc.
-        const keyCharCode = event.sequence?.charCodeAt(0) ?? 0;
-        const isPrintable = event.sequence?.length === 1 && keyCharCode >= 32 && keyCharCode < 127;
-        const keyToEncode = isPrintable ? event.sequence! : event.name;
-        const sequence = inputHandler.encodeKey({
-          key: keyToEncode,
-          ctrl: event.ctrl,
-          shift: event.shift,
-          alt: event.option,
-          meta: event.meta,
+        processNormalModeKey(event, {
+          clearAllSelections,
+          getFocusedCursorKeyMode,
+          writeToFocused,
         });
-
-        if (sequence) {
-          writeToFocused(sequence);
-        }
       }
     }
   );

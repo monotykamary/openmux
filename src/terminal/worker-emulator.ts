@@ -20,7 +20,14 @@ import type {
 import type { ITerminalEmulator, TerminalModes, SearchMatch, SearchResult } from './emulator-interface';
 import type { EmulatorWorkerPool } from './worker-pool';
 import type { TerminalColors } from './terminal-colors';
-import { extractRgb } from './terminal-colors';
+import {
+  ScrollbackCache,
+  shouldClearCacheOnUpdate,
+  createDefaultModes,
+  createDefaultScrollState,
+  createEmptyTerminalState,
+  createEmptyDirtyUpdate,
+} from './worker-emulator/index';
 
 // ============================================================================
 // WorkerEmulator Class
@@ -37,19 +44,10 @@ export class WorkerEmulator implements ITerminalEmulator {
   // Cached state from worker updates
   private cachedState: TerminalState | null = null;
   private cachedUpdate: DirtyTerminalUpdate | null = null;
-  private scrollState: TerminalScrollState = {
-    viewportOffset: 0,
-    scrollbackLength: 0,
-    isAtBottom: true,
-  };
+  private scrollState: TerminalScrollState = createDefaultScrollState();
 
   // Mode state (updated via worker callbacks)
-  private modes: TerminalModes = {
-    mouseTracking: false,
-    cursorKeyMode: 'normal',
-    alternateScreen: false,
-    inBandResize: false,
-  };
+  private modes: TerminalModes = createDefaultModes();
 
   // Title state
   private currentTitle = '';
@@ -63,11 +61,7 @@ export class WorkerEmulator implements ITerminalEmulator {
 
   // Scrollback cache (main thread side)
   // Size 1000 provides buffer for ~40 screens during fast scrolling
-  private scrollbackCache = new Map<number, TerminalCell[]>();
-  private maxScrollbackCacheSize = 1000;
-
-  // Track scrollback length for cache invalidation
-  private lastScrollbackLength = 0;
+  private scrollbackCache = new ScrollbackCache(1000);
 
   // Unsubscribe functions
   private unsubUpdate: (() => void) | null = null;
@@ -120,28 +114,10 @@ export class WorkerEmulator implements ITerminalEmulator {
     this.cachedUpdate = update;
 
     const newScrollbackLength = update.scrollState.scrollbackLength;
-    const scrollbackDelta = newScrollbackLength - this.lastScrollbackLength;
     const isAtScrollbackLimit = update.scrollState.isAtScrollbackLimit ?? false;
 
-    // Smart cache invalidation to prevent flicker when scrolled back:
-    // - When scrollback GROWS (delta > 0): existing cached lines at their absolute
-    //   offsets are still valid, no need to clear cache
-    // - When scrollback stays same (delta == 0) AND at scrollback limit: old lines
-    //   are being evicted as new ones arrive, content shifts, must clear cache
-    // - When scrollback stays same (delta == 0) but NOT at limit: just in-place
-    //   updates (animations, cursor moves), cache is still valid, don't clear
-    // - When scrollback shrinks (delta < 0): reset occurred, must clear
-    //
-    // Note: We don't clear cache just because scrollback grew - this prevents
-    // flicker when user is scrolled back viewing history while new content arrives.
-    const contentShifted = scrollbackDelta < 0 ||
-      (scrollbackDelta === 0 && isAtScrollbackLimit && this.lastScrollbackLength > 0);
-
-    if (contentShifted) {
-      this.scrollbackCache.clear();
-    }
-
-    this.lastScrollbackLength = newScrollbackLength;
+    // Smart cache invalidation using ScrollbackCache
+    this.scrollbackCache.handleScrollbackChange(newScrollbackLength, isAtScrollbackLimit);
 
     // Update scroll state
     this.scrollState = {
@@ -149,8 +125,8 @@ export class WorkerEmulator implements ITerminalEmulator {
       scrollbackLength: newScrollbackLength,
     };
 
-    // Track if alternate screen mode changed (need to clear cache)
-    const altScreenChanged = this.modes.alternateScreen !== update.alternateScreen;
+    // Check if cache should be cleared on mode change
+    const shouldClearCache = shouldClearCacheOnUpdate(update, this.modes);
 
     // Update modes
     this.modes = {
@@ -163,9 +139,8 @@ export class WorkerEmulator implements ITerminalEmulator {
     // If full update, cache the full state
     if (update.isFull && update.fullState) {
       this.cachedState = update.fullState;
-      // Only clear scrollback cache when alternate screen mode changes
-      // (entering/exiting vim, htop, etc.) - not on resize, to prevent flash
-      if (altScreenChanged) {
+      // Clear scrollback cache when alternate screen mode changes
+      if (shouldClearCache) {
         this.scrollbackCache.clear();
       }
     } else if (this.cachedState) {
@@ -260,7 +235,7 @@ export class WorkerEmulator implements ITerminalEmulator {
    * Returns null if not cached - use getScrollbackLineAsync for guaranteed access.
    */
   getScrollbackLine(offset: number): TerminalCell[] | null {
-    return this.scrollbackCache.get(offset) ?? null;
+    return this.scrollbackCache.get(offset);
   }
 
   /**
@@ -277,7 +252,6 @@ export class WorkerEmulator implements ITerminalEmulator {
     if (cells) {
       // Cache the result
       this.scrollbackCache.set(offset, cells);
-      this.pruneScrollbackCache();
     }
 
     return cells;
@@ -288,24 +262,7 @@ export class WorkerEmulator implements ITerminalEmulator {
    */
   async prefetchScrollbackLines(startOffset: number, count: number): Promise<void> {
     const lines = await this.pool.getScrollbackLines(this.sessionId, startOffset, count);
-    for (const [offset, cells] of lines) {
-      this.scrollbackCache.set(offset, cells);
-    }
-    this.pruneScrollbackCache();
-  }
-
-  private pruneScrollbackCache(): void {
-    // Simple LRU eviction by removing oldest entries
-    if (this.scrollbackCache.size > this.maxScrollbackCacheSize) {
-      const excess = this.scrollbackCache.size - this.maxScrollbackCacheSize;
-      const iterator = this.scrollbackCache.keys();
-      for (let i = 0; i < excess; i++) {
-        const key = iterator.next().value;
-        if (key !== undefined) {
-          this.scrollbackCache.delete(key);
-        }
-      }
-    }
+    this.scrollbackCache.setMany(lines);
   }
 
   getDirtyUpdate(scrollState: TerminalScrollState): DirtyTerminalUpdate {
@@ -331,18 +288,13 @@ export class WorkerEmulator implements ITerminalEmulator {
     }
 
     // No pending update - return empty
-    return {
-      dirtyRows: new Map(),
-      cursor: this.cachedState?.cursor ?? { x: 0, y: 0, visible: true, style: 'block' },
+    return createEmptyDirtyUpdate(
+      this._cols,
+      this._rows,
       scrollState,
-      cols: this._cols,
-      rows: this._rows,
-      isFull: false,
-      alternateScreen: this.modes.alternateScreen,
-      mouseTracking: this.modes.mouseTracking,
-      cursorKeyMode: this.modes.cursorKeyMode,
-      inBandResize: this.modes.inBandResize,
-    };
+      this.modes,
+      this.cachedState?.cursor
+    );
   }
 
   getTerminalState(): TerminalState {
@@ -351,40 +303,7 @@ export class WorkerEmulator implements ITerminalEmulator {
     }
 
     // Return empty state if not yet received from worker
-    // Use host terminal colors instead of hardcoded black background
-    const fg = extractRgb(this.colors.foreground);
-    const bg = extractRgb(this.colors.background);
-
-    const emptyCells: TerminalCell[][] = [];
-    for (let y = 0; y < this._rows; y++) {
-      const row: TerminalCell[] = [];
-      for (let x = 0; x < this._cols; x++) {
-        row.push({
-          char: ' ',
-          fg,
-          bg,
-          bold: false,
-          italic: false,
-          underline: false,
-          strikethrough: false,
-          inverse: false,
-          blink: false,
-          dim: false,
-          width: 1,
-        });
-      }
-      emptyCells.push(row);
-    }
-
-    return {
-      cols: this._cols,
-      rows: this._rows,
-      cells: emptyCells,
-      cursor: { x: 0, y: 0, visible: true, style: 'block' },
-      alternateScreen: this.modes.alternateScreen,
-      mouseTracking: this.modes.mouseTracking,
-      cursorKeyMode: this.modes.cursorKeyMode,
-    };
+    return createEmptyTerminalState(this._cols, this._rows, this.colors, this.modes);
   }
 
   getCursor(): { x: number; y: number; visible: boolean } {

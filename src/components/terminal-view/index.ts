@@ -1,0 +1,25 @@
+/**
+ * Terminal View module
+ * Re-exports all terminal view utilities
+ */
+
+export {
+  getCellColors,
+  renderRow,
+  type CellRenderingDeps,
+  type CellRenderingOptions,
+} from './cell-rendering'
+
+export {
+  renderScrollbar,
+  type ScrollbarOptions,
+} from './scrollbar'
+
+export {
+  fetchRowsForRendering,
+  calculatePrefetchRequest,
+  updateTransitionCache,
+  type RowFetchingOptions,
+  type RowFetchResult,
+  type PrefetchRequest,
+} from './row-fetching'
