@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.22](https://github.com/monotykamary/openmux/compare/v0.2.21...v0.2.22) (2025-12-19)
+
+
+### Features
+
+* **aggregate:** support space-separated OR matching in filter ([831ecb1](https://github.com/monotykamary/openmux/commit/831ecb1d756bba0268b7c5f0b2987fff62a364c8))
+
 ### [0.2.21](https://github.com/monotykamary/openmux/compare/v0.2.20...v0.2.21) (2025-12-18)
 
 
