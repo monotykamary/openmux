@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.24](https://github.com/monotykamary/openmux/compare/v0.2.23...v0.2.24) (2025-12-19)
+
+
+### Bug Fixes
+
+* **zig-pty:** prevent use-after-free and race conditions in PTY lifecycle ([2cad41a](https://github.com/monotykamary/openmux/commit/2cad41a09fc182d8ca61f8bd00801f712b3a0be3))
+
 ### [0.2.23](https://github.com/monotykamary/openmux/compare/v0.2.22...v0.2.23) (2025-12-19)
 
 
