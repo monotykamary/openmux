@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.27](https://github.com/monotykamary/openmux/compare/v0.2.26...v0.2.27) (2025-12-19)
+
+
+### CI/CD
+
+* add Zig setup for zig-pty tests ([c83f4a5](https://github.com/monotykamary/openmux/commit/c83f4a5693ae82cedf9f30695c06c65927890e30))
+
 ### [0.2.26](https://github.com/monotykamary/openmux/compare/v0.2.25...v0.2.26) (2025-12-19)
 
 
