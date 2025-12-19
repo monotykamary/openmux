@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.23](https://github.com/monotykamary/openmux/compare/v0.2.22...v0.2.23) (2025-12-19)
+
+
+### Performance
+
+* **layout:** defer NEW_PANE and SET_PANE_PTY to avoid blocking animations ([588e121](https://github.com/monotykamary/openmux/commit/588e12140fe1e172600add507fed29cf919d78da))
+* **layout:** optimize pane create/close to reduce animation stutter ([6218e0e](https://github.com/monotykamary/openmux/commit/6218e0ef32aef7a5f67d69c564eef270b3603880))
+* **pty:** make pane creation instant with background PTY spawn ([35c7c58](https://github.com/monotykamary/openmux/commit/35c7c58af7c7b893975208600777f3f2d86011b6))
+
+
+### Refactoring
+
+* modularize large files for better maintainability ([6e4c778](https://github.com/monotykamary/openmux/commit/6e4c778b7fd8d72070c468e91db7e50d54576c42))
+* modularize Pty, App, TerminalView, and WorkerEmulator ([d7aaa53](https://github.com/monotykamary/openmux/commit/d7aaa53ff55fcae75179cb4970e3eaf17f368650))
+
 ### [0.2.22](https://github.com/monotykamary/openmux/compare/v0.2.21...v0.2.22) (2025-12-19)
 
 
