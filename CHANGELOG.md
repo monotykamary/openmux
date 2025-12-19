@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.26](https://github.com/monotykamary/openmux/compare/v0.2.25...v0.2.26) (2025-12-19)
+
+
+### Refactoring
+
+* **zig-pty:** move inline tests from process_info.zig to test folder ([138c8e4](https://github.com/monotykamary/openmux/commit/138c8e4f9ce6c7e457a84089f95852076a655f1b))
+
+
+### CI/CD
+
+* add Zig setup for zig-pty tests ([c83f4a5](https://github.com/monotykamary/openmux/commit/c83f4a5693ae82cedf9f30695c06c65927890e30))
+* run zig tests on macOS only ([96bce56](https://github.com/monotykamary/openmux/commit/96bce567fc8fc8e63674f28ce6dfc71a3eef0579))
+* separate TypeScript and Zig test steps ([6940e75](https://github.com/monotykamary/openmux/commit/6940e75a5142eff0629e0adabf419fe6903aa21b))
+
 ### [0.2.25](https://github.com/monotykamary/openmux/compare/v0.2.24...v0.2.25) (2025-12-19)
 
 ### Features
