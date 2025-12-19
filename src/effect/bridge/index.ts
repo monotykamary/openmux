@@ -62,7 +62,7 @@ export {
 } from "./session-bridge"
 
 // Aggregate view operations
-export { listAllPtysWithMetadata } from "./aggregate-bridge"
+export { listAllPtysWithMetadata, getPtyMetadata, type ListAllPtysOptions } from "./aggregate-bridge"
 
 // Terminal color operations
 export { getHostBackgroundColor, getHostForegroundColor } from "./color-bridge"

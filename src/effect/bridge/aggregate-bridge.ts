@@ -19,11 +19,15 @@ interface PtyMetadata {
   paneId: string | undefined
 }
 
+interface FetchPtyMetadataOptions {
+  skipGitDiffStats?: boolean
+}
+
 /**
  * Fetch metadata for a single PTY.
  * Returns Option.none() if PTY is invalid or defunct.
  */
-const fetchPtyMetadata = (ptyId: PtyId) =>
+const fetchPtyMetadata = (ptyId: PtyId, options: FetchPtyMetadataOptions = {}) =>
   Effect.gen(function* () {
     const pty = yield* Pty
 
@@ -49,10 +53,11 @@ const fetchPtyMetadata = (ptyId: PtyId) =>
       return Option.none<PtyMetadata>()
     }
 
-    // Fetch git diff stats (only if we have a cwd)
-    const gitDiffStats = yield* getGitDiffStats(cwd).pipe(
-      Effect.orElseSucceed(() => undefined)
-    )
+    // Fetch git diff stats (only if we have a cwd and not skipped)
+    // Skip during polling to avoid expensive git operations that cause stuttering
+    const gitDiffStats = options.skipGitDiffStats
+      ? undefined
+      : yield* getGitDiffStats(cwd).pipe(Effect.orElseSucceed(() => undefined))
 
     return Option.some<PtyMetadata>({
       ptyId,
@@ -65,11 +70,44 @@ const fetchPtyMetadata = (ptyId: PtyId) =>
     })
   })
 
+export interface ListAllPtysOptions {
+  /** Skip fetching git diff stats (useful for polling to reduce overhead) */
+  skipGitDiffStats?: boolean
+}
+
+/**
+ * Fetch metadata for a single PTY by ID.
+ * Useful for staggered polling to avoid subprocess burst.
+ *
+ * @param ptyId - The PTY ID to fetch metadata for
+ * @param options.skipGitDiffStats - Skip expensive git diff stats
+ * @returns PTY metadata or null if PTY is invalid/defunct
+ */
+export async function getPtyMetadata(
+  ptyId: string,
+  options: ListAllPtysOptions = {}
+): Promise<PtyMetadata | null> {
+  try {
+    return await runEffect(
+      Effect.gen(function* () {
+        const result = yield* fetchPtyMetadata(ptyId as PtyId, {
+          skipGitDiffStats: options.skipGitDiffStats,
+        })
+        return Option.isSome(result) ? result.value : null
+      })
+    )
+  } catch {
+    return null
+  }
+}
+
 /**
  * List all PTYs with their metadata.
  * Fetches metadata in parallel for better performance.
+ *
+ * @param options.skipGitDiffStats - Skip expensive git diff stats during polling
  */
-export async function listAllPtysWithMetadata(): Promise<PtyMetadata[]> {
+export async function listAllPtysWithMetadata(options: ListAllPtysOptions = {}): Promise<PtyMetadata[]> {
   try {
     return await runEffect(
       Effect.gen(function* () {
@@ -78,7 +116,7 @@ export async function listAllPtysWithMetadata(): Promise<PtyMetadata[]> {
 
         // Fetch all PTY metadata in PARALLEL
         const results = yield* Effect.all(
-          ptyIds.map(fetchPtyMetadata),
+          ptyIds.map((id) => fetchPtyMetadata(id, { skipGitDiffStats: options.skipGitDiffStats })),
           { concurrency: "unbounded" }
         )
 

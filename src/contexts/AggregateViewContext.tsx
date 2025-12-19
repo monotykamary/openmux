@@ -224,15 +224,16 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
   // when multiple panes are created/destroyed rapidly
   const debouncedRefreshPtys = debounce(() => refreshPtys(), 100);
 
-  // Incremental refresh - fetches new data but only updates fields that changed
-  // This prevents full re-renders when most data is unchanged
+  // Incremental refresh - polls all PTYs and updates changed fields
+  // Uses native APIs (FFI/proc) so the burst is very fast (~1ms per PTY)
   let incrementalRefreshInProgress = false;
   const incrementalRefreshPtys = async () => {
     if (incrementalRefreshInProgress || state.allPtys.length === 0) return;
     incrementalRefreshInProgress = true;
 
     try {
-      const newPtys = await listAllPtysWithMetadata();
+      // Fetch all PTYs at once (native APIs make this fast)
+      const newPtys = await listAllPtysWithMetadata({ skipGitDiffStats: true });
       const newPtysMap = new Map(newPtys.map(p => [p.ptyId, p]));
 
       // Check if PTY list changed (added/removed)
@@ -254,7 +255,6 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
           const newPty = newPtysMap.get(oldPty.ptyId);
           if (!newPty) continue;
 
-          // Only update fields that changed (triggers minimal reactivity)
           if (oldPty.foregroundProcess !== newPty.foregroundProcess) {
             s.allPtys[i].foregroundProcess = newPty.foregroundProcess;
           }
@@ -264,10 +264,7 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
           if (oldPty.cwd !== newPty.cwd) {
             s.allPtys[i].cwd = newPty.cwd;
           }
-          if (oldPty.gitDiffStats?.added !== newPty.gitDiffStats?.added ||
-              oldPty.gitDiffStats?.removed !== newPty.gitDiffStats?.removed) {
-            s.allPtys[i].gitDiffStats = newPty.gitDiffStats;
-          }
+          // Preserve gitDiffStats from initial load (we skip it during polling)
         }
         // Also update matchedPtys if filter is active
         for (let i = 0; i < s.matchedPtys.length; i++) {
@@ -283,10 +280,6 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
           }
           if (oldPty.cwd !== newPty.cwd) {
             s.matchedPtys[i].cwd = newPty.cwd;
-          }
-          if (oldPty.gitDiffStats?.added !== newPty.gitDiffStats?.added ||
-              oldPty.gitDiffStats?.removed !== newPty.gitDiffStats?.removed) {
-            s.matchedPtys[i].gitDiffStats = newPty.gitDiffStats;
           }
         }
       }));
@@ -305,11 +298,11 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
     // Subscribe to title changes - use incremental update instead of full refresh
     subscriptions.titleChange = await subscribeToAllTitleChanges(handleTitleChange);
 
-    // Poll for foreground process changes (OS-level, not captured by title events)
-    // Use incremental refresh to only update changed fields (reduces re-renders)
+    // Poll all PTYs every 5 seconds using native APIs (very fast, ~1ms per PTY)
+    // Title change events handle most updates - this is just a fallback
     subscriptions.polling = setInterval(() => {
       incrementalRefreshPtys();
-    }, 2000);
+    }, 5000);
   };
 
   const cleanupSubscriptions = () => {
