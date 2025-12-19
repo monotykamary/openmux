@@ -151,14 +151,20 @@ pub fn spawnPty(
     handle_registry.setHandle(h, pty);
 
     // Start the background reader thread
-    if (handle_registry.getHandle(h)) |p| {
-        if (!p.startReader()) {
-            // Thread spawn failed - clean up
-            handle_registry.removeHandle(h);
-            _ = c.kill(pid, c.SIGKILL);
-            _ = c.waitpid(pid, null, 0);
-            return constants.ERROR;
-        }
+    const p = handle_registry.acquireHandle(h) orelse {
+        handle_registry.removeHandle(h);
+        _ = c.kill(pid, c.SIGKILL);
+        _ = c.waitpid(pid, null, 0);
+        return constants.ERROR;
+    };
+    const started = p.startReader();
+    handle_registry.releaseHandle(h);
+    if (!started) {
+        // Thread spawn failed - clean up
+        handle_registry.removeHandle(h);
+        _ = c.kill(pid, c.SIGKILL);
+        _ = c.waitpid(pid, null, 0);
+        return constants.ERROR;
     }
 
     return @intCast(h);

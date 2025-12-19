@@ -155,7 +155,9 @@ pub fn bun_pty_read(handle: c_int, buf: [*]u8, len: c_int) c_int {
         return constants.ERROR;
     }
 
-    const pty = handle_registry.getHandle(@intCast(handle)) orelse return constants.ERROR;
+    const h: u32 = @intCast(handle);
+    const pty = handle_registry.acquireHandle(h) orelse return constants.ERROR;
+    defer handle_registry.releaseHandle(h);
     return pty.readAvailable(buf, @intCast(len));
 }
 
@@ -164,7 +166,9 @@ pub fn bun_pty_write(handle: c_int, data: [*]const u8, len: c_int) c_int {
         return constants.ERROR;
     }
 
-    const pty = handle_registry.getHandle(@intCast(handle)) orelse return constants.ERROR;
+    const h: u32 = @intCast(handle);
+    const pty = handle_registry.acquireHandle(h) orelse return constants.ERROR;
+    defer handle_registry.releaseHandle(h);
     return pty.writeData(data, @intCast(len));
 }
 
@@ -177,7 +181,9 @@ pub fn bun_pty_resize(handle: c_int, cols: c_int, rows: c_int) c_int {
         return constants.ERROR;
     }
 
-    const pty = handle_registry.getHandle(@intCast(handle)) orelse return constants.ERROR;
+    const h: u32 = @intCast(handle);
+    const pty = handle_registry.acquireHandle(h) orelse return constants.ERROR;
+    defer handle_registry.releaseHandle(h);
     return pty.resize(@intCast(cols), @intCast(rows));
 }
 
@@ -186,7 +192,9 @@ pub fn bun_pty_kill(handle: c_int) c_int {
         return constants.ERROR;
     }
 
-    const pty = handle_registry.getHandle(@intCast(handle)) orelse return constants.ERROR;
+    const h: u32 = @intCast(handle);
+    const pty = handle_registry.acquireHandle(h) orelse return constants.ERROR;
+    defer handle_registry.releaseHandle(h);
     return pty.kill();
 }
 
@@ -195,7 +203,9 @@ pub fn bun_pty_get_pid(handle: c_int) c_int {
         return constants.ERROR;
     }
 
-    const pty = handle_registry.getHandle(@intCast(handle)) orelse return constants.ERROR;
+    const h: u32 = @intCast(handle);
+    const pty = handle_registry.acquireHandle(h) orelse return constants.ERROR;
+    defer handle_registry.releaseHandle(h);
     return pty.pid;
 }
 
@@ -204,7 +214,9 @@ pub fn bun_pty_get_exit_code(handle: c_int) c_int {
         return constants.ERROR;
     }
 
-    const pty = handle_registry.getHandle(@intCast(handle)) orelse return constants.ERROR;
+    const h: u32 = @intCast(handle);
+    const pty = handle_registry.acquireHandle(h) orelse return constants.ERROR;
+    defer handle_registry.releaseHandle(h);
     pty.checkChild();
     return pty.exit_code.load(.acquire);
 }

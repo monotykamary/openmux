@@ -185,17 +185,15 @@ pub const Pty = struct {
         // Wake up producer if waiting on condition
         self.ring.not_full.signal();
 
-        // Close fd FIRST to unblock the reader thread (it will get EBADF/0 and exit)
+        // Join the reader thread to avoid use-after-free if the handle slot is reused.
+        if (self.reader_thread) |thread| {
+            thread.join();
+            self.reader_thread = null;
+        }
+
         if (self.master_fd >= 0) {
             _ = c.close(self.master_fd);
             self.master_fd = -1;
-        }
-
-        // Detach reader thread instead of joining - let it clean up itself
-        // The thread will exit quickly now that stopping=true and fd is closed
-        if (self.reader_thread) |thread| {
-            thread.detach();
-            self.reader_thread = null;
         }
 
         // Try non-blocking reap first (WNOHANG)

@@ -33,16 +33,50 @@ var spawn_request_used: [constants.MAX_SPAWN_REQUESTS]std.atomic.Value(bool) = [
 // Spawn thread state
 var spawn_thread: ?std.Thread = null;
 var spawn_thread_running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
+var spawn_thread_mutex: std.Thread.Mutex = .{};
 var spawn_queue_mutex: std.Thread.Mutex = .{};
 var spawn_queue_cond: std.Thread.Condition = .{};
 var spawn_queue_count: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
 
 pub fn initSpawnThread() bool {
+    // Fast path: already running
     if (spawn_thread_running.load(.acquire)) return true;
 
-    spawn_thread = std.Thread.spawn(.{}, spawnThreadLoop, .{}) catch return false;
+    spawn_thread_mutex.lock();
+    defer spawn_thread_mutex.unlock();
+
+    // Double-check under lock
+    if (spawn_thread_running.load(.acquire)) return true;
+
+    // Set running BEFORE spawning to avoid race where thread sees false and exits
     spawn_thread_running.store(true, .release);
+
+    spawn_thread = std.Thread.spawn(.{}, spawnThreadLoop, .{}) catch {
+        spawn_thread_running.store(false, .release);
+        return false;
+    };
     return true;
+}
+
+pub fn deinitSpawnThread() void {
+    spawn_thread_mutex.lock();
+    defer spawn_thread_mutex.unlock();
+
+    if (!spawn_thread_running.load(.acquire)) return;
+
+    // Signal thread to stop
+    spawn_thread_running.store(false, .release);
+
+    // Wake the thread if waiting on condition
+    spawn_queue_mutex.lock();
+    spawn_queue_cond.signal();
+    spawn_queue_mutex.unlock();
+
+    // Join the thread
+    if (spawn_thread) |thread| {
+        thread.join();
+        spawn_thread = null;
+    }
 }
 
 fn spawnThreadLoop() void {
