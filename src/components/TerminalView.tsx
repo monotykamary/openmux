@@ -88,6 +88,7 @@ export function TerminalView(props: TerminalViewProps) {
   // Track pending scrollback prefetch to avoid duplicate requests
   let pendingPrefetch: { ptyId: string; start: number; count: number } | null = null;
   let prefetchInProgress = false;
+  let prefetchScheduled = false;
   // Function reference for executing prefetch (set by effect, used by render)
   let executePrefetchFn: (() => void) | null = null;
 
@@ -295,6 +296,7 @@ export function TerminalView(props: TerminalViewProps) {
           dirtyAll = true;
           emulator = null;
           executePrefetchFn = null;
+          prefetchScheduled = false;
           transitionCache.clear();
           scrollbackRowCache.length = 0;
           paddingWasActive = false;
@@ -384,7 +386,13 @@ export function TerminalView(props: TerminalViewProps) {
       if (prefetchRequest && !prefetchInProgress && executePrefetchFn) {
         pendingPrefetch = prefetchRequest;
         // Execute prefetch asynchronously (don't block render)
-        queueMicrotask(executePrefetchFn);
+        if (!prefetchScheduled) {
+          prefetchScheduled = true;
+          queueMicrotask(() => {
+            prefetchScheduled = false;
+            executePrefetchFn?.();
+          });
+        }
       }
     }
 
