@@ -5,7 +5,7 @@
 
 import { createSignal, createEffect, onCleanup, on, Show } from 'solid-js';
 import { useRenderer } from '@opentui/solid';
-import { OptimizedBuffer } from '@opentui/core';
+import { OptimizedBuffer, type RGBA } from '@opentui/core';
 import type { TerminalState, TerminalCell, TerminalScrollState, UnifiedTerminalUpdate } from '../core/types';
 import { isAtBottom as checkIsAtBottom } from '../core/scroll-utils';
 import type { ITerminalEmulator } from '../terminal/emulator-interface';
@@ -66,6 +66,12 @@ export function TerminalView(props: TerminalViewProps) {
   let lastRenderCols = 0;
   let lastRenderWidth = 0;
   let lastRenderHeight = 0;
+  let paddingWasActive = false;
+  let lastPaddingCols = 0;
+  let lastPaddingRows = 0;
+  let lastPaddingWidth = 0;
+  let lastPaddingHeight = 0;
+  let lastPaddingBg: RGBA | null = null;
   let frameBuffer: OptimizedBuffer | null = null;
   let frameBufferWidth = 0;
   let frameBufferHeight = 0;
@@ -291,6 +297,12 @@ export function TerminalView(props: TerminalViewProps) {
           executePrefetchFn = null;
           transitionCache.clear();
           scrollbackRowCache.length = 0;
+          paddingWasActive = false;
+          lastPaddingCols = 0;
+          lastPaddingRows = 0;
+          lastPaddingWidth = 0;
+          lastPaddingHeight = 0;
+          lastPaddingBg = null;
         });
       },
       { defer: false }
@@ -435,13 +447,32 @@ export function TerminalView(props: TerminalViewProps) {
     dirtyAll = false;
 
     // Paint any unused area (when cols/rows are smaller than the pane) to avoid stale/transparent regions
-    if (cols < width || rows < height) {
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          if (y < rows && x < cols) continue;
-          renderTarget.setCell(x + renderOffsetX, y + renderOffsetY, ' ', fallbackFg, fallbackBg, 0);
+    const paddingActive = cols < width || rows < height;
+    if (paddingActive) {
+      const shouldClearPadding = !paddingWasActive ||
+        cols !== lastPaddingCols ||
+        rows !== lastPaddingRows ||
+        width !== lastPaddingWidth ||
+        height !== lastPaddingHeight ||
+        fallbackBg !== lastPaddingBg;
+
+      if (shouldClearPadding) {
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            if (y < rows && x < cols) continue;
+            renderTarget.setCell(x + renderOffsetX, y + renderOffsetY, ' ', fallbackFg, fallbackBg, 0);
+          }
         }
       }
+
+      paddingWasActive = true;
+      lastPaddingCols = cols;
+      lastPaddingRows = rows;
+      lastPaddingWidth = width;
+      lastPaddingHeight = height;
+      lastPaddingBg = fallbackBg;
+    } else {
+      paddingWasActive = false;
     }
 
     // Render scrollbar when scrolled back (not at bottom)
