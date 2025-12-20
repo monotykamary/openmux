@@ -46,6 +46,12 @@ const FLAG_INVERSE = 1 << 4;
 const FLAG_BLINK = 1 << 5;
 const FLAG_DIM = 1 << 6;
 
+export interface RowCache {
+  rows: number;
+  cols: number;
+  cells: TerminalCell[][];
+}
+
 // ============================================================================
 // Cell Packing/Unpacking
 // ============================================================================
@@ -141,6 +147,80 @@ function unpackCellAt(view: DataView, offset: number): TerminalCell {
     width: width === 2 ? 2 : 1,
     hyperlinkId: hyperlinkId > 0 ? hyperlinkId : undefined,
   };
+}
+
+function createEmptyCell(): TerminalCell {
+  return {
+    char: ' ',
+    fg: { r: 0, g: 0, b: 0 },
+    bg: { r: 0, g: 0, b: 0 },
+    bold: false,
+    italic: false,
+    underline: false,
+    strikethrough: false,
+    inverse: false,
+    blink: false,
+    dim: false,
+    width: 1,
+  };
+}
+
+function createRow(cols: number): TerminalCell[] {
+  const row: TerminalCell[] = new Array(cols);
+  for (let x = 0; x < cols; x++) {
+    row[x] = createEmptyCell();
+  }
+  return row;
+}
+
+function updateCellFromView(view: DataView, offset: number, cell: TerminalCell): void {
+  const codepoint = view.getUint32(offset, true);
+  cell.char = codepoint > 0
+    ? (codepoint <= 0xffff ? String.fromCharCode(codepoint) : String.fromCodePoint(codepoint))
+    : ' ';
+
+  cell.fg.r = view.getUint8(offset + 4);
+  cell.fg.g = view.getUint8(offset + 5);
+  cell.fg.b = view.getUint8(offset + 6);
+
+  cell.bg.r = view.getUint8(offset + 7);
+  cell.bg.g = view.getUint8(offset + 8);
+  cell.bg.b = view.getUint8(offset + 9);
+
+  const flags = view.getUint16(offset + 10, true);
+  cell.bold = (flags & FLAG_BOLD) !== 0;
+  cell.italic = (flags & FLAG_ITALIC) !== 0;
+  cell.underline = (flags & FLAG_UNDERLINE) !== 0;
+  cell.strikethrough = (flags & FLAG_STRIKETHROUGH) !== 0;
+  cell.inverse = (flags & FLAG_INVERSE) !== 0;
+  cell.blink = (flags & FLAG_BLINK) !== 0;
+  cell.dim = (flags & FLAG_DIM) !== 0;
+
+  const width = view.getUint8(offset + 12);
+  cell.width = width === 2 ? 2 : 1;
+
+  const hyperlinkId = view.getUint16(offset + 13, true);
+  cell.hyperlinkId = hyperlinkId > 0 ? hyperlinkId : undefined;
+}
+
+function ensureRow(cache: RowCache, rowIndex: number): TerminalCell[] {
+  const existing = cache.cells[rowIndex];
+  if (existing && existing.length === cache.cols) {
+    return existing;
+  }
+
+  const row = createRow(cache.cols);
+  cache.cells[rowIndex] = row;
+  return row;
+}
+
+function unpackRowInto(view: DataView, offset: number, row: TerminalCell[], cols: number): void {
+  for (let x = 0; x < cols; x++) {
+    const cellOffset = offset + x * CELL_SIZE;
+    const cell = row[x] ?? createEmptyCell();
+    updateCellFromView(view, cellOffset, cell);
+    row[x] = cell;
+  }
 }
 
 /**
@@ -270,6 +350,13 @@ export function packTerminalState(state: TerminalState): ArrayBuffer {
  * Unpack full terminal state from an ArrayBuffer
  */
 export function unpackTerminalState(buffer: ArrayBuffer): TerminalState {
+  return unpackTerminalStateWithCache(buffer).state;
+}
+
+export function unpackTerminalStateWithCache(
+  buffer: ArrayBuffer,
+  rowCache?: RowCache | null
+): { state: TerminalState; rowCache: RowCache } {
   const view = new DataView(buffer);
 
   // Header
@@ -286,32 +373,36 @@ export function unpackTerminalState(buffer: ArrayBuffer): TerminalState {
   const mouseTracking = view.getUint8(19) === 1;
   const cursorKeyMode = view.getUint8(20) === 1 ? 'application' : 'normal';
 
-  // Cell data
-  const cells: TerminalCell[][] = new Array(rows);
+  const cache: RowCache = rowCache && rowCache.rows === rows && rowCache.cols === cols
+    ? rowCache
+    : { rows, cols, cells: new Array(rows) };
+
   let offset = STATE_HEADER_SIZE;
 
   for (let y = 0; y < rows; y++) {
-    const row: TerminalCell[] = new Array(cols);
-    for (let x = 0; x < cols; x++) {
-      row[x] = unpackCellAt(view, offset);
-      offset += CELL_SIZE;
-    }
-    cells[y] = row;
+    const row = ensureRow(cache, y);
+    unpackRowInto(view, offset, row, cols);
+    offset += CELL_SIZE * cols;
   }
 
+  const cells = cache.cells.slice(0, rows);
+
   return {
-    cols,
-    rows,
-    cells,
-    cursor: {
-      x: cursorX,
-      y: cursorY,
-      visible: cursorVisible,
-      style: cursorStyle,
+    state: {
+      cols,
+      rows,
+      cells,
+      cursor: {
+        x: cursorX,
+        y: cursorY,
+        visible: cursorVisible,
+        style: cursorStyle,
+      },
+      alternateScreen,
+      mouseTracking,
+      cursorKeyMode,
     },
-    alternateScreen,
-    mouseTracking,
-    cursorKeyMode,
+    rowCache: cache,
   };
 }
 
@@ -378,31 +469,37 @@ export function unpackDirtyUpdate(
   packed: SerializedDirtyUpdate,
   scrollState: TerminalScrollState
 ): DirtyTerminalUpdate {
+  return unpackDirtyUpdateWithCache(packed, scrollState).update;
+}
+
+export function unpackDirtyUpdateWithCache(
+  packed: SerializedDirtyUpdate,
+  scrollState: TerminalScrollState,
+  rowCache?: RowCache | null
+): { update: DirtyTerminalUpdate; rowCache: RowCache } {
+  const cache: RowCache = rowCache && rowCache.rows === packed.rows && rowCache.cols === packed.cols
+    ? rowCache
+    : { rows: packed.rows, cols: packed.cols, cells: new Array(packed.rows) };
+
   // Unpack dirty rows
   const dirtyRows = new Map<number, TerminalCell[]>();
   const view = new DataView(packed.dirtyRowData);
   let offset = 0;
 
-  // Calculate cells per row from the data
-  // Each row should have cols cells
-  const cols = packed.cols;
-
   for (let i = 0; i < packed.dirtyRowIndices.length; i++) {
     const rowIndex = packed.dirtyRowIndices[i];
-    const row: TerminalCell[] = new Array(cols);
-
-    for (let x = 0; x < cols; x++) {
-      row[x] = unpackCellAt(view, offset);
-      offset += CELL_SIZE;
-    }
-
+    const row = ensureRow(cache, rowIndex);
+    unpackRowInto(view, offset, row, cache.cols);
+    offset += CELL_SIZE * cache.cols;
     dirtyRows.set(rowIndex, row);
   }
 
   // Unpack full state if present
   let fullState: TerminalState | undefined;
   if (packed.isFull && packed.fullStateData) {
-    fullState = unpackTerminalState(packed.fullStateData);
+    const result = unpackTerminalStateWithCache(packed.fullStateData, cache);
+    fullState = result.state;
+    rowCache = result.rowCache;
   }
 
   const cursor: TerminalCursor = {
@@ -412,7 +509,7 @@ export function unpackDirtyUpdate(
     style: 'block',
   };
 
-  return {
+  const update: DirtyTerminalUpdate = {
     dirtyRows,
     cursor,
     scrollState: {
@@ -429,6 +526,8 @@ export function unpackDirtyUpdate(
     cursorKeyMode: packed.cursorKeyMode === 1 ? 'application' : 'normal',
     inBandResize: packed.inBandResize,
   };
+
+  return { update, rowCache: rowCache ?? cache };
 }
 
 /**

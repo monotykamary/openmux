@@ -9,7 +9,7 @@ import type {
   SearchMatch,
 } from '../emulator-interface';
 import type { TerminalCell } from '../../core/types';
-import { unpackCells, unpackDirtyUpdate } from '../cell-serialization';
+import { unpackCells, unpackDirtyUpdateWithCache } from '../cell-serialization';
 import type {
   SessionState,
   PendingRequest,
@@ -49,7 +49,12 @@ export function handleUpdate(
   const state = sessionToState.get(sessionId);
   if (!state) return;
 
-  const update = unpackDirtyUpdate(packed, state.scrollState);
+  const { update, rowCache } = unpackDirtyUpdateWithCache(
+    packed,
+    state.scrollState,
+    state.rowCache
+  );
+  state.rowCache = rowCache;
 
   // Update scroll state
   state.scrollState = {

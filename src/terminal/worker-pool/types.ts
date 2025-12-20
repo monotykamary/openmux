@@ -6,7 +6,8 @@ import type {
   WorkerOutbound,
   TerminalModes,
 } from '../emulator-interface';
-import type { TerminalCell, DirtyTerminalUpdate, TerminalScrollState } from '../../core/types';
+import type { DirtyTerminalUpdate, TerminalScrollState } from '../../core/types';
+import type { RowCache } from '../cell-serialization';
 
 /**
  * Callback for terminal updates from worker
@@ -32,6 +33,7 @@ export interface SessionState {
   titleCallback: TitleCallback | null;
   modeCallback: ModeCallback | null;
   scrollState: TerminalScrollState;
+  rowCache: RowCache | null;
   // Buffer for updates received before callback is set
   pendingUpdate: DirtyTerminalUpdate | null;
   // Error tracking for worker recovery

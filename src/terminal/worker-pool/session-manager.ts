@@ -61,6 +61,7 @@ export function createSession(
       scrollbackLength: 0,
       isAtBottom: true,
     },
+    rowCache: null,
     pendingUpdate: null,
     errorCount: 0,
     lastErrorAt: null,
