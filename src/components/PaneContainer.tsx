@@ -314,7 +314,11 @@ function StackedPanesRenderer(props: StackedPanesRendererProps) {
             <text
               fg={isActive ? '#FFFFFF' : '#666666'}
               bg={isActive ? activeTabBg() : undefined}
-              onMouseDown={() => handleTabClick(pane.id)}
+              selectable={false}
+              onMouseDown={(e: { preventDefault: () => void }) => {
+                e.preventDefault();
+                handleTabClick(pane.id);
+              }}
             >
               {label}
             </text>
