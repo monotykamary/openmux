@@ -123,7 +123,12 @@ pub const Pty = struct {
             // Signal producer that space is available
             self.ring.not_full.signal();
             return @intCast(n);
-        } else if (self.exited.load(.acquire) and self.ring.available() == 0) {
+        } else if (n == 0) {
+            // Ensure we observe child exit even if reader loop stops producing
+            self.checkChild();
+        }
+
+        if (self.exited.load(.acquire) and self.ring.available() == 0) {
             return constants.CHILD_EXITED;
         } else {
             return 0;
