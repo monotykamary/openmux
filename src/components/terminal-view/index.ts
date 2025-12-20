@@ -6,8 +6,12 @@
 export {
   getCellColors,
   renderRow,
+  PACKED_CELL_BYTE_STRIDE,
   type CellRenderingDeps,
   type CellRenderingOptions,
+  type PackedRowBuffer,
+  type RowTextCache,
+  type RowRenderCache,
 } from './cell-rendering'
 
 export {
@@ -21,5 +25,6 @@ export {
   updateTransitionCache,
   type RowFetchingOptions,
   type RowFetchResult,
+  type MissingRowBuffer,
   type PrefetchRequest,
 } from './row-fetching'

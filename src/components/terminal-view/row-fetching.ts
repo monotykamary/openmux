@@ -16,6 +16,12 @@ export interface RowFetchResult {
   lastMissingOffset: number
 }
 
+export interface MissingRowBuffer {
+  rowIndices: Int32Array
+  offsets: Int32Array
+  count: number
+}
+
 /**
  * Fetch all rows needed for rendering (optimized: fetch once per row, not per cell)
  * Returns the row cache and any missing scrollback line offsets for prefetching
@@ -25,7 +31,8 @@ export function fetchRowsForRendering(
   emulator: ITerminalEmulator | null,
   transitionCache: Map<number, TerminalCell[]>,
   options: RowFetchingOptions,
-  rowCache?: (TerminalCell[] | null)[]
+  rowCache?: (TerminalCell[] | null)[],
+  missingRows?: MissingRowBuffer
 ): RowFetchResult {
   const { viewportOffset, scrollbackLength, rows } = options
 
@@ -40,6 +47,9 @@ export function fetchRowsForRendering(
   // Track missing scrollback lines for prefetching
   let firstMissingOffset = -1
   let lastMissingOffset = -1
+  if (missingRows) {
+    missingRows.count = 0
+  }
 
   for (let y = 0; y < rows; y++) {
     if (viewportOffset === 0) {
@@ -66,6 +76,12 @@ export function fetchRowsForRendering(
             firstMissingOffset = absoluteY
           }
           lastMissingOffset = absoluteY
+          if (missingRows && missingRows.count < missingRows.rowIndices.length) {
+            const idx = missingRows.count
+            missingRows.rowIndices[idx] = y
+            missingRows.offsets[idx] = absoluteY
+            missingRows.count = idx + 1
+          }
         }
       } else {
         // In live terminal area

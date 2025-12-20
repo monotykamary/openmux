@@ -24,10 +24,15 @@ import {
   SCROLLBAR_THUMB,
 } from '../terminal/rendering';
 import {
+  PACKED_CELL_BYTE_STRIDE,
   renderRow,
   fetchRowsForRendering,
   calculatePrefetchRequest,
   updateTransitionCache,
+  type PackedRowBuffer,
+  type RowTextCache,
+  type RowRenderCache,
+  type MissingRowBuffer,
 } from './terminal-view';
 
 interface TerminalViewProps {
@@ -39,6 +44,15 @@ interface TerminalViewProps {
   offsetX?: number;
   /** Y offset in the parent buffer (for direct buffer rendering) */
   offsetY?: number;
+}
+
+interface MissingRowSnapshot {
+  viewportOffset: number;
+  scrollbackLength: number;
+  rows: number;
+  count: number;
+  rowIndices: Int32Array;
+  offsets: Int32Array;
 }
 
 /**
@@ -79,6 +93,11 @@ export function TerminalView(props: TerminalViewProps) {
   let frameBuffer: OptimizedBuffer | null = null;
   let frameBufferWidth = 0;
   let frameBufferHeight = 0;
+  let packedRowBuffer: PackedRowBuffer | null = null;
+  let rowTextCache: RowTextCache | null = null;
+  let rowRenderCache: RowRenderCache | null = null;
+  let missingRowsBuffer: MissingRowBuffer | null = null;
+  let pendingMissingRows: MissingRowSnapshot | null = null;
   // Cache for lines transitioning from live terminal to scrollback
   // When scrollback grows, the top rows of the terminal move to scrollback.
   // We capture them before the state update so we can render them immediately
@@ -96,20 +115,34 @@ export function TerminalView(props: TerminalViewProps) {
   // Function reference for executing prefetch (set by effect, used by render)
   let executePrefetchFn: (() => void) | null = null;
 
+  const clearRowTextCache = (rowIndex?: number) => {
+    if (!rowTextCache) return;
+    if (rowIndex === undefined) {
+      rowTextCache.fill(null);
+      return;
+    }
+    if (rowIndex >= 0 && rowIndex < rowTextCache.length) {
+      rowTextCache[rowIndex] = null;
+    }
+  };
+
   const markAllRowsDirty = (rowCount: number) => {
     if (rowCount <= 0) {
       dirtyRows = null;
+      clearRowTextCache();
       return;
     }
     if (!dirtyRows || dirtyRows.length !== rowCount) {
       dirtyRows = new Uint8Array(rowCount);
     }
     dirtyRows.fill(1);
+    clearRowTextCache();
   };
 
   const markRowDirty = (rowIndex: number) => {
     if (!dirtyRows || rowIndex < 0 || rowIndex >= dirtyRows.length) return;
     dirtyRows[rowIndex] = 1;
+    clearRowTextCache(rowIndex);
   };
 
   const ensureFrameBuffer = (width: number, height: number, buffer: OptimizedBuffer) => {
@@ -131,9 +164,113 @@ export function TerminalView(props: TerminalViewProps) {
     }
   };
 
+  const ensurePackedRowBuffer = (cols: number) => {
+    if (cols <= 0) return;
+    if (!packedRowBuffer || packedRowBuffer.capacity < cols) {
+      const buffer = new ArrayBuffer(cols * PACKED_CELL_BYTE_STRIDE);
+      packedRowBuffer = {
+        buffer,
+        floats: new Float32Array(buffer),
+        uints: new Uint32Array(buffer),
+        capacity: cols,
+        overlayX: new Int32Array(cols),
+        overlayCodepoint: new Uint32Array(cols),
+        overlayAttributes: new Uint8Array(cols),
+        overlayFg: new Array(cols).fill(null),
+        overlayBg: new Array(cols).fill(null),
+        overlayCount: 0,
+      };
+    }
+  };
+
+  const ensureRowTextCache = (rowCount: number) => {
+    if (rowCount <= 0) {
+      rowTextCache = null;
+      return;
+    }
+    if (!rowTextCache || rowTextCache.length !== rowCount) {
+      rowTextCache = new Array(rowCount).fill(null);
+    }
+  };
+
+  const ensureMissingRowsBuffer = (rowCount: number): MissingRowBuffer | null => {
+    if (rowCount <= 0) {
+      missingRowsBuffer = null;
+      return null;
+    }
+    if (!missingRowsBuffer || missingRowsBuffer.rowIndices.length < rowCount) {
+      missingRowsBuffer = {
+        rowIndices: new Int32Array(rowCount),
+        offsets: new Int32Array(rowCount),
+        count: 0,
+      };
+    } else {
+      missingRowsBuffer.count = 0;
+    }
+    return missingRowsBuffer;
+  };
+
+  const snapshotMissingRows = (
+    buffer: MissingRowBuffer | null,
+    viewportOffset: number,
+    scrollbackLength: number,
+    rows: number
+  ): MissingRowSnapshot | null => {
+    if (!buffer || buffer.count === 0) return null;
+    const count = buffer.count;
+    return {
+      viewportOffset,
+      scrollbackLength,
+      rows,
+      count,
+      rowIndices: buffer.rowIndices.slice(0, count),
+      offsets: buffer.offsets.slice(0, count),
+    };
+  };
+
+  const applyPrefetchSnapshot = (snapshot: MissingRowSnapshot | null): boolean => {
+    if (!snapshot || !terminalState) {
+      dirtyAll = true;
+      clearRowTextCache();
+      return true;
+    }
+    if (
+      scrollState.viewportOffset !== snapshot.viewportOffset ||
+      scrollState.scrollbackLength !== snapshot.scrollbackLength ||
+      terminalState.rows !== snapshot.rows
+    ) {
+      dirtyAll = true;
+      markAllRowsDirty(terminalState.rows);
+      return true;
+    }
+    if (!dirtyRows) {
+      dirtyAll = true;
+      markAllRowsDirty(terminalState.rows);
+      return true;
+    }
+
+    let marked = false;
+    for (let i = 0; i < snapshot.count; i++) {
+      const rowIndex = snapshot.rowIndices[i];
+      const offset = snapshot.offsets[i];
+      const line = emulator?.getScrollbackLine(offset) ?? transitionCache.get(offset) ?? null;
+      if (line) {
+        markRowDirty(rowIndex);
+        marked = true;
+      }
+    }
+
+    return marked;
+  };
+
   onCleanup(() => {
     frameBuffer?.destroy();
     frameBuffer = null;
+    packedRowBuffer = null;
+    rowTextCache = null;
+    rowRenderCache = null;
+    missingRowsBuffer = null;
+    pendingMissingRows = null;
   });
 
   // Using on() for explicit ptyId dependency - effect re-runs only when ptyId changes
@@ -172,15 +309,18 @@ export function TerminalView(props: TerminalViewProps) {
           if (!pendingPrefetch || prefetchInProgress || !mounted) return;
 
           const { ptyId: prefetchPtyId, start, count } = pendingPrefetch;
+          const missingSnapshot = pendingMissingRows;
           pendingPrefetch = null;
+          pendingMissingRows = null;
           prefetchInProgress = true;
 
           try {
             await prefetchScrollbackLines(prefetchPtyId, start, count);
             if (mounted) {
-              // Trigger re-render after prefetch completes
-              dirtyAll = true;
-              requestRenderFrame();
+              // Trigger a render only for rows that were missing and just arrived
+              if (applyPrefetchSnapshot(missingSnapshot)) {
+                requestRenderFrame();
+              }
             }
           } finally {
             prefetchInProgress = false;
@@ -279,6 +419,9 @@ export function TerminalView(props: TerminalViewProps) {
               (scrollbackDelta === 0 && isAtScrollbackLimit && oldScrollbackLength > 0);
             if (prevViewportOffset > 0 && scrollbackChanged) {
               dirtyAll = true;
+              if (terminalState) {
+                markAllRowsDirty(terminalState.rows);
+              }
             }
 
             if (scrollState.viewportOffset !== prevViewportOffset) {
@@ -308,6 +451,11 @@ export function TerminalView(props: TerminalViewProps) {
           dirtyAll = true;
           emulator = null;
           executePrefetchFn = null;
+          pendingPrefetch = null;
+          pendingMissingRows = null;
+          missingRowsBuffer = null;
+          rowTextCache = null;
+          rowRenderCache = null;
           prefetchScheduled = false;
           transitionCache.clear();
           scrollbackRowCache.length = 0;
@@ -353,14 +501,24 @@ export function TerminalView(props: TerminalViewProps) {
 
     const rows = Math.min(state.rows, height);
     const cols = Math.min(state.cols, width);
+    const colsChanged = cols !== lastRenderCols;
 
-    if (rows !== lastRenderRows || cols !== lastRenderCols || width !== lastRenderWidth || height !== lastRenderHeight) {
+    if (rows !== lastRenderRows || colsChanged || width !== lastRenderWidth || height !== lastRenderHeight) {
       dirtyAll = true;
       lastRenderRows = rows;
       lastRenderCols = cols;
       lastRenderWidth = width;
       lastRenderHeight = height;
     }
+
+    if (colsChanged) {
+      clearRowTextCache();
+    }
+    ensureRowTextCache(rows);
+    ensurePackedRowBuffer(cols);
+    rowRenderCache = packedRowBuffer && rowTextCache
+      ? { packedRow: packedRowBuffer, rowText: rowTextCache }
+      : null;
 
     if (lastIsFocused !== isFocused) {
       dirtyAll = true;
@@ -381,12 +539,14 @@ export function TerminalView(props: TerminalViewProps) {
       rowCache = state.cells as (TerminalCell[] | null)[];
     } else {
       // Pre-fetch all rows we need for rendering (optimization: fetch once per row, not per cell)
+      const missingRows = ensureMissingRowsBuffer(rows);
       const { rowCache: fetchedRows, firstMissingOffset, lastMissingOffset } = fetchRowsForRendering(
         state,
         emulator,
         transitionCache,
         { viewportOffset, scrollbackLength, rows },
-        scrollbackRowCache
+        scrollbackRowCache,
+        missingRows ?? undefined
       );
       rowCache = fetchedRows;
 
@@ -402,6 +562,7 @@ export function TerminalView(props: TerminalViewProps) {
         );
       if (prefetchRequest && !prefetchInProgress && executePrefetchFn) {
         pendingPrefetch = prefetchRequest;
+        pendingMissingRows = snapshotMissingRows(missingRows, viewportOffset, scrollbackLength, rows);
         // Execute prefetch asynchronously (don't block render)
         if (!prefetchScheduled) {
           prefetchScheduled = true;
@@ -410,6 +571,8 @@ export function TerminalView(props: TerminalViewProps) {
             executePrefetchFn?.();
           });
         }
+      } else {
+        pendingMissingRows = null;
       }
     }
 
@@ -474,7 +637,19 @@ export function TerminalView(props: TerminalViewProps) {
         continue;
       }
       const row = rowCache[y];
-      renderRow(renderTarget, row, y, cols, renderOffsetX, renderOffsetY, renderOptions, renderDeps, fallbackFg, fallbackBg);
+      renderRow(
+        renderTarget,
+        row,
+        y,
+        cols,
+        renderOffsetX,
+        renderOffsetY,
+        renderOptions,
+        renderDeps,
+        fallbackFg,
+        fallbackBg,
+        rowRenderCache ?? undefined
+      );
       if (showScrollbar) {
         const isThumb = y >= thumbPosition && y < thumbPosition + thumbHeight;
         const contentCell = contentCol >= 0 ? row?.[contentCol] ?? null : null;
