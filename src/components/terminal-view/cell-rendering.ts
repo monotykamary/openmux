@@ -50,6 +50,7 @@ export interface PackedRowBuffer {
 
 export interface PackedRowBatchBuffer {
   buffer: ArrayBuffer
+  bytes: Uint8Array
   floats: Float32Array
   uints: Uint32Array
   capacityCols: number
@@ -579,7 +580,8 @@ export const drawPackedRowBatch = (
   offsetX: number,
   offsetY: number,
   startRow: number,
-  rowCount: number
+  rowCount: number,
+  resetOverlayCount = true
 ): void => {
   if (rowCount <= 0) return
 
@@ -613,7 +615,9 @@ export const drawPackedRowBatch = (
       overlayAttributes[i]
     )
   }
-  batch.overlayCount = 0
+  if (resetOverlayCount) {
+    batch.overlayCount = 0
+  }
 }
 
 /**

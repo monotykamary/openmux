@@ -18,7 +18,18 @@ import {
 import { useSelection } from '../contexts/SelectionContext';
 import { useSearch } from '../contexts/SearchContext';
 import {
+  ATTR_BOLD,
+  ATTR_ITALIC,
+  ATTR_STRIKETHROUGH,
+  ATTR_UNDERLINE,
   BLACK,
+  SEARCH_CURRENT_BG,
+  SEARCH_CURRENT_FG,
+  SEARCH_MATCH_BG,
+  SEARCH_MATCH_FG,
+  SELECTION_BG,
+  SELECTION_FG,
+  WHITE,
   getCachedRGBA,
   SCROLLBAR_TRACK,
   SCROLLBAR_THUMB,
@@ -98,6 +109,8 @@ export function TerminalView(props: TerminalViewProps) {
   let frameBufferHeight = 0;
   let packedRowBuffer: PackedRowBuffer | null = null;
   let packedRowBatchBuffer: PackedRowBatchBuffer | null = null;
+  let packedRowCache: Array<PackedRowBatchBuffer | null> | null = null;
+  let packedRowCacheCols = 0;
   let rowTextCache: RowTextCache | null = null;
   let rowRenderCache: RowRenderCache | null = null;
   let missingRowsBuffer: MissingRowBuffer | null = null;
@@ -134,6 +147,7 @@ export function TerminalView(props: TerminalViewProps) {
     if (rowCount <= 0) {
       dirtyRows = null;
       clearRowTextCache();
+      clearPackedRowCache();
       return;
     }
     if (!dirtyRows || dirtyRows.length !== rowCount) {
@@ -141,12 +155,14 @@ export function TerminalView(props: TerminalViewProps) {
     }
     dirtyRows.fill(1);
     clearRowTextCache();
+    clearPackedRowCache();
   };
 
   const markRowDirty = (rowIndex: number) => {
     if (!dirtyRows || rowIndex < 0 || rowIndex >= dirtyRows.length) return;
     dirtyRows[rowIndex] = 1;
     clearRowTextCache(rowIndex);
+    clearPackedRowCache(rowIndex);
   };
 
   const ensureFrameBuffer = (width: number, height: number, buffer: OptimizedBuffer) => {
@@ -198,6 +214,7 @@ export function TerminalView(props: TerminalViewProps) {
       const buffer = new ArrayBuffer(cellCount * PACKED_CELL_BYTE_STRIDE);
       packedRowBatchBuffer = {
         buffer,
+        bytes: new Uint8Array(buffer),
         floats: new Float32Array(buffer),
         uints: new Uint32Array(buffer),
         capacityCols: cols,
@@ -210,6 +227,48 @@ export function TerminalView(props: TerminalViewProps) {
         overlayBg: new Array(cellCount).fill(null),
         overlayCount: 0,
       };
+    }
+  };
+
+  const createPackedRowCacheEntry = (cols: number): PackedRowBatchBuffer => {
+    const buffer = new ArrayBuffer(cols * PACKED_CELL_BYTE_STRIDE);
+    return {
+      buffer,
+      bytes: new Uint8Array(buffer),
+      floats: new Float32Array(buffer),
+      uints: new Uint32Array(buffer),
+      capacityCols: cols,
+      capacityRows: 1,
+      overlayX: new Int32Array(cols),
+      overlayY: new Int32Array(cols),
+      overlayCodepoint: new Uint32Array(cols),
+      overlayAttributes: new Uint8Array(cols),
+      overlayFg: new Array(cols).fill(null),
+      overlayBg: new Array(cols).fill(null),
+      overlayCount: 0,
+    };
+  };
+
+  const ensurePackedRowCache = (rows: number, cols: number) => {
+    if (rows <= 0 || cols <= 0) {
+      packedRowCache = null;
+      packedRowCacheCols = 0;
+      return;
+    }
+    if (!packedRowCache || packedRowCache.length !== rows || packedRowCacheCols !== cols) {
+      packedRowCache = new Array(rows).fill(null);
+      packedRowCacheCols = cols;
+    }
+  };
+
+  const clearPackedRowCache = (rowIndex?: number) => {
+    if (!packedRowCache) return;
+    if (rowIndex === undefined) {
+      packedRowCache.fill(null);
+      return;
+    }
+    if (rowIndex >= 0 && rowIndex < packedRowCache.length) {
+      packedRowCache[rowIndex] = null;
     }
   };
 
@@ -298,6 +357,8 @@ export function TerminalView(props: TerminalViewProps) {
     frameBuffer = null;
     packedRowBuffer = null;
     packedRowBatchBuffer = null;
+    packedRowCache = null;
+    packedRowCacheCols = 0;
     rowTextCache = null;
     rowRenderCache = null;
     missingRowsBuffer = null;
@@ -487,6 +548,8 @@ export function TerminalView(props: TerminalViewProps) {
           missingRowsBuffer = null;
           rowTextCache = null;
           rowRenderCache = null;
+          packedRowCache = null;
+          packedRowCacheCols = 0;
           prefetchScheduled = false;
           transitionCache.clear();
           scrollbackRowCache.length = 0;
@@ -544,10 +607,12 @@ export function TerminalView(props: TerminalViewProps) {
 
     if (colsChanged) {
       clearRowTextCache();
+      clearPackedRowCache();
     }
     ensureRowTextCache(rows);
     ensurePackedRowBuffer(cols);
     ensurePackedRowBatchBuffer(cols, rows);
+    ensurePackedRowCache(rows, cols);
     rowRenderCache = packedRowBuffer && rowTextCache
       ? { packedRow: packedRowBuffer, rowText: rowTextCache }
       : null;
@@ -650,8 +715,9 @@ export function TerminalView(props: TerminalViewProps) {
     };
 
     const useFullRender = dirtyAll || !dirtyRows;
-    const allowPackedBatch = !!packedRowBatchBuffer && !!rowTextCache;
+    const allowPackedBatch = !!packedRowBatchBuffer;
     const cursorRow = (isAtBottom && isFocused && state.cursor.visible) ? state.cursor.y : -1;
+    const cursorCol = (isAtBottom && isFocused && state.cursor.visible) ? state.cursor.x : -1;
     const needsRowHighlightCheck = hasSelection || hasSearch;
     const absoluteRowBase = scrollbackLength - viewportOffset;
 
@@ -671,6 +737,7 @@ export function TerminalView(props: TerminalViewProps) {
 
     let batchStart = 0;
     let batchRowCount = 0;
+    const rowByteStride = cols * PACKED_CELL_BYTE_STRIDE;
     const flushPackedBatch = () => {
       if (!packedRowBatchBuffer || batchRowCount === 0) return;
       drawPackedRowBatch(
@@ -685,6 +752,91 @@ export function TerminalView(props: TerminalViewProps) {
       batchRowCount = 0;
     };
 
+    const appendCachedRowToBatch = (entry: PackedRowBatchBuffer, batchRowIndex: number): boolean => {
+      if (!packedRowBatchBuffer) return false;
+      if (entry.capacityCols < cols || batchRowIndex >= packedRowBatchBuffer.capacityRows) {
+        return false;
+      }
+      const destOffset = batchRowIndex * rowByteStride;
+      packedRowBatchBuffer.bytes.set(entry.bytes, destOffset);
+
+      const overlayCount = entry.overlayCount;
+      if (overlayCount === 0) {
+        return true;
+      }
+      const overlayBase = packedRowBatchBuffer.overlayCount;
+      if (overlayBase + overlayCount > packedRowBatchBuffer.overlayX.length) {
+        return false;
+      }
+      for (let i = 0; i < overlayCount; i++) {
+        const targetIndex = overlayBase + i;
+        packedRowBatchBuffer.overlayX[targetIndex] = entry.overlayX[i];
+        packedRowBatchBuffer.overlayY[targetIndex] = batchRowIndex;
+        packedRowBatchBuffer.overlayCodepoint[targetIndex] = entry.overlayCodepoint[i];
+        packedRowBatchBuffer.overlayAttributes[targetIndex] = entry.overlayAttributes[i];
+        packedRowBatchBuffer.overlayFg[targetIndex] = entry.overlayFg[i];
+        packedRowBatchBuffer.overlayBg[targetIndex] = entry.overlayBg[i];
+      }
+      packedRowBatchBuffer.overlayCount = overlayBase + overlayCount;
+      return true;
+    };
+
+    const drawHighlightedCell = (row: TerminalCell[], rowY: number, x: number, fg: RGBA, bg: RGBA) => {
+      const cell = row[x] ?? null;
+      if (!cell) {
+        const prevCell = x > 0 ? row[x - 1] ?? null : null;
+        if (prevCell?.width === 2) {
+          renderTarget.drawChar(0, x + renderOffsetX, rowY, bg, bg, 0);
+        }
+        return;
+      }
+      let attributes = 0;
+      if (cell.bold) attributes |= ATTR_BOLD;
+      if (cell.italic) attributes |= ATTR_ITALIC;
+      if (cell.underline) attributes |= ATTR_UNDERLINE;
+      if (cell.strikethrough) attributes |= ATTR_STRIKETHROUGH;
+
+      const char = cell.char || ' ';
+      const codepoint = char.codePointAt(0) ?? 0x20;
+      if (codepoint > 0x7f) {
+        renderTarget.drawChar(codepoint, x + renderOffsetX, rowY, fg, bg, attributes);
+      } else {
+        renderTarget.setCell(x + renderOffsetX, rowY, char, fg, bg, attributes);
+      }
+
+      if (cell.width === 2) {
+        const spacerX = x + 1;
+        if (spacerX < cols) {
+          renderTarget.drawChar(0, spacerX + renderOffsetX, rowY, bg, bg, 0);
+        }
+      }
+    };
+
+    const drawCursorCell = (row: TerminalCell[], rowY: number, x: number) => {
+      const cell = row[x] ?? null;
+      if (!cell) return;
+
+      let fgR = cell.fg.r, fgG = cell.fg.g, fgB = cell.fg.b;
+      let bgR = cell.bg.r, bgG = cell.bg.g, bgB = cell.bg.b;
+
+      if (cell.dim) {
+        fgR = Math.floor(fgR * 0.5);
+        fgG = Math.floor(fgG * 0.5);
+        fgB = Math.floor(fgB * 0.5);
+      }
+
+      if (cell.inverse) {
+        const tmpR = fgR; fgR = bgR; bgR = tmpR;
+        const tmpG = fgG; fgG = bgG; bgG = tmpG;
+        const tmpB = fgB; fgB = bgB; bgB = tmpB;
+      }
+
+      const fg = getCachedRGBA(fgR, fgG, fgB);
+      const bg = getCachedRGBA(bgR, bgG, bgB);
+      const cursorFg = bg ?? BLACK;
+      drawHighlightedCell(row, rowY, x, cursorFg, WHITE);
+    };
+
     // Render rows (partial when safe)
     for (let y = 0; y < rows; y++) {
       if (!useFullRender && dirtyRows && dirtyRows[y] === 0) {
@@ -693,47 +845,136 @@ export function TerminalView(props: TerminalViewProps) {
       }
 
       const row = rowCache[y];
-      const cachedText = allowPackedBatch && rowTextCache ? rowTextCache[y] : null;
+      const rowDirty = !dirtyRows || dirtyRows[y] === 1;
       let rowHasHighlights = false;
-      if (allowPackedBatch && row && cachedText === null) {
+      let selectedRange: { start: number; end: number } | null = null;
+      let matchRanges: Array<{ startCol: number; endCol: number }> | null = null;
+      let currentMatchStart = -1;
+      let currentMatchEnd = -1;
+      if (allowPackedBatch && row) {
         if (y === cursorRow) {
           rowHasHighlights = true;
-        } else if (needsRowHighlightCheck) {
+        }
+        if (needsRowHighlightCheck) {
           const absoluteY = absoluteRowBase + y;
           if (hasSelection) {
-            const selectedRange = getSelectedColumnsForRow(ptyId, absoluteY, cols);
+            selectedRange = getSelectedColumnsForRow(ptyId, absoluteY, cols);
             if (selectedRange) {
               rowHasHighlights = true;
             }
           }
-          if (!rowHasHighlights && hasSearch) {
-            const matchRanges = getSearchMatchRanges(ptyId, absoluteY);
+          if (hasSearch) {
+            matchRanges = getSearchMatchRanges(ptyId, absoluteY);
             if (matchRanges && matchRanges.length > 0) {
               rowHasHighlights = true;
-            } else if (currentMatch && currentMatch.lineIndex === absoluteY && currentMatch.startCol >= 0) {
+            }
+            if (currentMatch && currentMatch.lineIndex === absoluteY && currentMatch.startCol >= 0) {
+              currentMatchStart = currentMatch.startCol;
+              currentMatchEnd = currentMatch.endCol;
               rowHasHighlights = true;
             }
           }
         }
       }
-      const canBatchRow = allowPackedBatch && row !== null && cachedText === null && !rowHasHighlights;
 
-      if (canBatchRow && packedRowBatchBuffer && rowTextCache) {
+      if (allowPackedBatch && row && rowHasHighlights && packedRowBatchBuffer) {
+        let cachedEntry = packedRowCache ? packedRowCache[y] : null;
+        if (!cachedEntry) {
+          cachedEntry = createPackedRowCacheEntry(cols);
+          if (packedRowCache) {
+            packedRowCache[y] = cachedEntry;
+          }
+        }
+        if (rowDirty) {
+          cachedEntry.overlayCount = 0;
+          packRowForBatch(
+            row,
+            y,
+            cols,
+            fallbackFg,
+            fallbackBg,
+            rowTextCache,
+            cachedEntry,
+            0
+          );
+        }
+
+        flushPackedBatch();
+        drawPackedRowBatch(
+          renderTarget,
+          cachedEntry,
+          cols,
+          renderOffsetX,
+          renderOffsetY,
+          y,
+          1,
+          false
+        );
+
+        const rowY = y + renderOffsetY;
+        if (matchRanges) {
+          for (const range of matchRanges) {
+            const start = Math.max(range.startCol, 0);
+            const end = Math.min(range.endCol, cols);
+            for (let x = start; x < end; x++) {
+              drawHighlightedCell(row, rowY, x, SEARCH_MATCH_FG, SEARCH_MATCH_BG);
+            }
+          }
+        }
+        if (currentMatchStart >= 0 && currentMatchEnd > currentMatchStart) {
+          const start = Math.max(currentMatchStart, 0);
+          const end = Math.min(currentMatchEnd, cols);
+          for (let x = start; x < end; x++) {
+            drawHighlightedCell(row, rowY, x, SEARCH_CURRENT_FG, SEARCH_CURRENT_BG);
+          }
+        }
+        if (selectedRange) {
+          const start = Math.max(selectedRange.start, 0);
+          const end = Math.min(selectedRange.end, cols - 1);
+          for (let x = start; x <= end; x++) {
+            drawHighlightedCell(row, rowY, x, SELECTION_FG, SELECTION_BG);
+          }
+        }
+        if (y === cursorRow && cursorCol >= 0 && cursorCol < cols) {
+          drawCursorCell(row, rowY, cursorCol);
+        }
+
+        if (!useFullRender && dirtyRows) {
+          dirtyRows[y] = 0;
+        }
+        continue;
+      }
+
+      const canBatchRow = allowPackedBatch && row !== null && !rowHasHighlights;
+
+      if (canBatchRow && packedRowBatchBuffer) {
+        let cachedEntry = packedRowCache ? packedRowCache[y] : null;
+        if (!cachedEntry) {
+          cachedEntry = createPackedRowCacheEntry(cols);
+          if (packedRowCache) {
+            packedRowCache[y] = cachedEntry;
+          }
+        }
+        if (rowDirty) {
+          cachedEntry.overlayCount = 0;
+          packRowForBatch(
+            row,
+            y,
+            cols,
+            fallbackFg,
+            fallbackBg,
+            rowTextCache,
+            cachedEntry,
+            0
+          );
+        }
+
         if (batchRowCount === 0) {
           batchStart = y;
           packedRowBatchBuffer.overlayCount = 0;
         }
-        const packedOk = packRowForBatch(
-          row,
-          y,
-          cols,
-          fallbackFg,
-          fallbackBg,
-          rowTextCache,
-          packedRowBatchBuffer,
-          batchRowCount
-        );
-        if (packedOk) {
+        const appended = appendCachedRowToBatch(cachedEntry, batchRowCount);
+        if (appended) {
           batchRowCount++;
           if (!useFullRender && dirtyRows) {
             dirtyRows[y] = 0;
