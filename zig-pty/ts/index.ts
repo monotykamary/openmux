@@ -58,7 +58,7 @@ export function spawnAsync(
   const rows = options.rows ?? DEFAULT_ROWS;
   const cwd = options.cwd ?? process.cwd();
 
-  const cmdline = [file, ...args.map(shQuote)].join(" ");
+  const cmdline = args.length === 0 ? file : [file, ...args.map(shQuote)].join(" ");
 
   const envBuffer = options.envBuffer
     ? Buffer.isBuffer(options.envBuffer)

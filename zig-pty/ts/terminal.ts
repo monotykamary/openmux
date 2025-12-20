@@ -55,7 +55,7 @@ export class Terminal implements IPty {
     this._rows = opts.rows ?? DEFAULT_ROWS;
     const cwd = opts.cwd ?? process.cwd();
 
-    const cmdline = [file, ...args.map(shQuote)].join(" ");
+    const cmdline = args.length === 0 ? file : [file, ...args.map(shQuote)].join(" ");
 
     const envBuffer = opts.envBuffer
       ? Buffer.isBuffer(opts.envBuffer)
