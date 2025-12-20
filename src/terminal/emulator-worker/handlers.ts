@@ -310,6 +310,13 @@ export function handleGetScrollbackLines(
 
     for (let i = 0; i < count; i++) {
       const offset = startOffset + i;
+      const cached = session.scrollbackCache.get(offset);
+      if (cached) {
+        const clone = cached.slice(0);
+        cells.push(clone);
+        offsets.push(offset);
+        continue;
+      }
       const line = session.terminal.getScrollbackLine(offset);
       if (!line) break;
 
