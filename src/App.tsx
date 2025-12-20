@@ -170,7 +170,7 @@ function AppContent() {
     togglePicker();
   };
 
-  // Toggle debug console
+  // Toggle console
   const handleToggleConsole = () => {
     renderer.console.toggle();
   };

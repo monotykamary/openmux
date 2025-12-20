@@ -216,7 +216,7 @@ export function handlePrefixModeKey(
       }
       return true;
 
-    // Toggle debug console
+    // Toggle console
     case '`':
       onToggleConsole?.();
       exitPrefix();

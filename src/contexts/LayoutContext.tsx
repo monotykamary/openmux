@@ -85,13 +85,8 @@ export function LayoutProvider(props: LayoutProviderProps) {
   // This preserves the well-tested reducer logic
   const [state, setState] = createStore<LayoutState>(initialState);
 
-  // Debug timing flag - set to true to see layout timing
-  const DEBUG_LAYOUT_TIMING = false;
-
   // Apply state update using batch to group all updates into a single render cycle
   const applyState = (newState: LayoutState) => {
-    const start = DEBUG_LAYOUT_TIMING ? performance.now() : 0;
-
     // Batch all updates into a single render cycle
     batch(() => {
       // Use reconcile with merge:true for workspaces to preserve object references
@@ -102,24 +97,11 @@ export function LayoutProvider(props: LayoutProviderProps) {
       setState('config', newState.config);
       setState('layoutVersion', newState.layoutVersion);
     });
-
-    if (DEBUG_LAYOUT_TIMING) {
-      const elapsed = performance.now() - start;
-      if (elapsed > 1) {
-        console.log(`[LAYOUT] setState took ${elapsed.toFixed(2)}ms`);
-      }
-    }
   };
 
   // Queue for batching rapid actions (like spam creating panes)
   let pendingActions: LayoutAction[] = [];
   let flushScheduled = false;
-  // Timing for performance measurement
-  let actionStartTimes: Map<string, number> = new Map();
-
-  // Debug timing flag - set to true to see action timing
-  const DEBUG_ACTION_TIMING = false;
-
   // Flush pending actions in a batch
   const flushActions = () => {
     if (pendingActions.length === 0) return;
@@ -128,40 +110,19 @@ export function LayoutProvider(props: LayoutProviderProps) {
     pendingActions = [];
     flushScheduled = false;
 
-    const flushStart = DEBUG_ACTION_TIMING ? performance.now() : 0;
-
     // Apply all actions to get final state
     let currentState = unwrap(state);
     for (const action of actions) {
       currentState = layoutReducer(currentState, action);
     }
 
-    const reducerDone = DEBUG_ACTION_TIMING ? performance.now() : 0;
-
     // Apply state update
     applyState(currentState);
-
-    if (DEBUG_ACTION_TIMING) {
-      const flushEnd = performance.now();
-      const actionTypes = actions.map(a => a.type).join(', ');
-      console.log(`[LAYOUT] flush(${actionTypes}): reducer=${(reducerDone - flushStart).toFixed(2)}ms, applyState=${(flushEnd - reducerDone).toFixed(2)}ms, total=${(flushEnd - flushStart).toFixed(2)}ms`);
-
-      // Log end-to-end time for each action
-      for (const action of actions) {
-        const startTime = actionStartTimes.get(action.type);
-        if (startTime) {
-          console.log(`[LAYOUT] ${action.type} end-to-end: ${(flushEnd - startTime).toFixed(2)}ms`);
-          actionStartTimes.delete(action.type);
-        }
-      }
-    }
   };
 
   // Fast path for SET_PANE_PTY - direct store path update instead of reconcile
   // This avoids diffing the entire workspaces object for a single property change
   const applySetPanePty = (paneId: string, ptyId: string) => {
-    const start = DEBUG_ACTION_TIMING ? performance.now() : 0;
-
     const wsId = state.activeWorkspaceId;
     const workspace = state.workspaces[wsId];
 
@@ -176,15 +137,11 @@ export function LayoutProvider(props: LayoutProviderProps) {
       }
     }
 
-    if (DEBUG_ACTION_TIMING) {
-      console.log(`[LAYOUT] SET_PANE_PTY direct update: ${(performance.now() - start).toFixed(2)}ms`);
-    }
   };
 
   // Fast path for NEW_PANE - use produce for direct mutations instead of reconcile
   // This avoids the overhead of diffing the entire workspaces object
   const applyNewPane = (title?: string, ptyId?: string) => {
-    const start = DEBUG_ACTION_TIMING ? performance.now() : 0;
     const wsId = state.activeWorkspaceId;
     const newPaneId = generatePaneId();
 
@@ -227,11 +184,6 @@ export function LayoutProvider(props: LayoutProviderProps) {
       draft.layoutVersion++;
     }));
 
-    if (DEBUG_ACTION_TIMING) {
-      const label = ptyId ? 'NEW_PANE_WITH_PTY' : 'NEW_PANE';
-      console.log(`[LAYOUT] ${label} produce: ${(performance.now() - start).toFixed(2)}ms`);
-    }
-
     return newPaneId;
   };
 
@@ -255,9 +207,6 @@ export function LayoutProvider(props: LayoutProviderProps) {
     const batchableActions = ['CLOSE_PANE', 'CLOSE_PANE_BY_ID'];
 
     if (batchableActions.includes(action.type)) {
-      if (DEBUG_ACTION_TIMING) {
-        actionStartTimes.set(action.type, performance.now());
-      }
       pendingActions.push(action);
       if (!flushScheduled) {
         flushScheduled = true;

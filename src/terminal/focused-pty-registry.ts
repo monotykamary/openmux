@@ -61,7 +61,7 @@ export function triggerClipboardPaste(): boolean {
 }
 
 /**
- * Get the currently focused PTY ID (for debugging/testing).
+ * Get the currently focused PTY ID (for testing/inspection).
  */
 export function getFocusedPtyId(): string | null {
   return focusedPtyId;

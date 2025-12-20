@@ -61,7 +61,7 @@ async function main() {
       exitSignals: ['SIGTERM', 'SIGQUIT', 'SIGABRT'], // No SIGINT - let Ctrl+C go to PTY
       useMouse: true, // Enable mouse tracking to properly consume mouse escape sequences
       enableMouseMovement: true, // Track mouse movement for drag and hover events
-      useConsole: true, // Enable debug console (toggle with prefix + `)
+      useConsole: true, // Enable console (toggle with prefix + `)
       consoleOptions: {
         position: ConsolePosition.BOTTOM,
         sizePercent: 30,

@@ -64,16 +64,8 @@ export async function restartWorker(
 
   // Notify affected sessions - they need to be recreated
   // The PTY is still running, so new terminal session will resume output
-  for (const { id, state } of affectedSessions) {
+  for (const { id } of affectedSessions) {
     // Remove session from tracking (will be recreated by TerminalContext)
     sessionToState.delete(id);
-
-    // Notify via update callback with a special recovery message
-    // The terminal will appear cleared but will resume receiving output
-    if (state.updateCallback) {
-      console.log(`Session ${id} needs recovery after worker restart`);
-    }
   }
-
-  console.log(`Worker ${workerIndex} restarted, ${affectedSessions.length} sessions affected`);
 }

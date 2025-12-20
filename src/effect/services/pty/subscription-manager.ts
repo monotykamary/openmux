@@ -92,7 +92,7 @@ export const makeSubscriptionRegistry = <T>() =>
     }
 
     /**
-     * Get current subscriber count (for debugging/monitoring).
+     * Get current subscriber count (for testing/monitoring).
      */
     const getSubscriberCount = () =>
       Effect.sync(() => subscriptions.size)
