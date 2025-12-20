@@ -5,11 +5,14 @@
 
 export {
   getCellColors,
+  packRowForBatch,
+  drawPackedRowBatch,
   renderRow,
   PACKED_CELL_BYTE_STRIDE,
   type CellRenderingDeps,
   type CellRenderingOptions,
   type PackedRowBuffer,
+  type PackedRowBatchBuffer,
   type RowTextCache,
   type RowRenderCache,
 } from './cell-rendering'

@@ -29,7 +29,10 @@ import {
   fetchRowsForRendering,
   calculatePrefetchRequest,
   updateTransitionCache,
+  packRowForBatch,
+  drawPackedRowBatch,
   type PackedRowBuffer,
+  type PackedRowBatchBuffer,
   type RowTextCache,
   type RowRenderCache,
   type MissingRowBuffer,
@@ -94,6 +97,7 @@ export function TerminalView(props: TerminalViewProps) {
   let frameBufferWidth = 0;
   let frameBufferHeight = 0;
   let packedRowBuffer: PackedRowBuffer | null = null;
+  let packedRowBatchBuffer: PackedRowBatchBuffer | null = null;
   let rowTextCache: RowTextCache | null = null;
   let rowRenderCache: RowRenderCache | null = null;
   let missingRowsBuffer: MissingRowBuffer | null = null;
@@ -183,6 +187,32 @@ export function TerminalView(props: TerminalViewProps) {
     }
   };
 
+  const ensurePackedRowBatchBuffer = (cols: number, rows: number) => {
+    if (cols <= 0 || rows <= 0) return;
+    if (
+      !packedRowBatchBuffer ||
+      packedRowBatchBuffer.capacityCols < cols ||
+      packedRowBatchBuffer.capacityRows < rows
+    ) {
+      const cellCount = cols * rows;
+      const buffer = new ArrayBuffer(cellCount * PACKED_CELL_BYTE_STRIDE);
+      packedRowBatchBuffer = {
+        buffer,
+        floats: new Float32Array(buffer),
+        uints: new Uint32Array(buffer),
+        capacityCols: cols,
+        capacityRows: rows,
+        overlayX: new Int32Array(cellCount),
+        overlayY: new Int32Array(cellCount),
+        overlayCodepoint: new Uint32Array(cellCount),
+        overlayAttributes: new Uint8Array(cellCount),
+        overlayFg: new Array(cellCount).fill(null),
+        overlayBg: new Array(cellCount).fill(null),
+        overlayCount: 0,
+      };
+    }
+  };
+
   const ensureRowTextCache = (rowCount: number) => {
     if (rowCount <= 0) {
       rowTextCache = null;
@@ -267,6 +297,7 @@ export function TerminalView(props: TerminalViewProps) {
     frameBuffer?.destroy();
     frameBuffer = null;
     packedRowBuffer = null;
+    packedRowBatchBuffer = null;
     rowTextCache = null;
     rowRenderCache = null;
     missingRowsBuffer = null;
@@ -516,12 +547,15 @@ export function TerminalView(props: TerminalViewProps) {
     }
     ensureRowTextCache(rows);
     ensurePackedRowBuffer(cols);
+    ensurePackedRowBatchBuffer(cols, rows);
     rowRenderCache = packedRowBuffer && rowTextCache
       ? { packedRow: packedRowBuffer, rowText: rowTextCache }
       : null;
 
     if (lastIsFocused !== isFocused) {
-      dirtyAll = true;
+      if (isAtBottom && state.cursor.visible) {
+        markRowDirty(state.cursor.y);
+      }
       lastIsFocused = isFocused;
     }
     // Use top-left cell bg as fallback to paint unused area; default to black
@@ -616,6 +650,10 @@ export function TerminalView(props: TerminalViewProps) {
     };
 
     const useFullRender = dirtyAll || !dirtyRows;
+    const allowPackedBatch = !!packedRowBatchBuffer && !!rowTextCache;
+    const cursorRow = (isAtBottom && isFocused && state.cursor.visible) ? state.cursor.y : -1;
+    const needsRowHighlightCheck = hasSelection || hasSearch;
+    const absoluteRowBase = scrollbackLength - viewportOffset;
 
     const showScrollbar = !isAtBottom && scrollbackLength > 0;
     let scrollbarX = 0;
@@ -631,12 +669,80 @@ export function TerminalView(props: TerminalViewProps) {
       contentCol = cols - 1;
     }
 
+    let batchStart = 0;
+    let batchRowCount = 0;
+    const flushPackedBatch = () => {
+      if (!packedRowBatchBuffer || batchRowCount === 0) return;
+      drawPackedRowBatch(
+        renderTarget,
+        packedRowBatchBuffer,
+        cols,
+        renderOffsetX,
+        renderOffsetY,
+        batchStart,
+        batchRowCount
+      );
+      batchRowCount = 0;
+    };
+
     // Render rows (partial when safe)
     for (let y = 0; y < rows; y++) {
       if (!useFullRender && dirtyRows && dirtyRows[y] === 0) {
+        flushPackedBatch();
         continue;
       }
+
       const row = rowCache[y];
+      const cachedText = allowPackedBatch && rowTextCache ? rowTextCache[y] : null;
+      let rowHasHighlights = false;
+      if (allowPackedBatch && row && cachedText === null) {
+        if (y === cursorRow) {
+          rowHasHighlights = true;
+        } else if (needsRowHighlightCheck) {
+          const absoluteY = absoluteRowBase + y;
+          if (hasSelection) {
+            const selectedRange = getSelectedColumnsForRow(ptyId, absoluteY, cols);
+            if (selectedRange) {
+              rowHasHighlights = true;
+            }
+          }
+          if (!rowHasHighlights && hasSearch) {
+            const matchRanges = getSearchMatchRanges(ptyId, absoluteY);
+            if (matchRanges && matchRanges.length > 0) {
+              rowHasHighlights = true;
+            } else if (currentMatch && currentMatch.lineIndex === absoluteY && currentMatch.startCol >= 0) {
+              rowHasHighlights = true;
+            }
+          }
+        }
+      }
+      const canBatchRow = allowPackedBatch && row !== null && cachedText === null && !rowHasHighlights;
+
+      if (canBatchRow && packedRowBatchBuffer && rowTextCache) {
+        if (batchRowCount === 0) {
+          batchStart = y;
+          packedRowBatchBuffer.overlayCount = 0;
+        }
+        const packedOk = packRowForBatch(
+          row,
+          y,
+          cols,
+          fallbackFg,
+          fallbackBg,
+          rowTextCache,
+          packedRowBatchBuffer,
+          batchRowCount
+        );
+        if (packedOk) {
+          batchRowCount++;
+          if (!useFullRender && dirtyRows) {
+            dirtyRows[y] = 0;
+          }
+          continue;
+        }
+      }
+
+      flushPackedBatch();
       renderRow(
         renderTarget,
         row,
@@ -650,7 +756,16 @@ export function TerminalView(props: TerminalViewProps) {
         fallbackBg,
         rowRenderCache ?? undefined
       );
-      if (showScrollbar) {
+      if (!useFullRender && dirtyRows) {
+        dirtyRows[y] = 0;
+      }
+    }
+
+    flushPackedBatch();
+
+    if (showScrollbar) {
+      for (let y = 0; y < rows; y++) {
+        const row = rowCache[y];
         const isThumb = y >= thumbPosition && y < thumbPosition + thumbHeight;
         const contentCell = contentCol >= 0 ? row?.[contentCol] ?? null : null;
         const underlyingChar = contentCell?.char || ' ';
@@ -678,9 +793,6 @@ export function TerminalView(props: TerminalViewProps) {
             0
           );
         }
-      }
-      if (!useFullRender && dirtyRows) {
-        dirtyRows[y] = 0;
       }
     }
 
