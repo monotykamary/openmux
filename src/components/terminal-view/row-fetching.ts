@@ -30,6 +30,8 @@ export function fetchRowsForRendering(
   const { viewportOffset, scrollbackLength, rows } = options
 
   const currentEmulator = viewportOffset > 0 ? emulator : null
+  const hasTransitionCache = transitionCache.size > 0
+  const baseY = scrollbackLength - viewportOffset
   const cache = rowCache ?? []
   if (cache.length !== rows) {
     cache.length = rows
@@ -45,7 +47,7 @@ export function fetchRowsForRendering(
       cache[y] = state.cells[y] ?? null
     } else {
       // Scrolled back: calculate which row to fetch
-      const absoluteY = scrollbackLength - viewportOffset + y
+      const absoluteY = baseY + y
 
       if (absoluteY < 0) {
         // Before scrollback
@@ -54,7 +56,7 @@ export function fetchRowsForRendering(
         // In scrollback buffer - try emulator cache first, then transition cache
         let line = currentEmulator?.getScrollbackLine(absoluteY) ?? null
         // Fall back to transition cache for lines that just moved from live terminal
-        if (line === null) {
+        if (line === null && hasTransitionCache) {
           line = transitionCache.get(absoluteY) ?? null
         }
         cache[y] = line
