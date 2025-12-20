@@ -234,62 +234,75 @@ export function renderRow(
       x < activeMatch.endCol
     const isCurrent = currentMatchStart >= 0 && x >= currentMatchStart && x < currentMatchEnd
 
-    // Determine cell colors
-    let fgR = cell.fg.r, fgG = cell.fg.g, fgB = cell.fg.b
-    let bgR = cell.bg.r, bgG = cell.bg.g, bgB = cell.bg.b
-
-    // Apply dim effect
-    if (cell.dim) {
-      fgR = Math.floor(fgR * 0.5)
-      fgG = Math.floor(fgG * 0.5)
-      fgB = Math.floor(fgB * 0.5)
-    }
-
-    // Apply inverse (avoid array destructuring for performance)
-    if (cell.inverse) {
-      const tmpR = fgR; fgR = bgR; bgR = tmpR
-      const tmpG = fgG; fgG = bgG; bgG = tmpG
-      const tmpB = fgB; fgB = bgB; bgB = tmpB
-    }
-
-    const fgKey = (fgR << 16) | (fgG << 8) | fgB
-    const bgKey = (bgR << 16) | (bgG << 8) | bgB
     let fg: RGBA
     let bg: RGBA
 
-    if (fgKey === lastFgKey) {
-      fg = lastFg
+    if (!isCursor && (isSelected || isCurrent || isMatch)) {
+      if (isSelected) {
+        fg = SELECTION_FG
+        bg = SELECTION_BG
+      } else if (isCurrent) {
+        fg = SEARCH_CURRENT_FG
+        bg = SEARCH_CURRENT_BG
+      } else {
+        fg = SEARCH_MATCH_FG
+        bg = SEARCH_MATCH_BG
+      }
     } else {
-      fg = getCachedRGBA(fgR, fgG, fgB)
-      lastFgKey = fgKey
-      lastFg = fg
-    }
+      // Determine cell colors
+      let fgR = cell.fg.r, fgG = cell.fg.g, fgB = cell.fg.b
+      let bgR = cell.bg.r, bgG = cell.bg.g, bgB = cell.bg.b
 
-    if (bgKey === lastBgKey) {
-      bg = lastBg
-    } else {
-      bg = getCachedRGBA(bgR, bgG, bgB)
-      lastBgKey = bgKey
-      lastBg = bg
-    }
+      // Apply dim effect
+      if (cell.dim) {
+        fgR = Math.floor(fgR * 0.5)
+        fgG = Math.floor(fgG * 0.5)
+        fgB = Math.floor(fgB * 0.5)
+      }
 
-    // Apply styling in priority order: cursor > selection > current match > other matches
-    if (isCursor) {
-      // Cursor styling (highest priority when visible)
-      fg = bg ?? BLACK
-      bg = WHITE
-    } else if (isSelected) {
-      // Selection styling
-      fg = SELECTION_FG
-      bg = SELECTION_BG
-    } else if (isCurrent) {
-      // Current search match (bright yellow)
-      fg = SEARCH_CURRENT_FG
-      bg = SEARCH_CURRENT_BG
-    } else if (isMatch) {
-      // Other search matches (orange)
-      fg = SEARCH_MATCH_FG
-      bg = SEARCH_MATCH_BG
+      // Apply inverse (avoid array destructuring for performance)
+      if (cell.inverse) {
+        const tmpR = fgR; fgR = bgR; bgR = tmpR
+        const tmpG = fgG; fgG = bgG; bgG = tmpG
+        const tmpB = fgB; fgB = bgB; bgB = tmpB
+      }
+
+      const fgKey = (fgR << 16) | (fgG << 8) | fgB
+      const bgKey = (bgR << 16) | (bgG << 8) | bgB
+
+      if (fgKey === lastFgKey) {
+        fg = lastFg
+      } else {
+        fg = getCachedRGBA(fgR, fgG, fgB)
+        lastFgKey = fgKey
+        lastFg = fg
+      }
+
+      if (bgKey === lastBgKey) {
+        bg = lastBg
+      } else {
+        bg = getCachedRGBA(bgR, bgG, bgB)
+        lastBgKey = bgKey
+        lastBg = bg
+      }
+
+      if (isCursor) {
+        // Cursor styling (highest priority when visible)
+        fg = bg ?? BLACK
+        bg = WHITE
+      } else if (isSelected) {
+        // Selection styling
+        fg = SELECTION_FG
+        bg = SELECTION_BG
+      } else if (isCurrent) {
+        // Current search match (bright yellow)
+        fg = SEARCH_CURRENT_FG
+        bg = SEARCH_CURRENT_BG
+      } else if (isMatch) {
+        // Other search matches (orange)
+        fg = SEARCH_MATCH_FG
+        bg = SEARCH_MATCH_BG
+      }
     }
 
     // Calculate attributes
