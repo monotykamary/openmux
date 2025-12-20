@@ -118,7 +118,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
   let actionStartTimes: Map<string, number> = new Map();
 
   // Debug timing flag - set to true to see action timing
-  const DEBUG_ACTION_TIMING = true;
+  const DEBUG_ACTION_TIMING = false;
 
   // Flush pending actions in a batch
   const flushActions = () => {

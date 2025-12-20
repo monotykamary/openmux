@@ -47,7 +47,7 @@ export function TerminalView(props: TerminalViewProps) {
   const renderer = useRenderer();
   // Get selection state - keep full context to access selectionVersion reactively
   const selection = useSelection();
-  const { isCellSelected, getSelection } = selection;
+  const { isCellSelected, getSelectedColumnsForRow, getSelection } = selection;
   // Get search state - keep full context to access searchVersion reactively
   const search = useSearch();
   const { isSearchMatch, isCurrentMatch } = search;
@@ -294,6 +294,7 @@ export function TerminalView(props: TerminalViewProps) {
     // Create rendering dependencies
     const renderDeps = {
       isCellSelected,
+      getSelectedColumnsForRow,
       isSearchMatch,
       isCurrentMatch,
       getSelection,

@@ -21,10 +21,12 @@ import {
   type SelectionPoint,
   type SelectionRange,
   type LineGetter,
+  type SelectedColumnRange,
   toAbsoluteY,
   normalizeSelection,
   calculateBounds,
   isCellInRange,
+  getSelectedColumnsForRow,
   extractSelectedText,
 } from '../core/coordinates';
 
@@ -103,6 +105,13 @@ interface SelectionContextValue {
    * Check if a cell is selected
    */
   isCellSelected(ptyId: string, x: number, absoluteY: number): boolean;
+
+  /**
+   * Get selected column range for a row (O(1) operation)
+   * More efficient than per-cell isCellSelected when rendering entire rows
+   * Returns null if row is not in selection
+   */
+  getSelectedColumnsForRow(ptyId: string, absoluteY: number, rowWidth: number): SelectedColumnRange | null;
 
   /**
    * Get the current selection for a pane
@@ -299,6 +308,24 @@ export function SelectionProvider(props: SelectionProviderProps) {
     return isCellInRange(x, absoluteY, selection.normalizedRange);
   };
 
+  // Get selected columns for a row (O(1) operation for row-level checks)
+  // More efficient than per-cell isCellSelected when rendering entire rows
+  const getSelectedColumnsForRowImpl = (
+    ptyId: string,
+    absoluteY: number,
+    rowWidth: number
+  ): SelectedColumnRange | null => {
+    const selection = selections.get(ptyId);
+    if (!selection?.normalizedRange || !selection.bounds) return null;
+
+    // Fast O(1) spatial rejection using bounding box
+    const { bounds } = selection;
+    if (absoluteY < bounds.minY || absoluteY > bounds.maxY) return null;
+
+    // Get column range for this row
+    return getSelectedColumnsForRow(absoluteY, selection.normalizedRange, rowWidth);
+  };
+
   // Get selection for a pane
   const getSelection = (ptyId: string): PaneSelection | undefined => {
     return selections.get(ptyId);
@@ -311,6 +338,7 @@ export function SelectionProvider(props: SelectionProviderProps) {
     clearSelection,
     clearAllSelections,
     isCellSelected,
+    getSelectedColumnsForRow: getSelectedColumnsForRowImpl,
     getSelection,
     get selectionVersion() { return selectionVersion(); },
     get copyNotification() { return copyNotification(); },

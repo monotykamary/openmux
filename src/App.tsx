@@ -311,18 +311,29 @@ function AppContent() {
           }
         };
 
-        // Process each pane in a separate macrotask to avoid blocking animations
+        // Collect panes that need PTY creation (synchronous guard)
+        const panesToProcess: typeof panes[number][] = [];
         for (const pane of panes) {
           // SYNCHRONOUS guard: check and add to pendingPtyCreation Set IMMEDIATELY
           if (pendingPtyCreation.has(pane.id)) {
             continue;
           }
           pendingPtyCreation.add(pane.id);
+          panesToProcess.push(pane);
+        }
 
-          // Defer to next macrotask - allows animations to continue
+        // Single macrotask to process ALL panes - reduces scheduling overhead
+        if (panesToProcess.length > 0) {
           setTimeout(() => {
-            const success = createPtyForPane(pane);
-            if (!success) {
+            let anyFailed = false;
+            for (const pane of panesToProcess) {
+              const success = createPtyForPane(pane);
+              if (!success) {
+                anyFailed = true;
+              }
+            }
+            // Single retry trigger if any failed
+            if (anyFailed) {
               setTimeout(() => setPtyRetryCounter(c => c + 1), 100);
             }
           }, 0);

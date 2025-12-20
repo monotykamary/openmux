@@ -19,8 +19,14 @@ import {
   SEARCH_CURRENT_FG,
 } from '../../terminal/rendering'
 
+export interface SelectedColumnRange {
+  start: number
+  end: number
+}
+
 export interface CellRenderingDeps {
   isCellSelected: (ptyId: string, x: number, y: number) => boolean
+  getSelectedColumnsForRow: (ptyId: string, absoluteY: number, rowWidth: number) => SelectedColumnRange | null
   isSearchMatch: (ptyId: string, x: number, y: number) => boolean
   isCurrentMatch: (ptyId: string, x: number, y: number) => boolean
   getSelection: (ptyId: string) => { normalizedRange: unknown } | undefined
@@ -129,10 +135,13 @@ export function renderRow(
   fallbackFg: RGBA,
   fallbackBg: RGBA
 ): void {
-  const { scrollbackLength, viewportOffset } = options
+  const { scrollbackLength, viewportOffset, ptyId, hasSelection, hasSearch, isAtBottom, isFocused, cursorX, cursorY, cursorVisible } = options
 
   // Calculate absolute Y for selection check (accounts for scrollback)
   const absoluteY = scrollbackLength - viewportOffset + rowIndex
+
+  // Get selected column range for this row ONCE (O(1) instead of O(cols) function calls)
+  const selectedRange = hasSelection ? deps.getSelectedColumnsForRow(ptyId, absoluteY, cols) : null
 
   // Track the previous cell to detect spacer cells after wide characters
   let prevCellWasWide = false
@@ -158,14 +167,63 @@ export function renderRow(
       continue
     }
 
-    const { fg, bg, attributes } = getCellColors(
-      cell,
-      x,
-      absoluteY,
-      rowIndex,
-      options,
-      deps
-    )
+    // Fast in-range check for selection (simple comparison vs function call)
+    const isSelected = selectedRange !== null && x >= selectedRange.start && x <= selectedRange.end
+
+    // Only show cursor when at bottom (not scrolled back) and focused
+    const isCursor = isAtBottom && isFocused && cursorVisible &&
+                     cursorY === rowIndex && cursorX === x
+
+    // Check if cell is a search match (skip function calls if no active search)
+    const isMatch = hasSearch && deps.isSearchMatch(ptyId, x, absoluteY)
+    const isCurrent = hasSearch && deps.isCurrentMatch(ptyId, x, absoluteY)
+
+    // Determine cell colors
+    let fgR = cell.fg.r, fgG = cell.fg.g, fgB = cell.fg.b
+    let bgR = cell.bg.r, bgG = cell.bg.g, bgB = cell.bg.b
+
+    // Apply dim effect
+    if (cell.dim) {
+      fgR = Math.floor(fgR * 0.5)
+      fgG = Math.floor(fgG * 0.5)
+      fgB = Math.floor(fgB * 0.5)
+    }
+
+    // Apply inverse (avoid array destructuring for performance)
+    if (cell.inverse) {
+      const tmpR = fgR; fgR = bgR; bgR = tmpR
+      const tmpG = fgG; fgG = bgG; bgG = tmpG
+      const tmpB = fgB; fgB = bgB; bgB = tmpB
+    }
+
+    let fg = getCachedRGBA(fgR, fgG, fgB)
+    let bg = getCachedRGBA(bgR, bgG, bgB)
+
+    // Apply styling in priority order: cursor > selection > current match > other matches
+    if (isCursor) {
+      // Cursor styling (highest priority when visible)
+      fg = bg ?? BLACK
+      bg = WHITE
+    } else if (isSelected) {
+      // Selection styling
+      fg = SELECTION_FG
+      bg = SELECTION_BG
+    } else if (isCurrent) {
+      // Current search match (bright yellow)
+      fg = SEARCH_CURRENT_FG
+      bg = SEARCH_CURRENT_BG
+    } else if (isMatch) {
+      // Other search matches (orange)
+      fg = SEARCH_MATCH_FG
+      bg = SEARCH_MATCH_BG
+    }
+
+    // Calculate attributes
+    let attributes = 0
+    if (cell.bold) attributes |= ATTR_BOLD
+    if (cell.italic) attributes |= ATTR_ITALIC
+    if (cell.underline) attributes |= ATTR_UNDERLINE
+    if (cell.strikethrough) attributes |= ATTR_STRIKETHROUGH
 
     // Write cell directly to buffer (with offset for pane position)
     // Use fallback space if char is empty to ensure cell is always overwritten

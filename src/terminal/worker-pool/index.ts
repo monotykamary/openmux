@@ -65,7 +65,6 @@ export class EmulatorWorkerPool {
   private sessionToState = new Map<string, SessionState>();
   private pendingRequests = new Map<number, PendingRequest<unknown>>();
   private nextRequestId = 0;
-  private nextWorkerIndex = 0;
   private initialized = false;
 
   // Message batching for reduced main thread blocking
@@ -157,12 +156,37 @@ export class EmulatorWorkerPool {
       colors,
       this.workers,
       this.sessionToState,
-      () => {
-        const idx = this.nextWorkerIndex;
-        this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
-        return idx;
-      }
+      () => this.selectLeastLoadedWorker()
     );
+  }
+
+  /**
+   * Select the worker with the fewest active sessions (load-aware selection)
+   * Falls back to round-robin if all workers have equal load
+   */
+  private selectLeastLoadedWorker(): number {
+    const workerCount = this.workers.length;
+    if (workerCount === 0) return 0;
+
+    // Count sessions per worker
+    const sessionCounts = new Array<number>(workerCount).fill(0);
+    for (const state of this.sessionToState.values()) {
+      if (state.workerIndex < workerCount) {
+        sessionCounts[state.workerIndex]++;
+      }
+    }
+
+    // Find worker with minimum sessions
+    let minIndex = 0;
+    let minCount = sessionCounts[0];
+    for (let i = 1; i < workerCount; i++) {
+      if (sessionCounts[i] < minCount) {
+        minCount = sessionCounts[i];
+        minIndex = i;
+      }
+    }
+
+    return minIndex;
   }
 
   async waitForSession(sessionId: string): Promise<void> {

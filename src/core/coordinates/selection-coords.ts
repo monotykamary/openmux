@@ -157,6 +157,87 @@ export function isCellInRange(
 }
 
 // =============================================================================
+// Row-Level Selection (Performance Optimization)
+// =============================================================================
+
+/**
+ * Result of getSelectedColumnsForRow - a range of selected columns
+ * Returns null if no selection, or {start, end} inclusive range
+ */
+export interface SelectedColumnRange {
+  start: number;  // First selected column (inclusive)
+  end: number;    // Last selected column (inclusive)
+}
+
+/**
+ * Get the range of selected columns for a given row (O(1) operation)
+ * Returns null if the row is not in the selection range
+ *
+ * This is more efficient than calling isCellInRange per-cell because:
+ * 1. Single bounds check per row instead of per cell
+ * 2. Returns column range for simple in-range checks during rendering
+ */
+export function getSelectedColumnsForRow(
+  absoluteY: number,
+  range: SelectionRange,
+  rowWidth: number
+): SelectedColumnRange | null {
+  const { startX, startY, endX, endY, focusAtEnd } = range;
+
+  // Outside vertical bounds
+  if (absoluteY < startY || absoluteY > endY) {
+    return null;
+  }
+
+  const isFirstRow = absoluteY === startY;
+  const isLastRow = absoluteY === endY;
+  const isSingleLine = startY === endY;
+
+  let colStart: number;
+  let colEnd: number;
+
+  if (isSingleLine) {
+    // Single line: exclude focus cell
+    if (focusAtEnd) {
+      colStart = startX;
+      colEnd = endX - 1;  // Exclude focus at end
+    } else {
+      colStart = startX + 1;  // Exclude focus at start
+      colEnd = endX;
+    }
+  } else if (isFirstRow) {
+    // First row of multi-line
+    if (!focusAtEnd) {
+      // Backward: focus at start, exclude it
+      colStart = startX + 1;
+    } else {
+      colStart = startX;
+    }
+    colEnd = rowWidth - 1;  // To end of row
+  } else if (isLastRow) {
+    // Last row of multi-line
+    colStart = 0;
+    if (focusAtEnd) {
+      // Forward: focus at end, exclude it
+      colEnd = endX - 1;
+    } else {
+      colEnd = endX;
+    }
+  } else {
+    // Middle row: entire line is selected
+    colStart = 0;
+    colEnd = rowWidth - 1;
+  }
+
+  // Invalid range (can happen when focus == anchor)
+  if (colStart > colEnd) {
+    return null;
+  }
+
+  return { start: colStart, end: colEnd };
+}
+
+// =============================================================================
 // Text Extraction
 // =============================================================================
 
