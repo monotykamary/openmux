@@ -66,6 +66,9 @@ export function TerminalView(props: TerminalViewProps) {
   let lastRenderCols = 0;
   let lastRenderWidth = 0;
   let lastRenderHeight = 0;
+  let lastSelectionRef: unknown = null;
+  let lastSearchRef: unknown = null;
+  let lastSearchPtyId: string | null = null;
   let paddingWasActive = false;
   let lastPaddingCols = 0;
   let lastPaddingRows = 0;
@@ -305,6 +308,9 @@ export function TerminalView(props: TerminalViewProps) {
           lastPaddingWidth = 0;
           lastPaddingHeight = 0;
           lastPaddingBg = null;
+          lastSelectionRef = null;
+          lastSearchRef = null;
+          lastSearchPtyId = null;
         });
       },
       { defer: false }
@@ -507,7 +513,25 @@ export function TerminalView(props: TerminalViewProps) {
   createEffect(
     on(
       [() => selection.selectionVersion, () => search.searchVersion],
-      () => renderer.requestRender()
+      () => {
+        const selectionRef = getSelection(props.ptyId) ?? null;
+        const searchState = search.searchState;
+        const searchPtyId = searchState?.ptyId ?? null;
+        const affectsSearch = searchPtyId === props.ptyId || lastSearchPtyId === props.ptyId;
+
+        const selectionChanged = selectionRef !== lastSelectionRef;
+        const searchChanged = affectsSearch && searchState !== lastSearchRef;
+
+        if (selectionChanged || searchChanged) {
+          renderer.requestRender();
+        }
+
+        lastSelectionRef = selectionRef;
+        if (affectsSearch) {
+          lastSearchRef = searchState;
+        }
+        lastSearchPtyId = searchPtyId;
+      }
     )
   );
 
