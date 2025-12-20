@@ -16,6 +16,17 @@ import { stripProblematicOscSequences } from './osc-stripping';
 
 // Threshold for yielding before large writes (64KB)
 const LARGE_WRITE_THRESHOLD = 64 * 1024;
+const textDecoder = new TextDecoder();
+const textEncoder = new TextEncoder();
+
+function containsOscStart(bytes: Uint8Array): boolean {
+  for (let i = 0; i + 1 < bytes.length; i++) {
+    if (bytes[i] === 0x1b && bytes[i + 1] === 0x5d) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Handle session initialization
@@ -120,24 +131,35 @@ export async function handleWrite(
   }
 
   try {
-    // Parse for title changes (needs to see full data including OSC 0/1/2)
-    const text = new TextDecoder().decode(data);
-    session.titleParser.processData(text);
+    const bytes = new Uint8Array(data);
+    const hasOscStart = containsOscStart(bytes);
 
-    // Strip problematic OSC sequences before sending to ghostty-web to prevent flash
-    const strippedText = stripProblematicOscSequences(text);
-
-    // Write to terminal (with title sequences removed)
-    if (strippedText.length > 0) {
-      const encoder = new TextEncoder();
-      const encoded = encoder.encode(strippedText);
-
-      // Yield before large writes to allow GC and prevent memory pressure
-      if (encoded.length > LARGE_WRITE_THRESHOLD) {
+    // Fast path: no OSC sequences and no pending OSC parse state.
+    if (!hasOscStart && !session.titleParser.isInOscSequence()) {
+      if (bytes.length > LARGE_WRITE_THRESHOLD) {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
+      session.terminal.write(bytes);
+    } else {
+      // Parse for title changes (needs to see full data including OSC 0/1/2)
+      const text = textDecoder.decode(bytes);
+      session.titleParser.processData(text);
 
-      session.terminal.write(encoded);
+      // Strip problematic OSC sequences before sending to ghostty-web to prevent flash
+      let outputBytes: Uint8Array | null = null;
+      const strippedText = stripProblematicOscSequences(text);
+      if (strippedText.length > 0) {
+        outputBytes = strippedText === text ? bytes : textEncoder.encode(strippedText);
+      }
+
+      if (outputBytes && outputBytes.length > 0) {
+        // Yield before large writes to allow GC and prevent memory pressure
+        if (outputBytes.length > LARGE_WRITE_THRESHOLD) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+
+        session.terminal.write(outputBytes);
+      }
     }
 
     // Check for mode changes

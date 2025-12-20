@@ -5,6 +5,8 @@
 import type { WorkerInbound } from '../emulator-interface';
 import type { SessionState } from './types';
 
+const textEncoder = new TextEncoder();
+
 /**
  * Write data to a session
  */
@@ -20,8 +22,10 @@ export function write(
   // Convert to ArrayBuffer for transfer
   let buffer: ArrayBuffer;
   if (typeof data === 'string') {
-    const encoded = new TextEncoder().encode(data);
-    buffer = (encoded.buffer as ArrayBuffer).slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength);
+    const encoded = textEncoder.encode(data);
+    buffer = encoded.buffer as ArrayBuffer;
+  } else if (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength) {
+    buffer = data.buffer as ArrayBuffer;
   } else {
     buffer = (data.buffer as ArrayBuffer).slice(data.byteOffset, data.byteOffset + data.byteLength);
   }

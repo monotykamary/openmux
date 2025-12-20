@@ -107,5 +107,6 @@ export function createTitleParser(options: TitleParserOptions) {
 
   return {
     processData,
+    isInOscSequence: () => inOscSequence,
   };
 }

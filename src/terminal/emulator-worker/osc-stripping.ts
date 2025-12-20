@@ -4,6 +4,20 @@
  * Strip OSC sequences that can cause screen flash/flicker when processed by ghostty-web.
  */
 
+const ESC = '\x1b';
+const BEL = '\x07';
+const DIGIT_ZERO = 48;
+const DIGIT_NINE = 57;
+const OSC_PREFIX = `${ESC}]`;
+
+// OSC codes to strip - these can cause flash/flicker
+const STRIP_CODES = new Set([
+  0, 1, 2,    // Title sequences (handled by title parser)
+  7,          // Working directory (CWD notification)
+  10, 11, 12, // Foreground/background/cursor color (SET commands)
+  22, 23,     // Window icon / title stack operations
+]);
+
 /**
  * Strip OSC sequences that can cause screen flash/flicker when processed by ghostty-web.
  *
@@ -19,71 +33,70 @@
  * Format: ESC]code;params BEL  or  ESC]code;params ESC\
  */
 export function stripProblematicOscSequences(text: string): string {
-  const ESC = '\x1b';
-  const BEL = '\x07';
+  if (text.indexOf(OSC_PREFIX) === -1) {
+    return text;
+  }
 
-  // OSC codes to strip - these can cause flash/flicker
-  const stripCodes = new Set([
-    0, 1, 2,    // Title sequences (handled by title parser)
-    7,          // Working directory (CWD notification)
-    10, 11, 12, // Foreground/background/cursor color (SET commands)
-    22, 23,     // Window icon / title stack operations
-  ]);
-
-  let result = '';
+  const len = text.length;
   let i = 0;
+  let lastIndex = 0;
+  const parts: string[] = [];
 
-  while (i < text.length) {
+  while (i < len) {
     // Check for OSC start (ESC])
-    if (text[i] === ESC && i + 1 < text.length && text[i + 1] === ']') {
+    if (text[i] === ESC && i + 1 < len && text[i + 1] === ']') {
       let pos = i + 2;
-      let codeStr = '';
+      let code = 0;
+      let hasCode = false;
 
       // Parse the OSC code number
-      while (pos < text.length && /\d/.test(text[pos])) {
-        codeStr += text[pos];
-        pos++;
+      while (pos < len) {
+        const codePoint = text.charCodeAt(pos);
+        if (codePoint >= DIGIT_ZERO && codePoint <= DIGIT_NINE) {
+          hasCode = true;
+          code = code * 10 + (codePoint - DIGIT_ZERO);
+          pos++;
+          continue;
+        }
+        break;
       }
 
-      const code = parseInt(codeStr, 10);
-
       // Check if this is a code we should strip
-      if (codeStr.length > 0 && stripCodes.has(code)) {
+      if (hasCode && STRIP_CODES.has(code)) {
         // For OSC 10/11/12, only strip if it's a SET (not a query with ?)
-        // Query format: OSC 10;? or OSC 10;?ST - these are handled by passthrough
-        // Set format: OSC 10;colorspec - these cause flash
         const isColorCode = code === 10 || code === 11 || code === 12;
 
         if (isColorCode) {
-          // Check if next char after code is ; then ?
-          // If so, it's a query - don't strip (passthrough handles it)
-          if (pos < text.length && text[pos] === ';') {
-            if (pos + 1 < text.length && text[pos + 1] === '?') {
-              // This is a query, don't strip - include the character and continue
-              result += text[i];
-              i++;
-              continue;
-            }
+          // Query format: OSC 10;? or OSC 10;?ST - handled by passthrough
+          if (pos < len && text[pos] === ';' && pos + 1 < len && text[pos + 1] === '?') {
+            i++;
+            continue;
           }
         }
 
         // Find the terminator (BEL or ST) and skip entire sequence
-        while (pos < text.length) {
-          if (text[pos] === BEL) {
-            // Found BEL terminator, skip entire sequence
-            i = pos + 1;
+        let term = pos;
+        let foundTerminator = false;
+        while (term < len) {
+          if (text[term] === BEL) {
+            foundTerminator = true;
+            term += 1;
             break;
           }
-          if (text[pos] === ESC && pos + 1 < text.length && text[pos + 1] === '\\') {
-            // Found ST terminator, skip entire sequence
-            i = pos + 2;
+          if (text[term] === ESC && term + 1 < len && text[term + 1] === '\\') {
+            foundTerminator = true;
+            term += 2;
             break;
           }
-          pos++;
+          term++;
         }
 
-        // If we found and skipped the sequence, continue
-        if (i > pos - 1) {
+        if (foundTerminator) {
+          if (i > lastIndex) {
+            parts.push(text.slice(lastIndex, i));
+          }
+          i = term;
+          lastIndex = i;
           continue;
         }
         // If no terminator found, include the partial sequence
@@ -91,10 +104,15 @@ export function stripProblematicOscSequences(text: string): string {
       }
     }
 
-    // Not a stripped sequence, include the character
-    result += text[i];
     i++;
   }
 
-  return result;
+  if (lastIndex === 0) {
+    return text;
+  }
+  if (lastIndex < len) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts.join('');
 }
