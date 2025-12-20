@@ -14,6 +14,7 @@ import type {
   TerminalState,
   TerminalScrollState,
   DirtyTerminalUpdate,
+  PackedRowUpdate,
 } from '../core/types';
 import type { TerminalColors } from './terminal-colors';
 
@@ -182,6 +183,8 @@ export interface SerializedDirtyUpdate {
   dirtyRowIndices: Uint16Array;
   /** Packed cell data for dirty rows (Transferable) */
   dirtyRowData: ArrayBuffer;
+  /** Packed row data for fast rendering (worker-emulator only) */
+  packedRows?: PackedRowUpdate;
   /** Cursor position */
   cursor: { x: number; y: number; visible: boolean };
   /** Terminal dimensions */

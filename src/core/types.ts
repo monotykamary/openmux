@@ -162,12 +162,30 @@ export interface TerminalScrollState {
 }
 
 /**
+ * Packed row update from worker-side packing.
+ * Allows main thread to render without per-cell packing.
+ */
+export interface PackedRowUpdate {
+  cols: number;
+  rowIndices: Uint16Array;
+  data: ArrayBuffer;
+  overlayRowStarts: Uint32Array;
+  overlayX: Int32Array;
+  overlayCodepoint: Uint32Array;
+  overlayAttributes: Uint8Array;
+  overlayFg: Uint8Array;
+  overlayBg: Uint8Array;
+}
+
+/**
  * Dirty terminal update - delivers only changed data for efficient rendering.
  * Instead of rebuilding full TerminalState, subscribers receive only what changed.
  */
 export interface DirtyTerminalUpdate {
   /** Map of row index -> new row cells (only dirty rows included) */
   dirtyRows: Map<number, TerminalCell[]>;
+  /** Packed row data for fast rendering (worker-emulator only) */
+  packedRows?: PackedRowUpdate;
   /** Current cursor state (always included - cheap) */
   cursor: TerminalCursor;
   /** Scroll state (always included - cheap) */

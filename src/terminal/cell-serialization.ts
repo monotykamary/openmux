@@ -476,6 +476,7 @@ export function packDirtyUpdate(update: DirtyTerminalUpdate): SerializedDirtyUpd
     scrollbackLength: update.scrollState.scrollbackLength,
     isFull: update.isFull,
     fullStateData,
+    packedRows: update.packedRows,
     alternateScreen: update.alternateScreen,
     mouseTracking: update.mouseTracking,
     cursorKeyMode: update.cursorKeyMode === 'application' ? 1 : 0,
@@ -533,6 +534,7 @@ export function unpackDirtyUpdateWithCache(
   const update: DirtyTerminalUpdate = {
     dirtyRows,
     cursor,
+    packedRows: packed.packedRows,
     scrollState: {
       viewportOffset: scrollState.viewportOffset,
       scrollbackLength: packed.scrollbackLength,
@@ -560,6 +562,22 @@ export function getTransferables(packed: SerializedDirtyUpdate): ArrayBuffer[] {
     packed.dirtyRowIndices.buffer as ArrayBuffer,
     packed.dirtyRowData,
   ];
+
+  if (packed.packedRows) {
+    const packedRows = packed.packedRows;
+    if (packedRows.rowIndices.buffer !== packed.dirtyRowIndices.buffer) {
+      transferables.push(packedRows.rowIndices.buffer as ArrayBuffer);
+    }
+    transferables.push(
+      packedRows.data,
+      packedRows.overlayRowStarts.buffer as ArrayBuffer,
+      packedRows.overlayX.buffer as ArrayBuffer,
+      packedRows.overlayCodepoint.buffer as ArrayBuffer,
+      packedRows.overlayAttributes.buffer as ArrayBuffer,
+      packedRows.overlayFg.buffer as ArrayBuffer,
+      packedRows.overlayBg.buffer as ArrayBuffer
+    );
+  }
 
   if (packed.fullStateData) {
     transferables.push(packed.fullStateData);

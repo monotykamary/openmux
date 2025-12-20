@@ -6,7 +6,12 @@ import type { TerminalScrollState } from '../../core/types';
 import type { WorkerSession } from './types';
 import { sendMessage, getModes } from './helpers';
 import { CELL_SIZE, getTransferables } from '../cell-serialization';
-import { packGhosttyLineInto, packGhosttyTerminalState } from './packing';
+import {
+  packGhosttyLineInto,
+  packGhosttyTerminalState,
+  packGhosttyLineIntoPackedRow,
+  PACKED_CELL_BYTE_STRIDE,
+} from './packing';
 
 // Scrollback limit for detecting content shift at max capacity
 const SCROLLBACK_LIMIT_VALUE = 2000;
@@ -55,28 +60,86 @@ export function sendDirtyUpdate(sessionId: string, session: WorkerSession): void
   const dirtyRowIndices = new Uint16Array(rowCount);
   const dirtyRowData = new ArrayBuffer(rowCount * cols * CELL_SIZE);
   const view = new DataView(dirtyRowData);
+  const packedRowData = new ArrayBuffer(rowCount * cols * PACKED_CELL_BYTE_STRIDE);
+  const packedFloats = new Float32Array(packedRowData);
+  const packedU32 = new Uint32Array(packedRowData);
+  const overlayCapacity = rowCount * cols;
+  const overlayRowStarts = new Uint32Array(rowCount + 1);
+  const overlayX = new Int32Array(overlayCapacity);
+  const overlayCodepoint = new Uint32Array(overlayCapacity);
+  const overlayAttributes = new Uint8Array(overlayCapacity);
+  const overlayFg = new Uint8Array(overlayCapacity * 4);
+  const overlayBg = new Uint8Array(overlayCapacity * 4);
   let index = 0;
   let offset = 0;
+  let overlayCount = 0;
 
   if (entries) {
     for (const [y, line] of entries) {
+      const rowOffset = index;
       dirtyRowIndices[index++] = y;
       packGhosttyLineInto(view, offset, line, cols, terminalColors);
+      overlayRowStarts[rowOffset] = overlayCount;
+      overlayCount = packGhosttyLineIntoPackedRow(
+        line,
+        cols,
+        terminalColors,
+        rowOffset,
+        packedFloats,
+        packedU32,
+        overlayX,
+        overlayCodepoint,
+        overlayAttributes,
+        overlayFg,
+        overlayBg,
+        overlayCount
+      );
+      overlayRowStarts[rowOffset + 1] = overlayCount;
       offset += cols * CELL_SIZE;
     }
   } else {
     for (const [y, line] of ghosttyDirty) {
+      const rowOffset = index;
       dirtyRowIndices[index++] = y;
       packGhosttyLineInto(view, offset, line, cols, terminalColors);
+      overlayRowStarts[rowOffset] = overlayCount;
+      overlayCount = packGhosttyLineIntoPackedRow(
+        line,
+        cols,
+        terminalColors,
+        rowOffset,
+        packedFloats,
+        packedU32,
+        overlayX,
+        overlayCodepoint,
+        overlayAttributes,
+        overlayFg,
+        overlayBg,
+        overlayCount
+      );
+      overlayRowStarts[rowOffset + 1] = overlayCount;
       offset += cols * CELL_SIZE;
     }
   }
 
   terminal.clearDirty();
 
+  const packedRows = rowCount === 0 ? undefined : {
+    cols,
+    rowIndices: dirtyRowIndices,
+    data: packedRowData,
+    overlayRowStarts,
+    overlayX,
+    overlayCodepoint,
+    overlayAttributes,
+    overlayFg,
+    overlayBg,
+  };
+
   const packed = {
     dirtyRowIndices,
     dirtyRowData,
+    packedRows,
     cursor: {
       x: cursor.x,
       y: cursor.y,
