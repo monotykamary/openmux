@@ -17,9 +17,10 @@ import type {
   TerminalScrollState,
   DirtyTerminalUpdate,
 } from '../core/types';
-import type { ITerminalEmulator, TerminalModes, SearchMatch, SearchResult } from './emulator-interface';
+import type { ITerminalEmulator, TerminalModes, SearchResult } from './emulator-interface';
 import type { EmulatorWorkerPool } from './worker-pool';
 import type { TerminalColors } from './terminal-colors';
+import { unpackCellsIntoRow } from './cell-serialization';
 import {
   ScrollbackCache,
   shouldClearCacheOnUpdate,
@@ -61,7 +62,9 @@ export class WorkerEmulator implements ITerminalEmulator {
 
   // Scrollback cache (main thread side)
   // Size 1000 provides buffer for ~40 screens during fast scrolling
-  private scrollbackCache = new ScrollbackCache(1000);
+  private scrollbackCache: ScrollbackCache;
+  private scrollbackRowPool: TerminalCell[][] = [];
+  private readonly maxScrollbackRowPool = 1000;
 
   // Unsubscribe functions
   private unsubUpdate: (() => void) | null = null;
@@ -80,9 +83,21 @@ export class WorkerEmulator implements ITerminalEmulator {
     this._cols = cols;
     this._rows = rows;
     this.colors = colors;
+    this.scrollbackCache = new ScrollbackCache(1000, (row) => this.recycleScrollbackRow(row));
 
     // Subscribe to worker updates
     this.setupSubscriptions();
+  }
+
+  private acquireScrollbackRow(): TerminalCell[] {
+    return this.scrollbackRowPool.pop() ?? [];
+  }
+
+  private recycleScrollbackRow(row: TerminalCell[]): void {
+    if (this.scrollbackRowPool.length >= this.maxScrollbackRowPool) {
+      return;
+    }
+    this.scrollbackRowPool.push(row);
   }
 
   private setupSubscriptions(): void {
@@ -224,6 +239,7 @@ export class WorkerEmulator implements ITerminalEmulator {
     this.titleCallbacks.clear();
     this.updateCallbacks.clear();
     this.scrollbackCache.clear();
+    this.scrollbackRowPool.length = 0;
   }
 
   getScrollbackLength(): number {
@@ -251,18 +267,33 @@ export class WorkerEmulator implements ITerminalEmulator {
 
     if (cells) {
       // Cache the result
-      this.scrollbackCache.set(offset, cells);
+      const row = this.acquireScrollbackRow();
+      unpackCellsIntoRow(cells, row);
+      this.scrollbackCache.set(offset, row);
+      return row;
     }
 
-    return cells;
+    return null;
   }
 
   /**
    * Prefetch scrollback lines into cache
    */
   async prefetchScrollbackLines(startOffset: number, count: number): Promise<void> {
-    const lines = await this.pool.getScrollbackLines(this.sessionId, startOffset, count);
-    this.scrollbackCache.setMany(lines);
+    const buffers = await this.pool.getScrollbackLines(this.sessionId, startOffset, count);
+    if (buffers.size === 0) return;
+
+    const lines = new Map<number, TerminalCell[]>();
+    for (const [offset, buffer] of buffers) {
+      if (this.scrollbackCache.get(offset)) continue;
+      const row = this.acquireScrollbackRow();
+      unpackCellsIntoRow(buffer, row);
+      lines.set(offset, row);
+    }
+
+    if (lines.size > 0) {
+      this.scrollbackCache.setMany(lines);
+    }
   }
 
   getDirtyUpdate(scrollState: TerminalScrollState): DirtyTerminalUpdate {

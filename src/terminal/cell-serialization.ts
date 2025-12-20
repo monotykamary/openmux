@@ -253,6 +253,27 @@ export function unpackCells(buffer: ArrayBuffer): TerminalCell[] {
 }
 
 /**
+ * Unpack cells into an existing row array (in-place).
+ * Reuses existing TerminalCell objects when present.
+ */
+export function unpackCellsIntoRow(buffer: ArrayBuffer, row: TerminalCell[]): TerminalCell[] {
+  const view = new DataView(buffer);
+  const count = buffer.byteLength / CELL_SIZE;
+
+  if (row.length !== count) {
+    row.length = count;
+  }
+
+  for (let i = 0; i < count; i++) {
+    const cell = row[i] ?? createEmptyCell();
+    updateCellFromView(view, i * CELL_SIZE, cell);
+    row[i] = cell;
+  }
+
+  return row;
+}
+
+/**
  * Pack a row (array of cells) with prepended column count
  */
 export function packRow(cells: TerminalCell[]): ArrayBuffer {

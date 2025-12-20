@@ -8,8 +8,7 @@ import type {
   TerminalModes,
   SearchMatch,
 } from '../emulator-interface';
-import type { TerminalCell } from '../../core/types';
-import { unpackCells, unpackDirtyUpdateWithCache } from '../cell-serialization';
+import { unpackDirtyUpdateWithCache } from '../cell-serialization';
 import type {
   SessionState,
   PendingRequest,
@@ -114,7 +113,7 @@ export function handleScrollbackLine(
   if (cells === null) {
     request.resolve(null);
   } else {
-    request.resolve(unpackCells(cells));
+    request.resolve(cells);
   }
 }
 
@@ -132,9 +131,9 @@ export function handleScrollbackLines(
 
   pendingRequests.delete(requestId);
 
-  const result = new Map<number, TerminalCell[]>();
+  const result = new Map<number, ArrayBuffer>();
   for (let i = 0; i < cellBuffers.length; i++) {
-    result.set(offsets[i], unpackCells(cellBuffers[i]));
+    result.set(offsets[i], cellBuffers[i]);
   }
   request.resolve(result);
 }

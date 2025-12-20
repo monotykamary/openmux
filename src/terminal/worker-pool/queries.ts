@@ -3,7 +3,6 @@
  */
 
 import type { WorkerInbound, SearchResult } from '../emulator-interface';
-import type { TerminalCell } from '../../core/types';
 import type { SessionState, PendingRequest } from './types';
 
 /**
@@ -16,7 +15,7 @@ export async function getScrollbackLine(
   sessionToState: Map<string, SessionState>,
   pendingRequests: Map<number, PendingRequest<unknown>>,
   getNextRequestId: () => number
-): Promise<TerminalCell[] | null> {
+): Promise<ArrayBuffer | null> {
   const state = sessionToState.get(sessionId);
   if (!state) return null;
 
@@ -30,7 +29,7 @@ export async function getScrollbackLine(
 
   return new Promise((resolve, reject) => {
     pendingRequests.set(requestId, {
-      resolve: (value) => resolve(value as TerminalCell[] | null),
+      resolve: (value) => resolve(value as ArrayBuffer | null),
       reject,
     });
     workers[state.workerIndex].postMessage(msg);
@@ -48,7 +47,7 @@ export async function getScrollbackLines(
   sessionToState: Map<string, SessionState>,
   pendingRequests: Map<number, PendingRequest<unknown>>,
   getNextRequestId: () => number
-): Promise<Map<number, TerminalCell[]>> {
+): Promise<Map<number, ArrayBuffer>> {
   const state = sessionToState.get(sessionId);
   if (!state) return new Map();
 
@@ -63,7 +62,7 @@ export async function getScrollbackLines(
 
   return new Promise((resolve, reject) => {
     pendingRequests.set(requestId, {
-      resolve: (value) => resolve(value as Map<number, TerminalCell[]>),
+      resolve: (value) => resolve(value as Map<number, ArrayBuffer>),
       reject,
     });
     workers[state.workerIndex].postMessage(msg);

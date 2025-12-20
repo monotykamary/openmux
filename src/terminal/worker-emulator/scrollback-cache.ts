@@ -11,9 +11,11 @@ export class ScrollbackCache {
   private cache = new Map<number, TerminalCell[]>()
   private maxSize: number
   private lastScrollbackLength = 0
+  private onEvict: ((cells: TerminalCell[]) => void) | null
 
-  constructor(maxSize = 1000) {
+  constructor(maxSize = 1000, onEvict?: (cells: TerminalCell[]) => void) {
     this.maxSize = maxSize
+    this.onEvict = onEvict ?? null
   }
 
   get(offset: number): TerminalCell[] | null {
@@ -21,18 +23,31 @@ export class ScrollbackCache {
   }
 
   set(offset: number, cells: TerminalCell[]): void {
+    const existing = this.cache.get(offset)
+    if (existing && existing !== cells) {
+      this.onEvict?.(existing)
+    }
     this.cache.set(offset, cells)
     this.prune()
   }
 
   setMany(lines: Map<number, TerminalCell[]>): void {
     for (const [offset, cells] of lines) {
+      const existing = this.cache.get(offset)
+      if (existing && existing !== cells) {
+        this.onEvict?.(existing)
+      }
       this.cache.set(offset, cells)
     }
     this.prune()
   }
 
   clear(): void {
+    if (this.onEvict) {
+      for (const cells of this.cache.values()) {
+        this.onEvict(cells)
+      }
+    }
     this.cache.clear()
   }
 
@@ -77,6 +92,10 @@ export class ScrollbackCache {
       for (let i = 0; i < excess; i++) {
         const key = iterator.next().value
         if (key !== undefined) {
+          const existing = this.cache.get(key)
+          if (existing) {
+            this.onEvict?.(existing)
+          }
           this.cache.delete(key)
         }
       }
