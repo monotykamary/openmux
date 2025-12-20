@@ -30,6 +30,10 @@ export interface CellRenderingDeps {
   isSearchMatch: (ptyId: string, x: number, y: number) => boolean
   isCurrentMatch: (ptyId: string, x: number, y: number) => boolean
   getSelection: (ptyId: string) => { normalizedRange: unknown } | undefined
+  getSearchMatchRanges: (
+    ptyId: string,
+    absoluteY: number
+  ) => Array<{ startCol: number; endCol: number }> | null
 }
 
 export interface CellRenderingOptions {
@@ -43,6 +47,7 @@ export interface CellRenderingOptions {
   cursorVisible: boolean
   scrollbackLength: number
   viewportOffset: number
+  currentMatch: { lineIndex: number; startCol: number; endCol: number } | null
 }
 
 /**
@@ -135,13 +140,31 @@ export function renderRow(
   fallbackFg: RGBA,
   fallbackBg: RGBA
 ): void {
-  const { scrollbackLength, viewportOffset, ptyId, hasSelection, hasSearch, isAtBottom, isFocused, cursorX, cursorY, cursorVisible } = options
+  const {
+    scrollbackLength,
+    viewportOffset,
+    ptyId,
+    hasSelection,
+    hasSearch,
+    isAtBottom,
+    isFocused,
+    cursorX,
+    cursorY,
+    cursorVisible,
+    currentMatch,
+  } = options
 
   // Calculate absolute Y for selection check (accounts for scrollback)
   const absoluteY = scrollbackLength - viewportOffset + rowIndex
 
   // Get selected column range for this row ONCE (O(1) instead of O(cols) function calls)
   const selectedRange = hasSelection ? deps.getSelectedColumnsForRow(ptyId, absoluteY, cols) : null
+  const matchRanges = hasSearch ? deps.getSearchMatchRanges(ptyId, absoluteY) : null
+  const isCurrentRow = hasSearch && currentMatch?.lineIndex === absoluteY
+  const currentMatchStart = isCurrentRow ? currentMatch?.startCol ?? -1 : -1
+  const currentMatchEnd = isCurrentRow ? currentMatch?.endCol ?? -1 : -1
+  let matchIndex = 0
+  let activeMatch = matchRanges ? matchRanges[0] ?? null : null
 
   // Track the previous cell to detect spacer cells after wide characters
   let prevCellWasWide = false
@@ -175,8 +198,16 @@ export function renderRow(
                      cursorY === rowIndex && cursorX === x
 
     // Check if cell is a search match (skip function calls if no active search)
-    const isMatch = hasSearch && deps.isSearchMatch(ptyId, x, absoluteY)
-    const isCurrent = hasSearch && deps.isCurrentMatch(ptyId, x, absoluteY)
+    if (activeMatch && x >= activeMatch.endCol) {
+      while (matchRanges && matchIndex < matchRanges.length && x >= matchRanges[matchIndex].endCol) {
+        matchIndex++;
+      }
+      activeMatch = matchRanges?.[matchIndex] ?? null
+    }
+    const isMatch = activeMatch !== null &&
+      x >= activeMatch.startCol &&
+      x < activeMatch.endCol
+    const isCurrent = currentMatchStart >= 0 && x >= currentMatchStart && x < currentMatchEnd
 
     // Determine cell colors
     let fgR = cell.fg.r, fgG = cell.fg.g, fgB = cell.fg.b

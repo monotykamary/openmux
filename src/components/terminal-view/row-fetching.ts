@@ -24,12 +24,16 @@ export function fetchRowsForRendering(
   state: TerminalState,
   emulator: ITerminalEmulator | null,
   transitionCache: Map<number, TerminalCell[]>,
-  options: RowFetchingOptions
+  options: RowFetchingOptions,
+  rowCache?: (TerminalCell[] | null)[]
 ): RowFetchResult {
   const { viewportOffset, scrollbackLength, rows } = options
 
   const currentEmulator = viewportOffset > 0 ? emulator : null
-  const rowCache: (TerminalCell[] | null)[] = new Array(rows)
+  const cache = rowCache ?? []
+  if (cache.length !== rows) {
+    cache.length = rows
+  }
 
   // Track missing scrollback lines for prefetching
   let firstMissingOffset = -1
@@ -38,14 +42,14 @@ export function fetchRowsForRendering(
   for (let y = 0; y < rows; y++) {
     if (viewportOffset === 0) {
       // Normal case: use live terminal rows
-      rowCache[y] = state.cells[y] ?? null
+      cache[y] = state.cells[y] ?? null
     } else {
       // Scrolled back: calculate which row to fetch
       const absoluteY = scrollbackLength - viewportOffset + y
 
       if (absoluteY < 0) {
         // Before scrollback
-        rowCache[y] = null
+        cache[y] = null
       } else if (absoluteY < scrollbackLength) {
         // In scrollback buffer - try emulator cache first, then transition cache
         let line = currentEmulator?.getScrollbackLine(absoluteY) ?? null
@@ -53,7 +57,7 @@ export function fetchRowsForRendering(
         if (line === null) {
           line = transitionCache.get(absoluteY) ?? null
         }
-        rowCache[y] = line
+        cache[y] = line
         // Track missing scrollback lines (null when should have data)
         if (line === null && currentEmulator) {
           if (firstMissingOffset === -1) {
@@ -64,12 +68,12 @@ export function fetchRowsForRendering(
       } else {
         // In live terminal area
         const liveY = absoluteY - scrollbackLength
-        rowCache[y] = state.cells[liveY] ?? null
+        cache[y] = state.cells[liveY] ?? null
       }
     }
   }
 
-  return { rowCache, firstMissingOffset, lastMissingOffset }
+  return { rowCache: cache, firstMissingOffset, lastMissingOffset }
 }
 
 export interface PrefetchRequest {

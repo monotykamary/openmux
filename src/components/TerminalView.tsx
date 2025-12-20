@@ -50,7 +50,7 @@ export function TerminalView(props: TerminalViewProps) {
   const { isCellSelected, getSelectedColumnsForRow, getSelection } = selection;
   // Get search state - keep full context to access searchVersion reactively
   const search = useSearch();
-  const { isSearchMatch, isCurrentMatch } = search;
+  const { isSearchMatch, isCurrentMatch, getSearchMatchRanges } = search;
   // Store terminal state in a plain variable (Solid has no stale closures)
   let terminalState: TerminalState | null = null;
   // Store scroll state locally from unified updates to avoid race conditions
@@ -74,6 +74,7 @@ export function TerminalView(props: TerminalViewProps) {
   // We capture them before the state update so we can render them immediately
   // without waiting for async prefetch from the worker.
   const transitionCache = new Map<number, TerminalCell[]>();
+  let scrollbackRowCache: (TerminalCell[] | null)[] = [];
   // Cache emulator for sync access to scrollback lines
   let emulator: ITerminalEmulator | null = null;
   // Version counter to trigger re-renders when state changes
@@ -288,6 +289,8 @@ export function TerminalView(props: TerminalViewProps) {
           dirtyAll = true;
           emulator = null;
           executePrefetchFn = null;
+          transitionCache.clear();
+          scrollbackRowCache.length = 0;
         });
       },
       { defer: false }
@@ -344,32 +347,42 @@ export function TerminalView(props: TerminalViewProps) {
     const renderOffsetX = frameBuffer ? 0 : offsetX;
     const renderOffsetY = frameBuffer ? 0 : offsetY;
 
-    // Pre-fetch all rows we need for rendering (optimization: fetch once per row, not per cell)
-    const { rowCache, firstMissingOffset, lastMissingOffset } = fetchRowsForRendering(
-      state,
-      emulator,
-      transitionCache,
-      { viewportOffset, scrollbackLength, rows }
-    );
+    let rowCache: (TerminalCell[] | null)[];
+    if (viewportOffset === 0) {
+      rowCache = state.cells as (TerminalCell[] | null)[];
+    } else {
+      // Pre-fetch all rows we need for rendering (optimization: fetch once per row, not per cell)
+      const { rowCache: fetchedRows, firstMissingOffset, lastMissingOffset } = fetchRowsForRendering(
+        state,
+        emulator,
+        transitionCache,
+        { viewportOffset, scrollbackLength, rows },
+        scrollbackRowCache
+      );
+      rowCache = fetchedRows;
 
-    // Schedule prefetch for missing scrollback lines with buffer zone
-    const prefetchRequest = calculatePrefetchRequest(
-      ptyId,
-      firstMissingOffset,
-      lastMissingOffset,
-      scrollbackLength,
-      rows
-    );
-    if (prefetchRequest && !prefetchInProgress && executePrefetchFn) {
-      pendingPrefetch = prefetchRequest;
-      // Execute prefetch asynchronously (don't block render)
-      queueMicrotask(executePrefetchFn);
+      // Schedule prefetch for missing scrollback lines with buffer zone
+      const prefetchRequest = calculatePrefetchRequest(
+        ptyId,
+        firstMissingOffset,
+        lastMissingOffset,
+        scrollbackLength,
+        rows
+      );
+      if (prefetchRequest && !prefetchInProgress && executePrefetchFn) {
+        pendingPrefetch = prefetchRequest;
+        // Execute prefetch asynchronously (don't block render)
+        queueMicrotask(executePrefetchFn);
+      }
     }
 
     // Pre-check if selection/search is active for this pane (avoid 5760 function calls per frame)
     const hasSelection = !!getSelection(ptyId)?.normalizedRange;
     const currentSearchState = search.searchState;
     const hasSearch = currentSearchState?.ptyId === ptyId && currentSearchState.matches.length > 0;
+    const currentMatch = hasSearch && currentSearchState && currentSearchState.currentMatchIndex >= 0
+      ? currentSearchState.matches[currentSearchState.currentMatchIndex] ?? null
+      : null;
 
     if (hasSelection !== lastHadSelection || hasSearch !== lastHadSearch) {
       dirtyAll = true;
@@ -389,6 +402,7 @@ export function TerminalView(props: TerminalViewProps) {
       cursorVisible: state.cursor.visible,
       scrollbackLength,
       viewportOffset,
+      currentMatch,
     };
 
     // Create rendering dependencies
@@ -398,6 +412,7 @@ export function TerminalView(props: TerminalViewProps) {
       isSearchMatch,
       isCurrentMatch,
       getSelection,
+      getSearchMatchRanges,
     };
 
     const useFullRender = dirtyAll || viewportOffset > 0 || hasSelection || hasSearch || !dirtyRows;

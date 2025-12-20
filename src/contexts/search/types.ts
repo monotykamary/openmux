@@ -60,6 +60,11 @@ export interface SearchContextValue {
   isSearchMatch: (ptyId: string, x: number, absoluteY: number) => boolean;
   /** Check if a cell is the current match */
   isCurrentMatch: (ptyId: string, x: number, absoluteY: number) => boolean;
+  /** Get all match ranges for a line (null if none) */
+  getSearchMatchRanges: (
+    ptyId: string,
+    absoluteY: number
+  ) => Array<{ startCol: number; endCol: number }> | null;
   /** Version counter for triggering re-renders */
   searchVersion: number;
 }

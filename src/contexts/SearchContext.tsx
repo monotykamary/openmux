@@ -257,6 +257,17 @@ export function SearchProvider(props: SearchProviderProps) {
     return isCellInMatch(x, absoluteY, currentMatch);
   };
 
+  const getSearchMatchRanges = (
+    ptyId: string,
+    absoluteY: number
+  ): Array<{ startCol: number; endCol: number }> | null => {
+    const state = searchState();
+    if (!state || state.ptyId !== ptyId) {
+      return null;
+    }
+    return matchLookup.get(absoluteY) ?? null;
+  };
+
   const value: SearchContextValue = {
     get searchState() { return searchState(); },
     enterSearchMode,
@@ -266,6 +277,7 @@ export function SearchProvider(props: SearchProviderProps) {
     prevMatch,
     isSearchMatch,
     isCurrentMatch,
+    getSearchMatchRanges,
     get searchVersion() { return searchVersion(); },
   };
 
