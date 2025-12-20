@@ -5,7 +5,7 @@
 
 import { createSignal, createEffect, onCleanup, on, Show } from 'solid-js';
 import { useRenderer } from '@opentui/solid';
-import type { OptimizedBuffer } from '@opentui/core';
+import { OptimizedBuffer } from '@opentui/core';
 import type { TerminalState, TerminalCell, TerminalScrollState, UnifiedTerminalUpdate } from '../core/types';
 import { isAtBottom as checkIsAtBottom } from '../core/scroll-utils';
 import type { ITerminalEmulator } from '../terminal/emulator-interface';
@@ -56,11 +56,19 @@ export function TerminalView(props: TerminalViewProps) {
   // Store scroll state locally from unified updates to avoid race conditions
   // This ensures scroll state and terminal state are always in sync
   let scrollState: TerminalScrollState = { viewportOffset: 0, scrollbackLength: 0, isAtBottom: true };
-  // Track last render time to throttle expensive renders during rapid layout changes
-  let lastRenderTime = 0;
-  let pendingRender = false;
-  // Track if content changed (vs just position change)
-  let contentDirty = true;
+  // Track dirty rows for partial rendering when safe
+  let dirtyRows: Uint8Array | null = null;
+  let dirtyAll = true;
+  let lastHadSelection = false;
+  let lastHadSearch = false;
+  let lastIsFocused = props.isFocused;
+  let lastRenderRows = 0;
+  let lastRenderCols = 0;
+  let lastRenderWidth = 0;
+  let lastRenderHeight = 0;
+  let frameBuffer: OptimizedBuffer | null = null;
+  let frameBufferWidth = 0;
+  let frameBufferHeight = 0;
   // Cache for lines transitioning from live terminal to scrollback
   // When scrollback grows, the top rows of the terminal move to scrollback.
   // We capture them before the state update so we can render them immediately
@@ -75,6 +83,46 @@ export function TerminalView(props: TerminalViewProps) {
   let prefetchInProgress = false;
   // Function reference for executing prefetch (set by effect, used by render)
   let executePrefetchFn: (() => void) | null = null;
+
+  const markAllRowsDirty = (rowCount: number) => {
+    if (rowCount <= 0) {
+      dirtyRows = null;
+      return;
+    }
+    if (!dirtyRows || dirtyRows.length !== rowCount) {
+      dirtyRows = new Uint8Array(rowCount);
+    }
+    dirtyRows.fill(1);
+  };
+
+  const markRowDirty = (rowIndex: number) => {
+    if (!dirtyRows || rowIndex < 0 || rowIndex >= dirtyRows.length) return;
+    dirtyRows[rowIndex] = 1;
+  };
+
+  const ensureFrameBuffer = (width: number, height: number, buffer: OptimizedBuffer) => {
+    if (!frameBuffer) {
+      frameBuffer = OptimizedBuffer.create(width, height, buffer.widthMethod, {
+        respectAlpha: buffer.respectAlpha,
+      });
+      frameBufferWidth = width;
+      frameBufferHeight = height;
+      dirtyAll = true;
+      return;
+    }
+
+    if (frameBufferWidth !== width || frameBufferHeight !== height) {
+      frameBuffer.resize(width, height);
+      frameBufferWidth = width;
+      frameBufferHeight = height;
+      dirtyAll = true;
+    }
+  };
+
+  onCleanup(() => {
+    frameBuffer?.destroy();
+    frameBuffer = null;
+  });
 
   // Using on() for explicit ptyId dependency - effect re-runs only when ptyId changes
   // defer: false ensures it runs immediately on mount
@@ -146,6 +194,9 @@ export function TerminalView(props: TerminalViewProps) {
             if (!mounted) return;
 
             const { terminalUpdate } = update;
+            const prevViewportOffset = scrollState.viewportOffset;
+            const prevCursorRow = terminalState?.cursor.y ?? null;
+            const prevCursorVisible = terminalState?.cursor.visible ?? true;
             const oldScrollbackLength = scrollState.scrollbackLength;
             const newScrollbackLength = update.scrollState.scrollbackLength;
             const isAtScrollbackLimit = update.scrollState.isAtScrollbackLimit ?? false;
@@ -167,6 +218,8 @@ export function TerminalView(props: TerminalViewProps) {
               cachedRows = [...terminalUpdate.fullState.cells];
               // Clear transition cache on full refresh
               transitionCache.clear();
+              dirtyAll = true;
+              markAllRowsDirty(terminalUpdate.fullState.rows);
             } else {
               // Delta update: merge dirty rows into cached state
               const existingState = terminalState;
@@ -174,6 +227,7 @@ export function TerminalView(props: TerminalViewProps) {
                 // Apply dirty rows to cached rows
                 for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
                   cachedRows[rowIdx] = newRow;
+                  markRowDirty(rowIdx);
                 }
                 // Update state with merged cells and new cursor/modes
                 terminalState = {
@@ -187,12 +241,32 @@ export function TerminalView(props: TerminalViewProps) {
               }
             }
 
+            if (terminalState) {
+              if (!dirtyRows || dirtyRows.length !== terminalState.rows) {
+                dirtyAll = true;
+                markAllRowsDirty(terminalState.rows);
+              } else {
+                const nextCursorRow = terminalState.cursor.y ?? null;
+                const nextCursorVisible = terminalState.cursor.visible ?? true;
+                if (prevCursorRow !== null) markRowDirty(prevCursorRow);
+                if (nextCursorRow !== null) markRowDirty(nextCursorRow);
+                if (prevCursorVisible !== nextCursorVisible) {
+                  if (prevCursorRow !== null) markRowDirty(prevCursorRow);
+                  if (nextCursorRow !== null) markRowDirty(nextCursorRow);
+                }
+              }
+            }
+
             // Update scroll state from unified update to ensure it's in sync with terminal state
             // This prevents race conditions where render uses stale scroll state from cache
             scrollState = update.scrollState;
 
-            // Mark content as dirty (actual terminal data changed)
-            contentDirty = true;
+            if (scrollState.viewportOffset !== prevViewportOffset) {
+              dirtyAll = true;
+              if (terminalState) {
+                markAllRowsDirty(terminalState.rows);
+              }
+            }
 
             // Request batched render
             requestRenderFrame();
@@ -210,6 +284,8 @@ export function TerminalView(props: TerminalViewProps) {
             unsubscribe();
           }
           terminalState = null;
+          dirtyRows = null;
+          dirtyAll = true;
           emulator = null;
           executePrefetchFn = null;
         });
@@ -245,10 +321,28 @@ export function TerminalView(props: TerminalViewProps) {
 
     const rows = Math.min(state.rows, height);
     const cols = Math.min(state.cols, width);
+
+    if (rows !== lastRenderRows || cols !== lastRenderCols || width !== lastRenderWidth || height !== lastRenderHeight) {
+      dirtyAll = true;
+      lastRenderRows = rows;
+      lastRenderCols = cols;
+      lastRenderWidth = width;
+      lastRenderHeight = height;
+    }
+
+    if (lastIsFocused !== isFocused) {
+      dirtyAll = true;
+      lastIsFocused = isFocused;
+    }
     // Use top-left cell bg as fallback to paint unused area; default to black
     const fallbackBgColor = state.cells?.[0]?.[0]?.bg ?? { r: 0, g: 0, b: 0 };
     const fallbackBg = getCachedRGBA(fallbackBgColor.r, fallbackBgColor.g, fallbackBgColor.b);
     const fallbackFg = BLACK;
+
+    ensureFrameBuffer(width, height, buffer);
+    const renderTarget = frameBuffer ?? buffer;
+    const renderOffsetX = frameBuffer ? 0 : offsetX;
+    const renderOffsetY = frameBuffer ? 0 : offsetY;
 
     // Pre-fetch all rows we need for rendering (optimization: fetch once per row, not per cell)
     const { rowCache, firstMissingOffset, lastMissingOffset } = fetchRowsForRendering(
@@ -277,6 +371,12 @@ export function TerminalView(props: TerminalViewProps) {
     const currentSearchState = search.searchState;
     const hasSearch = currentSearchState?.ptyId === ptyId && currentSearchState.matches.length > 0;
 
+    if (hasSelection !== lastHadSelection || hasSearch !== lastHadSearch) {
+      dirtyAll = true;
+      lastHadSelection = hasSelection;
+      lastHadSearch = hasSearch;
+    }
+
     // Create rendering options
     const renderOptions = {
       ptyId,
@@ -300,33 +400,50 @@ export function TerminalView(props: TerminalViewProps) {
       getSelection,
     };
 
-    // Render all rows
+    const useFullRender = dirtyAll || viewportOffset > 0 || hasSelection || hasSearch || !dirtyRows;
+
+    // Render rows (partial when safe)
     for (let y = 0; y < rows; y++) {
+      if (!useFullRender && dirtyRows && dirtyRows[y] === 0) {
+        continue;
+      }
       const row = rowCache[y];
-      renderRow(buffer, row, y, cols, offsetX, offsetY, renderOptions, renderDeps, fallbackFg, fallbackBg);
+      renderRow(renderTarget, row, y, cols, renderOffsetX, renderOffsetY, renderOptions, renderDeps, fallbackFg, fallbackBg);
+      if (!useFullRender && dirtyRows) {
+        dirtyRows[y] = 0;
+      }
     }
+
+    if (useFullRender && dirtyRows) {
+      dirtyRows.fill(0);
+    }
+    dirtyAll = false;
 
     // Paint any unused area (when cols/rows are smaller than the pane) to avoid stale/transparent regions
     if (cols < width || rows < height) {
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           if (y < rows && x < cols) continue;
-          buffer.setCell(x + offsetX, y + offsetY, ' ', fallbackFg, fallbackBg, 0);
+          renderTarget.setCell(x + renderOffsetX, y + renderOffsetY, ' ', fallbackFg, fallbackBg, 0);
         }
       }
     }
 
     // Render scrollbar when scrolled back (not at bottom)
     if (!isAtBottom) {
-      renderScrollbar(buffer, rowCache, {
+      renderScrollbar(renderTarget, rowCache, {
         viewportOffset,
         scrollbackLength,
         rows,
         cols,
         width,
-        offsetX,
-        offsetY,
+        offsetX: renderOffsetX,
+        offsetY: renderOffsetY,
       }, fallbackFg);
+    }
+
+    if (frameBuffer) {
+      buffer.drawFrameBuffer(offsetX, offsetY, frameBuffer);
     }
   };
 
