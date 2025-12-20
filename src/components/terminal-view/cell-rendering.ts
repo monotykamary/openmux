@@ -19,6 +19,17 @@ import {
   SEARCH_CURRENT_FG,
 } from '../../terminal/rendering'
 
+const spaceRowCache = new Map<number, string>()
+
+const getSpaceRow = (cols: number): string => {
+  let cached = spaceRowCache.get(cols)
+  if (!cached) {
+    cached = ' '.repeat(cols)
+    spaceRowCache.set(cols, cached)
+  }
+  return cached
+}
+
 export interface SelectedColumnRange {
   start: number
   end: number
@@ -140,6 +151,11 @@ export function renderRow(
   fallbackFg: RGBA,
   fallbackBg: RGBA
 ): void {
+  if (!row) {
+    buffer.drawText(getSpaceRow(cols), offsetX, rowIndex + offsetY, fallbackFg, fallbackBg, 0)
+    return
+  }
+
   const {
     scrollbackLength,
     viewportOffset,
