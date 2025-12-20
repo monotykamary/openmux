@@ -3,6 +3,7 @@
  */
 import { Effect } from "effect"
 import { spawnAsync } from "../../../../zig-pty/ts/index"
+import { encodeEnvBuffer } from "../../../../zig-pty/ts/env-buffer"
 import { createWorkerEmulator } from "../../../terminal/worker-emulator"
 import { GraphicsPassthrough } from "../../../terminal/graphics-passthrough"
 import { TerminalQueryPassthrough } from "../../../terminal/terminal-query-passthrough"
@@ -33,6 +34,26 @@ export interface CreateSessionOptions {
   env?: Record<string, string>
 }
 
+let cachedSpawnEnv: Record<string, string> | null = null
+let cachedSpawnEnvBuffer: Buffer | null = null
+
+function getCachedSpawnEnv(): { env: Record<string, string>; envBuffer: Buffer } {
+  if (!cachedSpawnEnv || !cachedSpawnEnvBuffer) {
+    const capabilityEnv = getCapabilityEnvironment()
+    const baseEnv = {
+      ...process.env,
+      ...capabilityEnv,
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
+    } as Record<string, string>
+
+    cachedSpawnEnv = baseEnv
+    cachedSpawnEnvBuffer = encodeEnvBuffer(baseEnv)
+  }
+
+  return { env: cachedSpawnEnv, envBuffer: cachedSpawnEnvBuffer }
+}
+
 /**
  * Creates a new PTY session with emulator, graphics passthrough, and query handling
  */
@@ -61,7 +82,16 @@ export function createSession(
     const queryPassthrough = new TerminalQueryPassthrough()
 
     // Get capability environment
-    const capabilityEnv = getCapabilityEnvironment()
+    const { env: baseEnv, envBuffer: baseEnvBuffer } = getCachedSpawnEnv()
+    let envBuffer = baseEnvBuffer
+    if (options.env && Object.keys(options.env).length > 0) {
+      envBuffer = encodeEnvBuffer({
+        ...baseEnv,
+        ...options.env,
+        TERM: baseEnv.TERM,
+        COLORTERM: baseEnv.COLORTERM,
+      })
+    }
 
     // Spawn PTY asynchronously (fork happens off main thread)
     const pty = yield* Effect.tryPromise({
@@ -71,13 +101,7 @@ export function createSession(
           cols,
           rows,
           cwd,
-          env: {
-            ...process.env,
-            ...capabilityEnv,
-            ...options.env,
-            TERM: "xterm-256color",
-            COLORTERM: "truecolor",
-          } as Record<string, string>,
+          envBuffer,
         }),
       catch: (error) =>
         PtySpawnError.make({ shell, cwd, cause: error }),

@@ -7,6 +7,7 @@ import { lib } from "./lib-loader";
 import { EventEmitter } from "./event-emitter";
 import type { IPty, IPtyForkOptions, IExitEvent } from "./types";
 import { DEFAULT_COLS, DEFAULT_ROWS, DEFAULT_FILE } from "./types";
+import { encodeEnvBuffer } from "./env-buffer";
 
 function shQuote(s: string): string {
   if (s.length === 0) return "''";
@@ -56,16 +57,16 @@ export class Terminal implements IPty {
 
     const cmdline = [file, ...args.map(shQuote)].join(" ");
 
-    let envStr = "";
-    if (opts.env) {
-      const envPairs = Object.entries(opts.env).map(([k, v]) => `${k}=${v}`);
-      envStr = envPairs.join("\0") + "\0";
-    }
+    const envBuffer = opts.envBuffer
+      ? Buffer.isBuffer(opts.envBuffer)
+        ? opts.envBuffer
+        : Buffer.from(opts.envBuffer)
+      : encodeEnvBuffer(opts.env);
 
     this.handle = lib.symbols.bun_pty_spawn(
       Buffer.from(`${cmdline}\0`, "utf8"),
       Buffer.from(`${cwd}\0`, "utf8"),
-      Buffer.from(`${envStr}\0`, "utf8"),
+      envBuffer,
       this._cols,
       this._rows
     );

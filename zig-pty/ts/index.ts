@@ -12,6 +12,7 @@
 
 import { lib } from "./lib-loader";
 import { Terminal } from "./terminal";
+import { encodeEnvBuffer } from "./env-buffer";
 import type { IPty, IPtyForkOptions } from "./types";
 import { DEFAULT_COLS, DEFAULT_ROWS, SPAWN_PENDING, SPAWN_ERROR } from "./types";
 
@@ -59,16 +60,16 @@ export function spawnAsync(
 
   const cmdline = [file, ...args.map(shQuote)].join(" ");
 
-  let envStr = "";
-  if (options.env) {
-    const envPairs = Object.entries(options.env).map(([k, v]) => `${k}=${v}`);
-    envStr = envPairs.join("\0") + "\0";
-  }
+  const envBuffer = options.envBuffer
+    ? Buffer.isBuffer(options.envBuffer)
+      ? options.envBuffer
+      : Buffer.from(options.envBuffer)
+    : encodeEnvBuffer(options.env);
 
   const requestId = lib.symbols.bun_pty_spawn_async(
     Buffer.from(`${cmdline}\0`, "utf8"),
     Buffer.from(`${cwd}\0`, "utf8"),
-    Buffer.from(`${envStr}\0`, "utf8"),
+    envBuffer,
     cols,
     rows
   );

@@ -12,6 +12,7 @@ export interface IPtyForkOptions {
   rows?: number;
   cwd?: string;
   env?: Record<string, string>;
+  envBuffer?: Uint8Array;
 }
 
 export interface IExitEvent {
