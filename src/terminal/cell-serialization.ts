@@ -222,7 +222,7 @@ export function unpackRow(buffer: ArrayBuffer): TerminalCell[] {
  * - bytes 21-27: reserved
  * - bytes 28+:   cell data (rows * cols * CELL_SIZE)
  */
-const STATE_HEADER_SIZE = 28;
+export const STATE_HEADER_SIZE = 28;
 
 /**
  * Pack full terminal state into a transferable ArrayBuffer

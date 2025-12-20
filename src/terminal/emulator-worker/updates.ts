@@ -2,12 +2,13 @@
  * Update functions for the Emulator Worker
  */
 
-import type { TerminalCell, TerminalScrollState } from '../../core/types';
-import type { WorkerSession, SCROLLBACK_LIMIT } from './types';
-import { sendMessage, convertLine, getModes } from './helpers';
-import { packCells, packDirtyUpdate, getTransferables } from '../cell-serialization';
+import type { TerminalScrollState } from '../../core/types';
+import type { WorkerSession } from './types';
+import { sendMessage, getModes } from './helpers';
+import { CELL_SIZE, getTransferables } from '../cell-serialization';
+import { packGhosttyLineInto, packGhosttyTerminalState } from './packing';
 
-// Import SCROLLBACK_LIMIT from types
+// Scrollback limit for detecting content shift at max capacity
 const SCROLLBACK_LIMIT_VALUE = 2000;
 
 /**
@@ -36,16 +37,6 @@ export function sendDirtyUpdate(sessionId: string, session: WorkerSession): void
   const ghosttyDirty = terminal.getDirtyLines();
   const cursor = terminal.getCursor();
 
-  // Build dirty rows map
-  const dirtyRows = new Map<number, TerminalCell[]>();
-  for (const [y, line] of ghosttyDirty) {
-    if (y >= 0 && y < rows) {
-      dirtyRows.set(y, convertLine(line, cols, terminalColors));
-    }
-  }
-
-  terminal.clearDirty();
-
   // Build update
   const scrollbackLength = terminal.getScrollbackLength();
   const scrollState: TerminalScrollState = {
@@ -55,26 +46,51 @@ export function sendDirtyUpdate(sessionId: string, session: WorkerSession): void
     isAtScrollbackLimit: scrollbackLength >= SCROLLBACK_LIMIT_VALUE,
   };
 
-  const update = {
-    dirtyRows,
+  const dirtySize = typeof (ghosttyDirty as { size?: number }).size === 'number'
+    ? (ghosttyDirty as { size: number }).size
+    : undefined;
+  const entries = dirtySize === undefined ? Array.from(ghosttyDirty) : null;
+  const rowCount = dirtySize ?? entries?.length ?? 0;
+
+  const dirtyRowIndices = new Uint16Array(rowCount);
+  const dirtyRowData = new ArrayBuffer(rowCount * cols * CELL_SIZE);
+  const view = new DataView(dirtyRowData);
+  let index = 0;
+  let offset = 0;
+
+  if (entries) {
+    for (const [y, line] of entries) {
+      dirtyRowIndices[index++] = y;
+      packGhosttyLineInto(view, offset, line, cols, terminalColors);
+      offset += cols * CELL_SIZE;
+    }
+  } else {
+    for (const [y, line] of ghosttyDirty) {
+      dirtyRowIndices[index++] = y;
+      packGhosttyLineInto(view, offset, line, cols, terminalColors);
+      offset += cols * CELL_SIZE;
+    }
+  }
+
+  terminal.clearDirty();
+
+  const packed = {
+    dirtyRowIndices,
+    dirtyRowData,
     cursor: {
       x: cursor.x,
       y: cursor.y,
       visible: cursor.visible,
-      style: 'block' as const,
     },
-    scrollState,
     cols,
     rows,
+    scrollbackLength: scrollState.scrollbackLength,
     isFull: false,
     alternateScreen: terminal.isAlternateScreen(),
     mouseTracking: session.lastModes.mouseTracking,
-    cursorKeyMode: session.lastModes.cursorKeyMode,
+    cursorKeyMode: session.lastModes.cursorKeyMode === 'application' ? 1 : 0,
     inBandResize: session.lastModes.inBandResize,
   };
-
-  // Pack and send
-  const packed = packDirtyUpdate(update);
   const transferables = getTransferables(packed);
   sendMessage({ type: 'update', sessionId, update: packed }, transferables);
 }
@@ -85,32 +101,19 @@ export function sendDirtyUpdate(sessionId: string, session: WorkerSession): void
 export function sendFullUpdate(sessionId: string, session: WorkerSession): void {
   const { terminal, cols, rows, terminalColors } = session;
 
-  // Build full cell grid
-  const cells: TerminalCell[][] = [];
-  for (let y = 0; y < rows; y++) {
-    const line = terminal.getLine(y);
-    cells.push(convertLine(line, cols, terminalColors));
-  }
-
-  terminal.clearDirty();
-
   const cursor = terminal.getCursor();
   const modes = getModes(terminal);
 
-  const fullState = {
+  const fullStateData = packGhosttyTerminalState(
+    terminal,
     cols,
     rows,
-    cells,
-    cursor: {
-      x: cursor.x,
-      y: cursor.y,
-      visible: cursor.visible,
-      style: 'block' as const,
-    },
-    alternateScreen: modes.alternateScreen,
-    mouseTracking: modes.mouseTracking,
-    cursorKeyMode: modes.cursorKeyMode,
-  };
+    terminalColors,
+    { x: cursor.x, y: cursor.y, visible: cursor.visible },
+    modes
+  );
+
+  terminal.clearDirty();
 
   const scrollbackLength = terminal.getScrollbackLength();
   const scrollState: TerminalScrollState = {
@@ -120,21 +123,24 @@ export function sendFullUpdate(sessionId: string, session: WorkerSession): void 
     isAtScrollbackLimit: scrollbackLength >= SCROLLBACK_LIMIT_VALUE,
   };
 
-  const update = {
-    dirtyRows: new Map<number, TerminalCell[]>(),
-    cursor: fullState.cursor,
-    scrollState,
+  const packed = {
+    dirtyRowIndices: new Uint16Array(0),
+    dirtyRowData: new ArrayBuffer(0),
+    cursor: {
+      x: cursor.x,
+      y: cursor.y,
+      visible: cursor.visible,
+    },
     cols,
     rows,
+    scrollbackLength: scrollState.scrollbackLength,
     isFull: true,
-    fullState,
+    fullStateData,
     alternateScreen: modes.alternateScreen,
     mouseTracking: modes.mouseTracking,
-    cursorKeyMode: modes.cursorKeyMode,
+    cursorKeyMode: modes.cursorKeyMode === 'application' ? 1 : 0,
     inBandResize: modes.inBandResize,
   };
-
-  const packed = packDirtyUpdate(update);
   const transferables = getTransferables(packed);
   sendMessage({ type: 'update', sessionId, update: packed }, transferables);
 }

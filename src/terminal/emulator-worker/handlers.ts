@@ -2,14 +2,13 @@
  * Message handlers for the Emulator Worker
  */
 
-import { Ghostty, type GhosttyTerminal } from 'ghostty-web';
+import { Ghostty } from 'ghostty-web';
 import type { WorkerTerminalColors, SearchMatch } from '../emulator-interface';
-import type { TerminalCell, TerminalScrollState } from '../../core/types';
 import type { TerminalColors } from '../terminal-colors';
 import type { WorkerSession } from './types';
 import { SCROLLBACK_LIMIT } from './types';
 import { createTitleParser } from '../title-parser';
-import { packCells, packTerminalState } from '../cell-serialization';
+import { packGhosttyLine, packGhosttyTerminalState } from './packing';
 import { sendMessage, sendError, convertLine, getModes, extractLineText } from './helpers';
 import { checkModeChanges, sendDirtyUpdate, sendFullUpdate } from './updates';
 import { stripProblematicOscSequences } from './osc-stripping';
@@ -270,8 +269,7 @@ export function handleGetScrollbackLine(
       return;
     }
 
-    const cells = convertLine(line, session.cols, session.terminalColors);
-    const packed = packCells(cells);
+    const packed = packGhosttyLine(line, session.cols, session.terminalColors);
 
     // Cache it
     session.scrollbackCache.set(offset, packed.slice(0));
@@ -315,8 +313,7 @@ export function handleGetScrollbackLines(
       const line = session.terminal.getScrollbackLine(offset);
       if (!line) break;
 
-      const converted = convertLine(line, session.cols, session.terminalColors);
-      const packed = packCells(converted);
+      const packed = packGhosttyLine(line, session.cols, session.terminalColors);
       cells.push(packed);
       offsets.push(offset);
     }
@@ -345,29 +342,14 @@ export function handleGetTerminalState(
     const { terminal, cols, rows, terminalColors } = session;
     const cursor = terminal.getCursor();
     const modes = getModes(terminal);
-
-    const cells: TerminalCell[][] = [];
-    for (let y = 0; y < rows; y++) {
-      const line = terminal.getLine(y);
-      cells.push(convertLine(line, cols, terminalColors));
-    }
-
-    const state = {
+    const packed = packGhosttyTerminalState(
+      terminal,
       cols,
       rows,
-      cells,
-      cursor: {
-        x: cursor.x,
-        y: cursor.y,
-        visible: cursor.visible,
-        style: 'block' as const,
-      },
-      alternateScreen: modes.alternateScreen,
-      mouseTracking: modes.mouseTracking,
-      cursorKeyMode: modes.cursorKeyMode,
-    };
-
-    const packed = packTerminalState(state);
+      terminalColors,
+      { x: cursor.x, y: cursor.y, visible: cursor.visible },
+      modes
+    );
     sendMessage({ type: 'terminalState', requestId, state: packed }, [packed]);
   } catch (error) {
     sendError(`GetTerminalState failed: ${error}`, sessionId, requestId);
