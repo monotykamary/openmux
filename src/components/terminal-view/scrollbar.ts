@@ -55,13 +55,25 @@ export function renderScrollbar(
     const underlyingChar = cell?.char || ' '
     const underlyingFg = cell ? getCachedRGBA(cell.fg.r, cell.fg.g, cell.fg.b) : fallbackFg
 
-    buffer.setCell(
-      scrollbarX,
-      y + offsetY,
-      underlyingChar,
-      underlyingFg,
-      isThumb ? SCROLLBAR_THUMB : SCROLLBAR_TRACK,
-      0
-    )
+    const codepoint = underlyingChar.codePointAt(0) ?? 0x20
+    if (codepoint > 0x7f) {
+      buffer.drawChar(
+        codepoint,
+        scrollbarX,
+        y + offsetY,
+        underlyingFg,
+        isThumb ? SCROLLBAR_THUMB : SCROLLBAR_TRACK,
+        0
+      )
+    } else {
+      buffer.setCell(
+        scrollbarX,
+        y + offsetY,
+        underlyingChar,
+        underlyingFg,
+        isThumb ? SCROLLBAR_THUMB : SCROLLBAR_TRACK,
+        0
+      )
+    }
   }
 }

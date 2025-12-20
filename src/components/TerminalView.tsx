@@ -483,14 +483,26 @@ export function TerminalView(props: TerminalViewProps) {
           ? getCachedRGBA(contentCell.fg.r, contentCell.fg.g, contentCell.fg.b)
           : fallbackFg;
 
-        renderTarget.setCell(
-          scrollbarX,
-          y + renderOffsetY,
-          underlyingChar,
-          underlyingFg,
-          isThumb ? SCROLLBAR_THUMB : SCROLLBAR_TRACK,
-          0
-        );
+        const codepoint = underlyingChar.codePointAt(0) ?? 0x20;
+        if (codepoint > 0x7f) {
+          renderTarget.drawChar(
+            codepoint,
+            scrollbarX,
+            y + renderOffsetY,
+            underlyingFg,
+            isThumb ? SCROLLBAR_THUMB : SCROLLBAR_TRACK,
+            0
+          );
+        } else {
+          renderTarget.setCell(
+            scrollbarX,
+            y + renderOffsetY,
+            underlyingChar,
+            underlyingFg,
+            isThumb ? SCROLLBAR_THUMB : SCROLLBAR_TRACK,
+            0
+          );
+        }
       }
       if (!useFullRender && dirtyRows) {
         dirtyRows[y] = 0;

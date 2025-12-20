@@ -320,7 +320,13 @@ export function renderRow(
 
     // Write cell directly to buffer (with offset for pane position)
     // Use fallback space if char is empty to ensure cell is always overwritten
-    buffer.setCell(x + offsetX, rowY, cell.char || ' ', fg, bg, attributes)
+    const char = cell.char || ' '
+    const codepoint = char.codePointAt(0) ?? 0x20
+    if (codepoint > 0x7f) {
+      buffer.drawChar(codepoint, x + offsetX, rowY, fg, bg, attributes)
+    } else {
+      buffer.setCell(x + offsetX, rowY, char, fg, bg, attributes)
+    }
 
     // Track if this cell was wide for next iteration
     prevCellWasWide = cell.width === 2
