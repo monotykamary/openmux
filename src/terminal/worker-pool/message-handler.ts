@@ -9,6 +9,7 @@ import type {
   SearchMatch,
 } from '../emulator-interface';
 import { unpackDirtyUpdateWithCache } from '../cell-serialization';
+import type { PackedRowUpdate } from '../../core/types';
 import type {
   SessionState,
   PendingRequest,
@@ -51,7 +52,8 @@ export function handleUpdate(
   const { update, rowCache } = unpackDirtyUpdateWithCache(
     packed,
     state.scrollState,
-    state.rowCache
+    state.rowCache,
+    { skipDirtyRows: !!packed.packedRows }
   );
   state.rowCache = rowCache;
 
@@ -102,7 +104,7 @@ export function handleModeChange(
  */
 export function handleScrollbackLine(
   requestId: number,
-  cells: ArrayBuffer | null,
+  packedRows: PackedRowUpdate | null,
   pendingRequests: Map<number, PendingRequest<unknown>>
 ): void {
   const request = pendingRequests.get(requestId);
@@ -110,10 +112,10 @@ export function handleScrollbackLine(
 
   pendingRequests.delete(requestId);
 
-  if (cells === null) {
+  if (packedRows === null) {
     request.resolve(null);
   } else {
-    request.resolve(cells);
+    request.resolve(packedRows);
   }
 }
 
@@ -122,8 +124,7 @@ export function handleScrollbackLine(
  */
 export function handleScrollbackLines(
   requestId: number,
-  cellBuffers: ArrayBuffer[],
-  offsets: number[],
+  packedRows: PackedRowUpdate | null,
   pendingRequests: Map<number, PendingRequest<unknown>>
 ): void {
   const request = pendingRequests.get(requestId);
@@ -131,11 +132,7 @@ export function handleScrollbackLines(
 
   pendingRequests.delete(requestId);
 
-  const result = new Map<number, ArrayBuffer>();
-  for (let i = 0; i < cellBuffers.length; i++) {
-    result.set(offsets[i], cellBuffers[i]);
-  }
-  request.resolve(result);
+  request.resolve(packedRows ?? null);
 }
 
 /**
@@ -267,11 +264,11 @@ export function routeMessage(
       break;
 
     case 'scrollbackLine':
-      handleScrollbackLine(msg.requestId, msg.cells, pendingRequests);
+      handleScrollbackLine(msg.requestId, msg.packedRows, pendingRequests);
       break;
 
     case 'scrollbackLines':
-      handleScrollbackLines(msg.requestId, msg.cells, msg.offsets, pendingRequests);
+      handleScrollbackLines(msg.requestId, msg.packedRows, pendingRequests);
       break;
 
     case 'searchResults':

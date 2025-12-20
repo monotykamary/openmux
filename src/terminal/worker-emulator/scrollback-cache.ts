@@ -1,43 +1,43 @@
 /**
  * Scrollback Cache - LRU cache for scrollback lines
  */
-import type { TerminalCell, TerminalScrollState, DirtyTerminalUpdate } from '../../core/types'
+import type { TerminalScrollState, DirtyTerminalUpdate } from '../../core/types'
 import type { TerminalModes } from '../emulator-interface'
 
 /**
  * ScrollbackCache manages cached scrollback lines with LRU eviction
  */
-export class ScrollbackCache {
-  private cache = new Map<number, TerminalCell[]>()
+export class ScrollbackCache<T> {
+  private cache = new Map<number, T>()
   private maxSize: number
   private lastScrollbackLength = 0
-  private onEvict: ((cells: TerminalCell[]) => void) | null
+  private onEvict: ((value: T) => void) | null
 
-  constructor(maxSize = 1000, onEvict?: (cells: TerminalCell[]) => void) {
+  constructor(maxSize = 1000, onEvict?: (value: T) => void) {
     this.maxSize = maxSize
     this.onEvict = onEvict ?? null
   }
 
-  get(offset: number): TerminalCell[] | null {
+  get(offset: number): T | null {
     return this.cache.get(offset) ?? null
   }
 
-  set(offset: number, cells: TerminalCell[]): void {
+  set(offset: number, value: T): void {
     const existing = this.cache.get(offset)
-    if (existing && existing !== cells) {
+    if (existing && existing !== value) {
       this.onEvict?.(existing)
     }
-    this.cache.set(offset, cells)
+    this.cache.set(offset, value)
     this.prune()
   }
 
-  setMany(lines: Map<number, TerminalCell[]>): void {
-    for (const [offset, cells] of lines) {
+  setMany(lines: Map<number, T>): void {
+    for (const [offset, value] of lines) {
       const existing = this.cache.get(offset)
-      if (existing && existing !== cells) {
+      if (existing && existing !== value) {
         this.onEvict?.(existing)
       }
-      this.cache.set(offset, cells)
+      this.cache.set(offset, value)
     }
     this.prune()
   }

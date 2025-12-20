@@ -497,7 +497,8 @@ export function unpackDirtyUpdate(
 export function unpackDirtyUpdateWithCache(
   packed: SerializedDirtyUpdate,
   scrollState: TerminalScrollState,
-  rowCache?: RowCache | null
+  rowCache?: RowCache | null,
+  options?: { skipDirtyRows?: boolean }
 ): { update: DirtyTerminalUpdate; rowCache: RowCache } {
   const cache: RowCache = rowCache && rowCache.rows === packed.rows && rowCache.cols === packed.cols
     ? rowCache
@@ -505,15 +506,17 @@ export function unpackDirtyUpdateWithCache(
 
   // Unpack dirty rows
   const dirtyRows = new Map<number, TerminalCell[]>();
-  const view = new DataView(packed.dirtyRowData);
-  let offset = 0;
+  if (!options?.skipDirtyRows) {
+    const view = new DataView(packed.dirtyRowData);
+    let offset = 0;
 
-  for (let i = 0; i < packed.dirtyRowIndices.length; i++) {
-    const rowIndex = packed.dirtyRowIndices[i];
-    const row = ensureRow(cache, rowIndex);
-    unpackRowInto(view, offset, row, cache.cols);
-    offset += CELL_SIZE * cache.cols;
-    dirtyRows.set(rowIndex, row);
+    for (let i = 0; i < packed.dirtyRowIndices.length; i++) {
+      const rowIndex = packed.dirtyRowIndices[i];
+      const row = ensureRow(cache, rowIndex);
+      unpackRowInto(view, offset, row, cache.cols);
+      offset += CELL_SIZE * cache.cols;
+      dirtyRows.set(rowIndex, row);
+    }
   }
 
   // Unpack full state if present

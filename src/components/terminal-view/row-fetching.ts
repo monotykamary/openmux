@@ -8,6 +8,7 @@ export interface RowFetchingOptions {
   viewportOffset: number
   scrollbackLength: number
   rows: number
+  getScrollbackLinePacked?: (offset: number) => boolean
 }
 
 export interface RowFetchResult {
@@ -64,23 +65,28 @@ export function fetchRowsForRendering(
         cache[y] = null
       } else if (absoluteY < scrollbackLength) {
         // In scrollback buffer - try emulator cache first, then transition cache
-        let line = currentEmulator?.getScrollbackLine(absoluteY) ?? null
-        // Fall back to transition cache for lines that just moved from live terminal
-        if (line === null && hasTransitionCache) {
-          line = transitionCache.get(absoluteY) ?? null
-        }
-        cache[y] = line
-        // Track missing scrollback lines (null when should have data)
-        if (line === null && currentEmulator) {
-          if (firstMissingOffset === -1) {
-            firstMissingOffset = absoluteY
+        const packedAvailable = options.getScrollbackLinePacked?.(absoluteY) ?? false
+        if (packedAvailable) {
+          cache[y] = null
+        } else {
+          let line = currentEmulator?.getScrollbackLine(absoluteY) ?? null
+          // Fall back to transition cache for lines that just moved from live terminal
+          if (line === null && hasTransitionCache) {
+            line = transitionCache.get(absoluteY) ?? null
           }
-          lastMissingOffset = absoluteY
-          if (missingRows && missingRows.count < missingRows.rowIndices.length) {
-            const idx = missingRows.count
-            missingRows.rowIndices[idx] = y
-            missingRows.offsets[idx] = absoluteY
-            missingRows.count = idx + 1
+          cache[y] = line
+          // Track missing scrollback lines (null when should have data)
+          if (line === null && currentEmulator) {
+            if (firstMissingOffset === -1) {
+              firstMissingOffset = absoluteY
+            }
+            lastMissingOffset = absoluteY
+            if (missingRows && missingRows.count < missingRows.rowIndices.length) {
+              const idx = missingRows.count
+              missingRows.rowIndices[idx] = y
+              missingRows.offsets[idx] = absoluteY
+              missingRows.count = idx + 1
+            }
           }
         }
       } else {

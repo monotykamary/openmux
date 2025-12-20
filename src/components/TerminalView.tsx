@@ -123,6 +123,10 @@ export function TerminalView(props: TerminalViewProps) {
   // without waiting for async prefetch from the worker.
   const transitionCache = new Map<number, TerminalCell[]>();
   let scrollbackRowCache: (TerminalCell[] | null)[] = [];
+  let scrollbackPackedCache: Map<number, PackedRowBatchBuffer> | null = null;
+  let scrollbackPackedCacheCols = 0;
+  let packedOverlayIndex: Int32Array | null = null;
+  let packedOverlayIndexCols = 0;
   // Cache emulator for sync access to scrollback lines
   let emulator: ITerminalEmulator | null = null;
   // Version counter to trigger re-renders when state changes
@@ -282,6 +286,22 @@ export function TerminalView(props: TerminalViewProps) {
     }
   };
 
+  const clearScrollbackPackedCache = () => {
+    scrollbackPackedCache?.clear();
+    scrollbackPackedCacheCols = 0;
+  };
+
+  const ensureScrollbackPackedCache = (cols: number) => {
+    if (cols <= 0) {
+      clearScrollbackPackedCache();
+      return;
+    }
+    if (!scrollbackPackedCache || scrollbackPackedCacheCols !== cols) {
+      scrollbackPackedCache = new Map();
+      scrollbackPackedCacheCols = cols;
+    }
+  };
+
   const applyPackedRowUpdate = (packedRows: PackedRowUpdate, rowsLimit: number) => {
     if (!packedRowCache || !packedRowCacheDirty) return;
     if (packedRows.cols !== packedRowCacheCols) return;
@@ -342,6 +362,191 @@ export function TerminalView(props: TerminalViewProps) {
 
       packedRowCacheDirty[rowIndex] = 0;
     }
+  };
+
+  const cacheScrollbackPackedRows = (packedRows: PackedRowUpdate) => {
+    if (!scrollbackPackedCache) return;
+    if (packedRows.cols !== scrollbackPackedCacheCols) return;
+
+    const rowCount = packedRows.rowIndices.length;
+    if (rowCount === 0) return;
+
+    const rowStride = packedRows.cols * PACKED_CELL_BYTE_STRIDE;
+    const dataBytes = new Uint8Array(packedRows.data);
+    const overlayRowStarts = packedRows.overlayRowStarts;
+    const overlayX = packedRows.overlayX;
+    const overlayCodepoint = packedRows.overlayCodepoint;
+    const overlayAttributes = packedRows.overlayAttributes;
+    const overlayFg = packedRows.overlayFg;
+    const overlayBg = packedRows.overlayBg;
+
+    for (let i = 0; i < rowCount; i++) {
+      const offset = packedRows.rowIndices[i];
+      if (offset < 0) continue;
+
+      let entry = scrollbackPackedCache.get(offset) ?? null;
+      if (!entry) {
+        entry = createPackedRowCacheEntry(packedRows.cols);
+        scrollbackPackedCache.set(offset, entry);
+      }
+
+      const srcOffset = i * rowStride;
+      entry.bytes.set(dataBytes.subarray(srcOffset, srcOffset + rowStride));
+
+      const start = overlayRowStarts[i] ?? 0;
+      const end = overlayRowStarts[i + 1] ?? start;
+      const overlayCount = Math.min(end - start, entry.overlayX.length);
+      entry.overlayCount = overlayCount;
+
+      for (let j = 0; j < overlayCount; j++) {
+        const srcIndex = start + j;
+        entry.overlayX[j] = overlayX[srcIndex];
+        entry.overlayY[j] = 0;
+        entry.overlayCodepoint[j] = overlayCodepoint[srcIndex];
+        entry.overlayAttributes[j] = overlayAttributes[srcIndex];
+
+        const fgOffset = srcIndex * 4;
+        entry.overlayFg[j] = getCachedRGBA(
+          overlayFg[fgOffset],
+          overlayFg[fgOffset + 1],
+          overlayFg[fgOffset + 2]
+        );
+
+        const bgOffset = srcIndex * 4;
+        entry.overlayBg[j] = getCachedRGBA(
+          overlayBg[bgOffset],
+          overlayBg[bgOffset + 1],
+          overlayBg[bgOffset + 2]
+        );
+      }
+    }
+  };
+
+  const getScrollbackPackedEntry = (offset: number, cols: number): PackedRowBatchBuffer | null => {
+    if (!scrollbackPackedCache || scrollbackPackedCacheCols !== cols) {
+      return null;
+    }
+    return scrollbackPackedCache.get(offset) ?? null;
+  };
+
+  const ensurePackedOverlayIndex = (cols: number) => {
+    if (!packedOverlayIndex || packedOverlayIndexCols !== cols) {
+      packedOverlayIndex = new Int32Array(cols);
+      packedOverlayIndexCols = cols;
+    }
+    packedOverlayIndex.fill(-1);
+    return packedOverlayIndex;
+  };
+
+  const decodePackedRowEntry = (
+    entry: PackedRowBatchBuffer,
+    cols: number,
+    reuse?: TerminalCell[]
+  ): TerminalCell[] => {
+    const overlayIndex = ensurePackedOverlayIndex(cols);
+    const overlayCount = entry.overlayCount;
+
+    for (let i = 0; i < overlayCount; i++) {
+      const x = entry.overlayX[i];
+      if (x >= 0 && x < cols) {
+        overlayIndex[x] = i;
+      }
+    }
+
+    const row = reuse ?? new Array(cols);
+    if (row.length !== cols) {
+      row.length = cols;
+    }
+
+    const packedFloats = entry.floats;
+    const packedU32 = entry.uints;
+    const packedStride = PACKED_CELL_BYTE_STRIDE / 4;
+
+    for (let x = 0; x < cols; x++) {
+      const overlayIdx = overlayIndex[x];
+      let fgR = 0;
+      let fgG = 0;
+      let fgB = 0;
+      let bgR = 0;
+      let bgG = 0;
+      let bgB = 0;
+      let attributes = 0;
+      let codepoint = 0x20;
+      let width: 1 | 2 = 1;
+
+      if (overlayIdx >= 0) {
+        const overlayCodepoint = entry.overlayCodepoint[overlayIdx];
+        codepoint = overlayCodepoint || 0x20;
+        const fg = entry.overlayFg[overlayIdx];
+        const bg = entry.overlayBg[overlayIdx];
+        if (fg) {
+          fgR = Math.round(fg.r * 255);
+          fgG = Math.round(fg.g * 255);
+          fgB = Math.round(fg.b * 255);
+        }
+        if (bg) {
+          bgR = Math.round(bg.r * 255);
+          bgG = Math.round(bg.g * 255);
+          bgB = Math.round(bg.b * 255);
+        }
+        attributes = entry.overlayAttributes[overlayIdx] ?? 0;
+
+        const nextIdx = x + 1 < cols ? overlayIndex[x + 1] : -1;
+        if (nextIdx >= 0 && entry.overlayCodepoint[nextIdx] === 0) {
+          width = 2;
+        }
+        if (overlayCodepoint === 0) {
+          codepoint = 0x20;
+          width = 1;
+        }
+      } else {
+        const base = x * packedStride;
+        bgR = Math.round(packedFloats[base] * 255);
+        bgG = Math.round(packedFloats[base + 1] * 255);
+        bgB = Math.round(packedFloats[base + 2] * 255);
+        fgR = Math.round(packedFloats[base + 4] * 255);
+        fgG = Math.round(packedFloats[base + 5] * 255);
+        fgB = Math.round(packedFloats[base + 6] * 255);
+        codepoint = packedU32[base + 8] || 0x20;
+      }
+
+      const char = codepoint > 0 ? String.fromCodePoint(codepoint) : ' ';
+      const existing = row[x];
+      if (existing) {
+        existing.char = char;
+        existing.fg.r = fgR;
+        existing.fg.g = fgG;
+        existing.fg.b = fgB;
+        existing.bg.r = bgR;
+        existing.bg.g = bgG;
+        existing.bg.b = bgB;
+        existing.bold = (attributes & ATTR_BOLD) !== 0;
+        existing.italic = (attributes & ATTR_ITALIC) !== 0;
+        existing.underline = (attributes & ATTR_UNDERLINE) !== 0;
+        existing.strikethrough = (attributes & ATTR_STRIKETHROUGH) !== 0;
+        existing.inverse = false;
+        existing.blink = false;
+        existing.dim = false;
+        existing.width = width;
+        existing.hyperlinkId = undefined;
+      } else {
+        row[x] = {
+          char,
+          fg: { r: fgR, g: fgG, b: fgB },
+          bg: { r: bgR, g: bgG, b: bgB },
+          bold: (attributes & ATTR_BOLD) !== 0,
+          italic: (attributes & ATTR_ITALIC) !== 0,
+          underline: (attributes & ATTR_UNDERLINE) !== 0,
+          strikethrough: (attributes & ATTR_STRIKETHROUGH) !== 0,
+          inverse: false,
+          blink: false,
+          dim: false,
+          width,
+        };
+      }
+    }
+
+    return row;
   };
 
   const ensureRowTextCache = (rowCount: number) => {
@@ -414,6 +619,18 @@ export function TerminalView(props: TerminalViewProps) {
     for (let i = 0; i < snapshot.count; i++) {
       const rowIndex = snapshot.rowIndices[i];
       const offset = snapshot.offsets[i];
+      const packedGetter = emulator
+        ? (emulator as { getScrollbackLinePacked?: (line: number) => PackedRowUpdate | null }).getScrollbackLinePacked
+        : undefined;
+      const packed = packedGetter ? packedGetter.call(emulator, offset) : null;
+      if (packed && terminalState && packed.cols === terminalState.cols) {
+        ensureScrollbackPackedCache(terminalState.cols);
+        cacheScrollbackPackedRows(packed);
+        markRowDirty(rowIndex);
+        marked = true;
+        continue;
+      }
+
       const line = emulator?.getScrollbackLine(offset) ?? transitionCache.get(offset) ?? null;
       if (line) {
         markRowDirty(rowIndex);
@@ -437,6 +654,10 @@ export function TerminalView(props: TerminalViewProps) {
     missingRowsBuffer = null;
     pendingMissingRows = null;
     pendingPackedRows = null;
+    scrollbackPackedCache = null;
+    scrollbackPackedCacheCols = 0;
+    packedOverlayIndex = null;
+    packedOverlayIndexCols = 0;
   });
 
   // Using on() for explicit ptyId dependency - effect re-runs only when ptyId changes
@@ -531,6 +752,16 @@ export function TerminalView(props: TerminalViewProps) {
               isAtScrollbackLimit
             );
 
+            if (scrollbackDelta > 0 && scrollState.viewportOffset > 0 && packedRowCache) {
+              const decodeCols = terminalState?.cols ?? terminalUpdate.cols;
+              for (let i = 0; i < scrollbackDelta; i++) {
+                const entry = packedRowCache[i];
+                if (!entry || entry.capacityCols < decodeCols) continue;
+                const row = decodePackedRowEntry(entry, decodeCols);
+                transitionCache.set(oldScrollbackLength + i, row);
+              }
+            }
+
             // Update terminal state
             if (terminalUpdate.isFull && terminalUpdate.fullState) {
               // Full refresh: store complete state
@@ -538,6 +769,7 @@ export function TerminalView(props: TerminalViewProps) {
               cachedRows = [...terminalUpdate.fullState.cells];
               // Clear transition cache on full refresh
               transitionCache.clear();
+              clearScrollbackPackedCache();
               dirtyAll = true;
               markAllRowsDirty(terminalUpdate.fullState.rows);
             } else {
@@ -545,9 +777,17 @@ export function TerminalView(props: TerminalViewProps) {
               const existingState = terminalState;
               if (existingState) {
                 // Apply dirty rows to cached rows
-                for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
-                  cachedRows[rowIdx] = newRow;
-                  markRowDirty(rowIdx);
+                if (terminalUpdate.dirtyRows.size > 0) {
+                  for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
+                    cachedRows[rowIdx] = newRow;
+                    markRowDirty(rowIdx);
+                  }
+                } else if (terminalUpdate.packedRows) {
+                  for (let i = 0; i < terminalUpdate.packedRows.rowIndices.length; i++) {
+                    const rowIdx = terminalUpdate.packedRows.rowIndices[i];
+                    if (rowIdx < 0 || rowIdx >= existingState.rows) continue;
+                    markRowDirty(rowIdx);
+                  }
                 }
                 // Update state with merged cells and new cursor/modes
                 terminalState = {
@@ -595,6 +835,9 @@ export function TerminalView(props: TerminalViewProps) {
 
             const scrollbackChanged = scrollbackDelta !== 0 ||
               (scrollbackDelta === 0 && isAtScrollbackLimit && oldScrollbackLength > 0);
+            if (scrollbackChanged) {
+              clearScrollbackPackedCache();
+            }
             if (prevViewportOffset > 0 && scrollbackChanged) {
               dirtyAll = true;
               if (terminalState) {
@@ -640,6 +883,8 @@ export function TerminalView(props: TerminalViewProps) {
           prefetchScheduled = false;
           transitionCache.clear();
           scrollbackRowCache.length = 0;
+          scrollbackPackedCache?.clear();
+          scrollbackPackedCacheCols = 0;
           paddingWasActive = false;
           lastPaddingCols = 0;
           lastPaddingRows = 0;
@@ -696,6 +941,7 @@ export function TerminalView(props: TerminalViewProps) {
     if (colsChanged) {
       clearRowTextCache();
       clearPackedRowCache();
+      clearScrollbackPackedCache();
       pendingPackedRows = null;
     }
     ensureRowTextCache(rows);
@@ -738,13 +984,25 @@ export function TerminalView(props: TerminalViewProps) {
     if (viewportOffset === 0) {
       rowCache = state.cells as (TerminalCell[] | null)[];
     } else {
+      const hasScrollbackPackedLine = (offset: number) => {
+        if (!emulator) return false;
+        const packedGetter = (emulator as { getScrollbackLinePacked?: (line: number) => PackedRowUpdate | null })
+          .getScrollbackLinePacked;
+        if (!packedGetter) return false;
+        const packed = packedGetter.call(emulator, offset);
+        if (!packed || packed.cols !== cols) return false;
+        ensureScrollbackPackedCache(cols);
+        cacheScrollbackPackedRows(packed);
+        return true;
+      };
+
       // Pre-fetch all rows we need for rendering (optimization: fetch once per row, not per cell)
       const missingRows = ensureMissingRowsBuffer(rows);
       const { rowCache: fetchedRows, firstMissingOffset, lastMissingOffset } = fetchRowsForRendering(
         state,
         emulator,
         transitionCache,
-        { viewportOffset, scrollbackLength, rows },
+        { viewportOffset, scrollbackLength, rows, getScrollbackLinePacked: hasScrollbackPackedLine },
         scrollbackRowCache,
         missingRows ?? undefined
       );
@@ -952,12 +1210,12 @@ export function TerminalView(props: TerminalViewProps) {
       let matchRanges: Array<{ startCol: number; endCol: number }> | null = null;
       let currentMatchStart = -1;
       let currentMatchEnd = -1;
-      if (allowPackedBatch && row) {
+      const absoluteY = absoluteRowBase + y;
+      if (allowPackedBatch) {
         if (y === cursorRow) {
           rowHasHighlights = true;
         }
         if (needsRowHighlightCheck) {
-          const absoluteY = absoluteRowBase + y;
           if (hasSelection) {
             selectedRange = getSelectedColumnsForRow(ptyId, absoluteY, cols);
             if (selectedRange) {
@@ -978,37 +1236,67 @@ export function TerminalView(props: TerminalViewProps) {
         }
       }
 
-      if (allowPackedBatch && row && rowHasHighlights && packedRowBatchBuffer) {
-        let cachedEntry = packedRowCache ? packedRowCache[y] : null;
-        let cacheDirty = packedRowCacheDirty ? packedRowCacheDirty[y] === 1 : rowDirty;
-        if (!cachedEntry) {
-          cachedEntry = createPackedRowCacheEntry(cols);
-          if (packedRowCache) {
-            packedRowCache[y] = cachedEntry;
-          }
-          cacheDirty = true;
+      const isScrollbackRow = viewportOffset > 0 && absoluteY < scrollbackLength;
+      let packedEntry: PackedRowBatchBuffer | null = null;
+      let packedEntryDirty = rowDirty;
+
+      if (allowPackedBatch) {
+        if (isScrollbackRow) {
+          packedEntry = getScrollbackPackedEntry(absoluteY, cols);
+          packedEntryDirty = false;
+        } else if (packedRowCache) {
+          packedEntry = packedRowCache[y];
+          packedEntryDirty = packedRowCacheDirty ? packedRowCacheDirty[y] === 1 : rowDirty;
         }
-        if (cacheDirty) {
-          cachedEntry.overlayCount = 0;
-          packRowForBatch(
-            row,
-            y,
-            cols,
-            fallbackFg,
-            fallbackBg,
-            rowTextCache,
-            cachedEntry,
-            0
-          );
-          if (packedRowCacheDirty) {
-            packedRowCacheDirty[y] = 0;
+      }
+
+      let renderRowData = row;
+      if (rowHasHighlights && packedEntry) {
+        renderRowData = decodePackedRowEntry(packedEntry, cols, rowCache[y] ?? undefined);
+        rowCache[y] = renderRowData;
+      }
+
+      if (
+        allowPackedBatch &&
+        rowHasHighlights &&
+        packedRowBatchBuffer &&
+        (packedEntry || (!isScrollbackRow && renderRowData))
+      ) {
+        let cachedEntry = packedRowCache ? packedRowCache[y] : null;
+        const isLiveRow = !isScrollbackRow;
+        if (isLiveRow) {
+          cachedEntry = packedEntry;
+          if (!cachedEntry) {
+            cachedEntry = createPackedRowCacheEntry(cols);
+            if (packedRowCache) {
+              packedRowCache[y] = cachedEntry;
+            }
+            packedEntryDirty = true;
           }
+          if (packedEntryDirty && renderRowData) {
+            cachedEntry.overlayCount = 0;
+            packRowForBatch(
+              renderRowData,
+              y,
+              cols,
+              fallbackFg,
+              fallbackBg,
+              rowTextCache,
+              cachedEntry,
+              0
+            );
+            if (packedRowCacheDirty) {
+              packedRowCacheDirty[y] = 0;
+            }
+          }
+        } else {
+          cachedEntry = packedEntry;
         }
 
         flushPackedBatch();
         drawPackedRowBatch(
           renderTarget,
-          cachedEntry,
+          cachedEntry ?? packedEntry ?? createPackedRowCacheEntry(cols),
           cols,
           renderOffsetX,
           renderOffsetY,
@@ -1018,31 +1306,31 @@ export function TerminalView(props: TerminalViewProps) {
         );
 
         const rowY = y + renderOffsetY;
-        if (matchRanges) {
+        if (renderRowData && matchRanges) {
           for (const range of matchRanges) {
             const start = Math.max(range.startCol, 0);
             const end = Math.min(range.endCol, cols);
             for (let x = start; x < end; x++) {
-              drawHighlightedCell(row, rowY, x, SEARCH_MATCH_FG, SEARCH_MATCH_BG);
+              drawHighlightedCell(renderRowData, rowY, x, SEARCH_MATCH_FG, SEARCH_MATCH_BG);
             }
           }
         }
-        if (currentMatchStart >= 0 && currentMatchEnd > currentMatchStart) {
+        if (renderRowData && currentMatchStart >= 0 && currentMatchEnd > currentMatchStart) {
           const start = Math.max(currentMatchStart, 0);
           const end = Math.min(currentMatchEnd, cols);
           for (let x = start; x < end; x++) {
-            drawHighlightedCell(row, rowY, x, SEARCH_CURRENT_FG, SEARCH_CURRENT_BG);
+            drawHighlightedCell(renderRowData, rowY, x, SEARCH_CURRENT_FG, SEARCH_CURRENT_BG);
           }
         }
-        if (selectedRange) {
+        if (renderRowData && selectedRange) {
           const start = Math.max(selectedRange.start, 0);
           const end = Math.min(selectedRange.end, cols - 1);
           for (let x = start; x <= end; x++) {
-            drawHighlightedCell(row, rowY, x, SELECTION_FG, SELECTION_BG);
+            drawHighlightedCell(renderRowData, rowY, x, SELECTION_FG, SELECTION_BG);
           }
         }
-        if (y === cursorRow && cursorCol >= 0 && cursorCol < cols) {
-          drawCursorCell(row, rowY, cursorCol);
+        if (renderRowData && y === cursorRow && cursorCol >= 0 && cursorCol < cols) {
+          drawCursorCell(renderRowData, rowY, cursorCol);
         }
 
         if (!useFullRender && dirtyRows) {
@@ -1051,32 +1339,36 @@ export function TerminalView(props: TerminalViewProps) {
         continue;
       }
 
-      const canBatchRow = allowPackedBatch && row !== null && !rowHasHighlights;
+      const canBatchRow = allowPackedBatch &&
+        !rowHasHighlights &&
+        (packedEntry !== null || (!isScrollbackRow && renderRowData));
 
       if (canBatchRow && packedRowBatchBuffer) {
-        let cachedEntry = packedRowCache ? packedRowCache[y] : null;
-        let cacheDirty = packedRowCacheDirty ? packedRowCacheDirty[y] === 1 : rowDirty;
-        if (!cachedEntry) {
-          cachedEntry = createPackedRowCacheEntry(cols);
-          if (packedRowCache) {
-            packedRowCache[y] = cachedEntry;
+        let cachedEntry = packedEntry;
+        const isLiveRow = !isScrollbackRow;
+        if (isLiveRow) {
+          if (!cachedEntry) {
+            cachedEntry = createPackedRowCacheEntry(cols);
+            if (packedRowCache) {
+              packedRowCache[y] = cachedEntry;
+            }
+            packedEntryDirty = true;
           }
-          cacheDirty = true;
-        }
-        if (cacheDirty) {
-          cachedEntry.overlayCount = 0;
-          packRowForBatch(
-            row,
-            y,
-            cols,
-            fallbackFg,
-            fallbackBg,
-            rowTextCache,
-            cachedEntry,
-            0
-          );
-          if (packedRowCacheDirty) {
-            packedRowCacheDirty[y] = 0;
+          if (packedEntryDirty && renderRowData) {
+            cachedEntry.overlayCount = 0;
+            packRowForBatch(
+              renderRowData,
+              y,
+              cols,
+              fallbackFg,
+              fallbackBg,
+              rowTextCache,
+              cachedEntry,
+              0
+            );
+            if (packedRowCacheDirty) {
+              packedRowCacheDirty[y] = 0;
+            }
           }
         }
 
@@ -1084,7 +1376,7 @@ export function TerminalView(props: TerminalViewProps) {
           batchStart = y;
           packedRowBatchBuffer.overlayCount = 0;
         }
-        const appended = appendCachedRowToBatch(cachedEntry, batchRowCount);
+        const appended = cachedEntry ? appendCachedRowToBatch(cachedEntry, batchRowCount) : false;
         if (appended) {
           batchRowCount++;
           if (!useFullRender && dirtyRows) {
@@ -1097,7 +1389,7 @@ export function TerminalView(props: TerminalViewProps) {
       flushPackedBatch();
       renderRow(
         renderTarget,
-        row,
+        renderRowData,
         y,
         cols,
         renderOffsetX,

@@ -58,9 +58,11 @@ export async function subscribeToPtyWithCaches(
       // Delta update: merge dirty rows into cached state
       const existingState = caches.terminalStates.get(ptyId);
       if (existingState) {
-        // Apply dirty rows to cached rows
-        for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
-          cachedRows[rowIdx] = newRow;
+        if (terminalUpdate.dirtyRows.size > 0) {
+          // Apply dirty rows to cached rows
+          for (const [rowIdx, newRow] of terminalUpdate.dirtyRows) {
+            cachedRows[rowIdx] = newRow;
+          }
         }
         // Update state with merged cells and new cursor/modes
         caches.terminalStates.set(ptyId, {

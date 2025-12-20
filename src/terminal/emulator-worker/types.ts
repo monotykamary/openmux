@@ -4,6 +4,7 @@
 
 import type { GhosttyTerminal } from 'ghostty-web';
 import type { WorkerTerminalColors, TerminalModes } from '../emulator-interface';
+import type { PackedRowUpdate } from '../../core/types';
 import type { TerminalColors } from '../terminal-colors';
 import { createTitleParser } from '../title-parser';
 
@@ -22,7 +23,7 @@ export interface WorkerSession {
   currentTitle: string;
   lastModes: TerminalModes;
   // Scrollback cache (LRU would be better, but Map is simpler for now)
-  scrollbackCache: Map<number, ArrayBuffer>;
+  scrollbackCache: Map<number, PackedRowUpdate>;
   // Track scrollback length for cache invalidation
   lastScrollbackLength: number;
 }

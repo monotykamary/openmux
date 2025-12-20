@@ -5,9 +5,8 @@
 import type { TerminalScrollState } from '../../core/types';
 import type { WorkerSession } from './types';
 import { sendMessage, getModes } from './helpers';
-import { CELL_SIZE, getTransferables } from '../cell-serialization';
+import { getTransferables } from '../cell-serialization';
 import {
-  packGhosttyLineInto,
   packGhosttyTerminalState,
   packGhosttyLineIntoPackedRow,
   PACKED_CELL_BYTE_STRIDE,
@@ -58,8 +57,7 @@ export function sendDirtyUpdate(sessionId: string, session: WorkerSession): void
   const rowCount = dirtySize ?? entries?.length ?? 0;
 
   const dirtyRowIndices = new Uint16Array(rowCount);
-  const dirtyRowData = new ArrayBuffer(rowCount * cols * CELL_SIZE);
-  const view = new DataView(dirtyRowData);
+  const dirtyRowData = new ArrayBuffer(0);
   const packedRowData = new ArrayBuffer(rowCount * cols * PACKED_CELL_BYTE_STRIDE);
   const packedFloats = new Float32Array(packedRowData);
   const packedU32 = new Uint32Array(packedRowData);
@@ -71,14 +69,12 @@ export function sendDirtyUpdate(sessionId: string, session: WorkerSession): void
   const overlayFg = new Uint8Array(overlayCapacity * 4);
   const overlayBg = new Uint8Array(overlayCapacity * 4);
   let index = 0;
-  let offset = 0;
   let overlayCount = 0;
 
   if (entries) {
     for (const [y, line] of entries) {
       const rowOffset = index;
       dirtyRowIndices[index++] = y;
-      packGhosttyLineInto(view, offset, line, cols, terminalColors);
       overlayRowStarts[rowOffset] = overlayCount;
       overlayCount = packGhosttyLineIntoPackedRow(
         line,
@@ -95,13 +91,11 @@ export function sendDirtyUpdate(sessionId: string, session: WorkerSession): void
         overlayCount
       );
       overlayRowStarts[rowOffset + 1] = overlayCount;
-      offset += cols * CELL_SIZE;
     }
   } else {
     for (const [y, line] of ghosttyDirty) {
       const rowOffset = index;
       dirtyRowIndices[index++] = y;
-      packGhosttyLineInto(view, offset, line, cols, terminalColors);
       overlayRowStarts[rowOffset] = overlayCount;
       overlayCount = packGhosttyLineIntoPackedRow(
         line,
@@ -118,7 +112,6 @@ export function sendDirtyUpdate(sessionId: string, session: WorkerSession): void
         overlayCount
       );
       overlayRowStarts[rowOffset + 1] = overlayCount;
-      offset += cols * CELL_SIZE;
     }
   }
 
@@ -151,7 +144,7 @@ export function sendDirtyUpdate(sessionId: string, session: WorkerSession): void
     isFull: false,
     alternateScreen: terminal.isAlternateScreen(),
     mouseTracking: session.lastModes.mouseTracking,
-    cursorKeyMode: session.lastModes.cursorKeyMode === 'application' ? 1 : 0,
+    cursorKeyMode: (session.lastModes.cursorKeyMode === 'application' ? 1 : 0) as 0 | 1,
     inBandResize: session.lastModes.inBandResize,
   };
   const transferables = getTransferables(packed);
@@ -201,7 +194,7 @@ export function sendFullUpdate(sessionId: string, session: WorkerSession): void 
     fullStateData,
     alternateScreen: modes.alternateScreen,
     mouseTracking: modes.mouseTracking,
-    cursorKeyMode: modes.cursorKeyMode === 'application' ? 1 : 0,
+    cursorKeyMode: (modes.cursorKeyMode === 'application' ? 1 : 0) as 0 | 1,
     inBandResize: modes.inBandResize,
   };
   const transferables = getTransferables(packed);

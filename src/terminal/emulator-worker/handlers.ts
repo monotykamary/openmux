@@ -4,11 +4,15 @@
 
 import { Ghostty } from 'ghostty-web';
 import type { WorkerTerminalColors, SearchMatch } from '../emulator-interface';
+import type { PackedRowUpdate } from '../../core/types';
 import type { TerminalColors } from '../terminal-colors';
 import type { WorkerSession } from './types';
-import { SCROLLBACK_LIMIT } from './types';
 import { createTitleParser } from '../title-parser';
-import { packGhosttyLine, packGhosttyTerminalState } from './packing';
+import {
+  PACKED_CELL_BYTE_STRIDE,
+  packGhosttyLineIntoPackedRow,
+  packGhosttyTerminalState,
+} from './packing';
 import { sendMessage, sendError, convertLine, getModes, extractLineText } from './helpers';
 import { checkModeChanges, sendDirtyUpdate, sendFullUpdate } from './updates';
 import { stripProblematicOscSequences } from './osc-stripping';
@@ -17,6 +21,133 @@ import { stripProblematicOscSequences } from './osc-stripping';
 const LARGE_WRITE_THRESHOLD = 64 * 1024;
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
+const MAX_SCROLLBACK_CACHE = 1000;
+
+const getPackedRowTransferables = (packedRows: PackedRowUpdate): ArrayBuffer[] => {
+  return [
+    packedRows.rowIndices.buffer as ArrayBuffer,
+    packedRows.data,
+    packedRows.overlayRowStarts.buffer as ArrayBuffer,
+    packedRows.overlayX.buffer as ArrayBuffer,
+    packedRows.overlayCodepoint.buffer as ArrayBuffer,
+    packedRows.overlayAttributes.buffer as ArrayBuffer,
+    packedRows.overlayFg.buffer as ArrayBuffer,
+    packedRows.overlayBg.buffer as ArrayBuffer,
+  ];
+};
+
+const clonePackedRowUpdate = (packed: PackedRowUpdate): PackedRowUpdate => {
+  return {
+    cols: packed.cols,
+    rowIndices: packed.rowIndices.slice(0),
+    data: packed.data.slice(0),
+    overlayRowStarts: packed.overlayRowStarts.slice(0),
+    overlayX: packed.overlayX.slice(0),
+    overlayCodepoint: packed.overlayCodepoint.slice(0),
+    overlayAttributes: packed.overlayAttributes.slice(0),
+    overlayFg: packed.overlayFg.slice(0),
+    overlayBg: packed.overlayBg.slice(0),
+  };
+};
+
+const packScrollbackLine = (
+  offset: number,
+  line: ReturnType<WorkerSession['terminal']['getScrollbackLine']>,
+  cols: number,
+  colors: TerminalColors
+): PackedRowUpdate => {
+  const rowIndices = new Uint16Array(1);
+  rowIndices[0] = offset;
+  const data = new ArrayBuffer(cols * PACKED_CELL_BYTE_STRIDE);
+  const packedFloats = new Float32Array(data);
+  const packedU32 = new Uint32Array(data);
+  const overlayRowStarts = new Uint32Array(2);
+  const overlayX = new Int32Array(cols);
+  const overlayCodepoint = new Uint32Array(cols);
+  const overlayAttributes = new Uint8Array(cols);
+  const overlayFg = new Uint8Array(cols * 4);
+  const overlayBg = new Uint8Array(cols * 4);
+  overlayRowStarts[0] = 0;
+  const overlayCount = packGhosttyLineIntoPackedRow(
+    line,
+    cols,
+    colors,
+    0,
+    packedFloats,
+    packedU32,
+    overlayX,
+    overlayCodepoint,
+    overlayAttributes,
+    overlayFg,
+    overlayBg,
+    0
+  );
+  overlayRowStarts[1] = overlayCount;
+
+  return {
+    cols,
+    rowIndices,
+    data,
+    overlayRowStarts,
+    overlayX,
+    overlayCodepoint,
+    overlayAttributes,
+    overlayFg,
+    overlayBg,
+  };
+};
+
+const packScrollbackLines = (
+  entries: PackedRowUpdate[],
+  cols: number
+): PackedRowUpdate | null => {
+  const rowCount = entries.length;
+  if (rowCount === 0) return null;
+
+  const rowIndices = new Uint16Array(rowCount);
+  const rowStride = cols * PACKED_CELL_BYTE_STRIDE;
+  const data = new ArrayBuffer(rowCount * rowStride);
+  const dataBytes = new Uint8Array(data);
+  const overlayCapacity = rowCount * cols;
+  const overlayRowStarts = new Uint32Array(rowCount + 1);
+  const overlayX = new Int32Array(overlayCapacity);
+  const overlayCodepoint = new Uint32Array(overlayCapacity);
+  const overlayAttributes = new Uint8Array(overlayCapacity);
+  const overlayFg = new Uint8Array(overlayCapacity * 4);
+  const overlayBg = new Uint8Array(overlayCapacity * 4);
+
+  let overlayCount = 0;
+  for (let i = 0; i < rowCount; i++) {
+    const entry = entries[i];
+    rowIndices[i] = entry.rowIndices[0] ?? 0;
+    dataBytes.set(new Uint8Array(entry.data), i * rowStride);
+
+    overlayRowStarts[i] = overlayCount;
+    const entryOverlayCount = entry.overlayRowStarts[1] ?? 0;
+    if (entryOverlayCount > 0) {
+      overlayX.set(entry.overlayX.subarray(0, entryOverlayCount), overlayCount);
+      overlayCodepoint.set(entry.overlayCodepoint.subarray(0, entryOverlayCount), overlayCount);
+      overlayAttributes.set(entry.overlayAttributes.subarray(0, entryOverlayCount), overlayCount);
+      const colorOffset = overlayCount * 4;
+      overlayFg.set(entry.overlayFg.subarray(0, entryOverlayCount * 4), colorOffset);
+      overlayBg.set(entry.overlayBg.subarray(0, entryOverlayCount * 4), colorOffset);
+    }
+    overlayCount += entryOverlayCount;
+    overlayRowStarts[i + 1] = overlayCount;
+  }
+
+  return {
+    cols,
+    rowIndices,
+    data,
+    overlayRowStarts,
+    overlayX,
+    overlayCodepoint,
+    overlayAttributes,
+    overlayFg,
+    overlayBg,
+  };
+};
 
 function containsOscStart(bytes: Uint8Array): boolean {
   for (let i = 0; i + 1 < bytes.length; i++) {
@@ -248,41 +379,47 @@ export function handleGetScrollbackLine(
 ): void {
   const session = sessions.get(sessionId);
   if (!session) {
-    sendMessage({ type: 'scrollbackLine', requestId, cells: null });
+    sendMessage({ type: 'scrollbackLine', requestId, packedRows: null });
     return;
   }
 
   try {
     // Check cache
     const cached = session.scrollbackCache.get(offset);
-    if (cached) {
-      // Need to clone since we're transferring
-      const clone = cached.slice(0);
-      sendMessage({ type: 'scrollbackLine', requestId, cells: clone }, [clone]);
+    if (cached && cached.cols === session.cols) {
+      const clone = clonePackedRowUpdate(cached);
+      sendMessage(
+        { type: 'scrollbackLine', requestId, packedRows: clone },
+        getPackedRowTransferables(clone)
+      );
       return;
     }
 
     // Fetch from terminal
     const line = session.terminal.getScrollbackLine(offset);
     if (!line) {
-      sendMessage({ type: 'scrollbackLine', requestId, cells: null });
+      sendMessage({ type: 'scrollbackLine', requestId, packedRows: null });
       return;
     }
 
-    const packed = packGhosttyLine(line, session.cols, session.terminalColors);
+    const packed = packScrollbackLine(offset, line, session.cols, session.terminalColors);
 
     // Cache it
-    session.scrollbackCache.set(offset, packed.slice(0));
+    session.scrollbackCache.set(offset, packed);
 
     // Limit cache size (simple LRU eviction)
-    if (session.scrollbackCache.size > 1000) {
+    if (session.scrollbackCache.size > MAX_SCROLLBACK_CACHE) {
       const firstKey = session.scrollbackCache.keys().next().value;
       if (firstKey !== undefined) {
         session.scrollbackCache.delete(firstKey);
       }
     }
 
-    sendMessage({ type: 'scrollbackLine', requestId, cells: packed }, [packed]);
+    const clone = clonePackedRowUpdate(packed);
+    sendMessage(
+      { type: 'scrollbackLine', requestId, packedRows: clone },
+      getPackedRowTransferables(clone)
+    );
   } catch (error) {
     sendError(`GetScrollbackLine failed: ${error}`, sessionId, requestId);
   }
@@ -300,32 +437,45 @@ export function handleGetScrollbackLines(
 ): void {
   const session = sessions.get(sessionId);
   if (!session) {
-    sendMessage({ type: 'scrollbackLines', requestId, cells: [], offsets: [] });
+    sendMessage({ type: 'scrollbackLines', requestId, packedRows: null });
     return;
   }
 
   try {
-    const cells: ArrayBuffer[] = [];
-    const offsets: number[] = [];
+    const entries: PackedRowUpdate[] = [];
 
     for (let i = 0; i < count; i++) {
       const offset = startOffset + i;
       const cached = session.scrollbackCache.get(offset);
-      if (cached) {
-        const clone = cached.slice(0);
-        cells.push(clone);
-        offsets.push(offset);
+      if (cached && cached.cols === session.cols) {
+        entries.push(cached);
         continue;
       }
       const line = session.terminal.getScrollbackLine(offset);
       if (!line) break;
 
-      const packed = packGhosttyLine(line, session.cols, session.terminalColors);
-      cells.push(packed);
-      offsets.push(offset);
+      const packed = packScrollbackLine(offset, line, session.cols, session.terminalColors);
+      session.scrollbackCache.set(offset, packed);
+      entries.push(packed);
     }
 
-    sendMessage({ type: 'scrollbackLines', requestId, cells, offsets }, cells);
+    if (session.scrollbackCache.size > MAX_SCROLLBACK_CACHE) {
+      const firstKey = session.scrollbackCache.keys().next().value;
+      if (firstKey !== undefined) {
+        session.scrollbackCache.delete(firstKey);
+      }
+    }
+
+    const packedRows = packScrollbackLines(entries, session.cols);
+    if (!packedRows) {
+      sendMessage({ type: 'scrollbackLines', requestId, packedRows: null });
+      return;
+    }
+
+    sendMessage(
+      { type: 'scrollbackLines', requestId, packedRows },
+      getPackedRowTransferables(packedRows)
+    );
   } catch (error) {
     sendError(`GetScrollbackLines failed: ${error}`, sessionId, requestId);
   }

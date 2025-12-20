@@ -232,8 +232,8 @@ export type WorkerOutbound =
   | { type: 'update'; sessionId: string; update: SerializedDirtyUpdate }
   | { type: 'titleChange'; sessionId: string; title: string }
   | { type: 'modeChange'; sessionId: string; modes: TerminalModes }
-  | { type: 'scrollbackLine'; requestId: number; cells: ArrayBuffer | null }
-  | { type: 'scrollbackLines'; requestId: number; cells: ArrayBuffer[]; offsets: number[] }
+  | { type: 'scrollbackLine'; requestId: number; packedRows: PackedRowUpdate | null }
+  | { type: 'scrollbackLines'; requestId: number; packedRows: PackedRowUpdate | null }
   | { type: 'terminalState'; requestId: number; state: ArrayBuffer }
   | { type: 'searchResults'; requestId: number; matches: SearchMatch[]; hasMore: boolean }
   | { type: 'destroyed'; sessionId: string }

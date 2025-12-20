@@ -12,7 +12,7 @@
  */
 
 import type { WorkerOutbound } from '../emulator-interface';
-import type { DirtyTerminalUpdate, TerminalScrollState } from '../../core/types';
+import type { DirtyTerminalUpdate, TerminalScrollState, PackedRowUpdate } from '../../core/types';
 import type { TerminalColors } from '../terminal-colors';
 import type { SearchResult, TerminalModes } from '../emulator-interface';
 
@@ -217,7 +217,7 @@ export class EmulatorWorkerPool {
   // Async Queries
   // ============================================================================
 
-  async getScrollbackLine(sessionId: string, offset: number): Promise<ArrayBuffer | null> {
+  async getScrollbackLine(sessionId: string, offset: number): Promise<PackedRowUpdate | null> {
     return getScrollbackLineImpl(
       sessionId,
       offset,
@@ -232,7 +232,7 @@ export class EmulatorWorkerPool {
     sessionId: string,
     startOffset: number,
     count: number
-  ): Promise<Map<number, ArrayBuffer>> {
+  ): Promise<PackedRowUpdate | null> {
     return getScrollbackLinesImpl(
       sessionId,
       startOffset,

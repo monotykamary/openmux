@@ -16,11 +16,11 @@ import type {
   TerminalState,
   TerminalScrollState,
   DirtyTerminalUpdate,
+  PackedRowUpdate,
 } from '../core/types';
 import type { ITerminalEmulator, TerminalModes, SearchResult } from './emulator-interface';
 import type { EmulatorWorkerPool } from './worker-pool';
 import type { TerminalColors } from './terminal-colors';
-import { unpackCellsIntoRow } from './cell-serialization';
 import {
   ScrollbackCache,
   shouldClearCacheOnUpdate,
@@ -29,6 +29,14 @@ import {
   createEmptyTerminalState,
   createEmptyDirtyUpdate,
 } from './worker-emulator/index';
+
+const PACKED_CELL_U32_STRIDE = 12;
+const PACKED_CELL_BYTE_STRIDE = PACKED_CELL_U32_STRIDE * 4;
+const DEFAULT_CODEPOINT = 0x20;
+const ATTR_BOLD = 1;
+const ATTR_ITALIC = 4;
+const ATTR_UNDERLINE = 8;
+const ATTR_STRIKETHROUGH = 128;
 
 // ============================================================================
 // WorkerEmulator Class
@@ -62,9 +70,15 @@ export class WorkerEmulator implements ITerminalEmulator {
 
   // Scrollback cache (main thread side)
   // Size 1000 provides buffer for ~40 screens during fast scrolling
-  private scrollbackCache: ScrollbackCache;
+  private scrollbackCache: ScrollbackCache<TerminalCell[]>;
+  private scrollbackPackedCache: ScrollbackCache<PackedRowUpdate>;
+  private scrollbackPackedCols = 0;
   private scrollbackRowPool: TerminalCell[][] = [];
   private readonly maxScrollbackRowPool = 1000;
+  private livePackedCache: Array<PackedRowUpdate | null> = [];
+  private livePackedCols = 0;
+  private overlayIndexScratch: Int32Array | null = null;
+  private overlayIndexCols = 0;
 
   // Unsubscribe functions
   private unsubUpdate: (() => void) | null = null;
@@ -84,6 +98,7 @@ export class WorkerEmulator implements ITerminalEmulator {
     this._rows = rows;
     this.colors = colors;
     this.scrollbackCache = new ScrollbackCache(1000, (row) => this.recycleScrollbackRow(row));
+    this.scrollbackPackedCache = new ScrollbackCache(1000);
 
     // Subscribe to worker updates
     this.setupSubscriptions();
@@ -98,6 +113,219 @@ export class WorkerEmulator implements ITerminalEmulator {
       return;
     }
     this.scrollbackRowPool.push(row);
+  }
+
+  private createPackedRowEntry(cols: number): PackedRowUpdate {
+    return {
+      cols,
+      rowIndices: new Uint16Array(1),
+      data: new ArrayBuffer(cols * PACKED_CELL_BYTE_STRIDE),
+      overlayRowStarts: new Uint32Array(2),
+      overlayX: new Int32Array(cols),
+      overlayCodepoint: new Uint32Array(cols),
+      overlayAttributes: new Uint8Array(cols),
+      overlayFg: new Uint8Array(cols * 4),
+      overlayBg: new Uint8Array(cols * 4),
+    };
+  }
+
+  private ensureOverlayIndexScratch(cols: number): Int32Array {
+    if (!this.overlayIndexScratch || this.overlayIndexCols !== cols) {
+      this.overlayIndexScratch = new Int32Array(cols);
+      this.overlayIndexCols = cols;
+    }
+    this.overlayIndexScratch.fill(-1);
+    return this.overlayIndexScratch;
+  }
+
+  private updatePackedRowEntry(
+    entry: PackedRowUpdate,
+    packedRows: PackedRowUpdate,
+    rowOffset: number
+  ): void {
+    const cols = packedRows.cols;
+    const rowStride = cols * PACKED_CELL_BYTE_STRIDE;
+    const dataBytes = new Uint8Array(packedRows.data);
+    const destBytes = new Uint8Array(entry.data);
+    const srcOffset = rowOffset * rowStride;
+    destBytes.set(dataBytes.subarray(srcOffset, srcOffset + rowStride));
+
+    const start = packedRows.overlayRowStarts[rowOffset] ?? 0;
+    const end = packedRows.overlayRowStarts[rowOffset + 1] ?? start;
+    const overlayCount = Math.min(end - start, entry.overlayX.length);
+    entry.overlayRowStarts[0] = 0;
+    entry.overlayRowStarts[1] = overlayCount;
+
+    if (overlayCount > 0) {
+      entry.overlayX.set(packedRows.overlayX.subarray(start, start + overlayCount), 0);
+      entry.overlayCodepoint.set(
+        packedRows.overlayCodepoint.subarray(start, start + overlayCount),
+        0
+      );
+      entry.overlayAttributes.set(
+        packedRows.overlayAttributes.subarray(start, start + overlayCount),
+        0
+      );
+      const colorOffset = start * 4;
+      const colorLength = overlayCount * 4;
+      entry.overlayFg.set(
+        packedRows.overlayFg.subarray(colorOffset, colorOffset + colorLength),
+        0
+      );
+      entry.overlayBg.set(
+        packedRows.overlayBg.subarray(colorOffset, colorOffset + colorLength),
+        0
+      );
+    }
+
+    entry.rowIndices[0] = packedRows.rowIndices[rowOffset] ?? 0;
+  }
+
+  private applyPackedRowsToLiveCache(packedRows: PackedRowUpdate): void {
+    const rowCount = packedRows.rowIndices.length;
+    if (rowCount === 0) return;
+
+    const cols = packedRows.cols;
+    if (this.livePackedCols !== cols || this.livePackedCache.length !== this._rows) {
+      this.livePackedCols = cols;
+      this.livePackedCache = new Array(this._rows).fill(null);
+    }
+
+    for (let i = 0; i < rowCount; i++) {
+      const rowIndex = packedRows.rowIndices[i];
+      if (rowIndex < 0 || rowIndex >= this._rows) continue;
+
+      let entry = this.livePackedCache[rowIndex];
+      if (!entry || entry.cols !== cols) {
+        entry = this.createPackedRowEntry(cols);
+        this.livePackedCache[rowIndex] = entry;
+      }
+      this.updatePackedRowEntry(entry, packedRows, i);
+    }
+  }
+
+  private applyPackedRowsToScrollbackCache(packedRows: PackedRowUpdate): void {
+    const rowCount = packedRows.rowIndices.length;
+    if (rowCount === 0) return;
+
+    const cols = packedRows.cols;
+    if (this.scrollbackPackedCols !== cols) {
+      this.scrollbackPackedCols = cols;
+      this.scrollbackPackedCache.clear();
+    }
+
+    for (let i = 0; i < rowCount; i++) {
+      const offset = packedRows.rowIndices[i];
+      let entry = this.scrollbackPackedCache.get(offset);
+      if (!entry || entry.cols !== cols) {
+        entry = this.createPackedRowEntry(cols);
+      }
+      this.updatePackedRowEntry(entry, packedRows, i);
+      this.scrollbackPackedCache.set(offset, entry);
+    }
+  }
+
+  private decodePackedRow(entry: PackedRowUpdate, row?: TerminalCell[]): TerminalCell[] {
+    const cols = entry.cols;
+    const overlayIndex = this.ensureOverlayIndexScratch(cols);
+    const overlayCount = entry.overlayRowStarts[1] ?? 0;
+
+    for (let i = 0; i < overlayCount; i++) {
+      const x = entry.overlayX[i];
+      if (x >= 0 && x < cols) {
+        overlayIndex[x] = i;
+      }
+    }
+
+    const floats = new Float32Array(entry.data);
+    const uints = new Uint32Array(entry.data);
+    const output: TerminalCell[] = row ?? new Array(cols);
+    if (output.length !== cols) {
+      output.length = cols;
+    }
+
+    for (let x = 0; x < cols; x++) {
+      const overlayIdx = overlayIndex[x];
+      let fgR = 0;
+      let fgG = 0;
+      let fgB = 0;
+      let bgR = 0;
+      let bgG = 0;
+      let bgB = 0;
+      let attributes = 0;
+      let codepoint = DEFAULT_CODEPOINT;
+      let width: 1 | 2 = 1;
+
+      if (overlayIdx >= 0) {
+        const overlayCodepoint = entry.overlayCodepoint[overlayIdx];
+        codepoint = overlayCodepoint || DEFAULT_CODEPOINT;
+        const colorOffset = overlayIdx * 4;
+        fgR = entry.overlayFg[colorOffset];
+        fgG = entry.overlayFg[colorOffset + 1];
+        fgB = entry.overlayFg[colorOffset + 2];
+        bgR = entry.overlayBg[colorOffset];
+        bgG = entry.overlayBg[colorOffset + 1];
+        bgB = entry.overlayBg[colorOffset + 2];
+        attributes = entry.overlayAttributes[overlayIdx] ?? 0;
+
+        const nextIdx = x + 1 < cols ? overlayIndex[x + 1] : -1;
+        if (nextIdx >= 0 && entry.overlayCodepoint[nextIdx] === 0) {
+          width = 2;
+        }
+
+        if (overlayCodepoint === 0) {
+          codepoint = DEFAULT_CODEPOINT;
+          width = 1;
+        }
+      } else {
+        const base = x * PACKED_CELL_U32_STRIDE;
+        bgR = Math.round(floats[base] * 255);
+        bgG = Math.round(floats[base + 1] * 255);
+        bgB = Math.round(floats[base + 2] * 255);
+        fgR = Math.round(floats[base + 4] * 255);
+        fgG = Math.round(floats[base + 5] * 255);
+        fgB = Math.round(floats[base + 6] * 255);
+        const baseCodepoint = uints[base + 8];
+        codepoint = baseCodepoint || DEFAULT_CODEPOINT;
+      }
+
+      const char = codepoint > 0 ? String.fromCodePoint(codepoint) : ' ';
+      const existing = output[x];
+      if (existing) {
+        existing.char = char;
+        existing.fg.r = fgR;
+        existing.fg.g = fgG;
+        existing.fg.b = fgB;
+        existing.bg.r = bgR;
+        existing.bg.g = bgG;
+        existing.bg.b = bgB;
+        existing.bold = (attributes & ATTR_BOLD) !== 0;
+        existing.italic = (attributes & ATTR_ITALIC) !== 0;
+        existing.underline = (attributes & ATTR_UNDERLINE) !== 0;
+        existing.strikethrough = (attributes & ATTR_STRIKETHROUGH) !== 0;
+        existing.inverse = false;
+        existing.blink = false;
+        existing.dim = false;
+        existing.width = width;
+        existing.hyperlinkId = undefined;
+      } else {
+        output[x] = {
+          char,
+          fg: { r: fgR, g: fgG, b: fgB },
+          bg: { r: bgR, g: bgG, b: bgB },
+          bold: (attributes & ATTR_BOLD) !== 0,
+          italic: (attributes & ATTR_ITALIC) !== 0,
+          underline: (attributes & ATTR_UNDERLINE) !== 0,
+          strikethrough: (attributes & ATTR_STRIKETHROUGH) !== 0,
+          inverse: false,
+          blink: false,
+          dim: false,
+          width,
+        };
+      }
+    }
+
+    return output;
   }
 
   private setupSubscriptions(): void {
@@ -133,6 +361,7 @@ export class WorkerEmulator implements ITerminalEmulator {
 
     // Smart cache invalidation using ScrollbackCache
     this.scrollbackCache.handleScrollbackChange(newScrollbackLength, isAtScrollbackLimit);
+    this.scrollbackPackedCache.handleScrollbackChange(newScrollbackLength, isAtScrollbackLimit);
 
     // Update scroll state
     this.scrollState = {
@@ -154,18 +383,32 @@ export class WorkerEmulator implements ITerminalEmulator {
     // If full update, cache the full state
     if (update.isFull && update.fullState) {
       this.cachedState = update.fullState;
+      this.livePackedCols = update.fullState.cols;
+      this.livePackedCache = new Array(update.fullState.rows).fill(null);
       // Clear scrollback cache when alternate screen mode changes
       if (shouldClearCache) {
         this.scrollbackCache.clear();
+        this.scrollbackPackedCache.clear();
       }
-    } else if (this.cachedState) {
-      // Apply dirty rows to cached state
-      for (const [rowIndex, cells] of update.dirtyRows) {
-        if (rowIndex >= 0 && rowIndex < this.cachedState.rows) {
-          this.cachedState.cells[rowIndex] = cells;
+    } else {
+      if (update.packedRows) {
+        this.applyPackedRowsToLiveCache(update.packedRows);
+      }
+
+      if (this.cachedState) {
+        if (update.dirtyRows.size > 0) {
+          // Apply dirty rows to cached state (non-worker emulators)
+          for (const [rowIndex, cells] of update.dirtyRows) {
+            if (rowIndex >= 0 && rowIndex < this.cachedState.rows) {
+              this.cachedState.cells[rowIndex] = cells;
+            }
+          }
         }
+        this.cachedState.cursor = update.cursor;
+        this.cachedState.alternateScreen = update.alternateScreen;
+        this.cachedState.mouseTracking = update.mouseTracking;
+        this.cachedState.cursorKeyMode = update.cursorKeyMode;
       }
-      this.cachedState.cursor = update.cursor;
     }
 
     // Sync scroll state to pool
@@ -219,6 +462,10 @@ export class WorkerEmulator implements ITerminalEmulator {
     this.pool.reset(this.sessionId);
     this.currentTitle = '';
     this.scrollbackCache.clear();
+    this.scrollbackPackedCache.clear();
+    this.livePackedCache = [];
+    this.livePackedCols = 0;
+    this.scrollbackPackedCols = 0;
   }
 
   dispose(): void {
@@ -239,6 +486,10 @@ export class WorkerEmulator implements ITerminalEmulator {
     this.titleCallbacks.clear();
     this.updateCallbacks.clear();
     this.scrollbackCache.clear();
+    this.scrollbackPackedCache.clear();
+    this.livePackedCache = [];
+    this.livePackedCols = 0;
+    this.scrollbackPackedCols = 0;
     this.scrollbackRowPool.length = 0;
   }
 
@@ -251,7 +502,37 @@ export class WorkerEmulator implements ITerminalEmulator {
    * Returns null if not cached - use getScrollbackLineAsync for guaranteed access.
    */
   getScrollbackLine(offset: number): TerminalCell[] | null {
-    return this.scrollbackCache.get(offset);
+    const cached = this.scrollbackCache.get(offset);
+    if (cached) return cached;
+
+    const packed = this.scrollbackPackedCache.get(offset);
+    if (!packed) return null;
+
+    const row = this.decodePackedRow(packed, this.acquireScrollbackRow());
+    this.scrollbackCache.set(offset, row);
+    return row;
+  }
+
+  /**
+   * Get a packed scrollback line from cache (synchronous).
+   * Returns null if not cached.
+   */
+  getScrollbackLinePacked(offset: number): PackedRowUpdate | null {
+    return this.scrollbackPackedCache.get(offset);
+  }
+
+  /**
+   * Get a live terminal line from packed cache (synchronous).
+   * Falls back to cached state when packed rows are unavailable.
+   */
+  getLine(row: number): TerminalCell[] | null {
+    if (row < 0 || row >= this._rows) return null;
+    const packed = this.livePackedCache[row];
+    if (packed && packed.cols === this._cols) {
+      const reuse = this.cachedState?.cells[row];
+      return this.decodePackedRow(packed, reuse);
+    }
+    return this.cachedState?.cells[row] ?? null;
   }
 
   /**
@@ -259,18 +540,14 @@ export class WorkerEmulator implements ITerminalEmulator {
    */
   async getScrollbackLineAsync(offset: number): Promise<TerminalCell[] | null> {
     // Check cache first
-    const cached = this.scrollbackCache.get(offset);
+    const cached = this.getScrollbackLine(offset);
     if (cached) return cached;
 
     // Fetch from worker
-    const cells = await this.pool.getScrollbackLine(this.sessionId, offset);
-
-    if (cells) {
-      // Cache the result
-      const row = this.acquireScrollbackRow();
-      unpackCellsIntoRow(cells, row);
-      this.scrollbackCache.set(offset, row);
-      return row;
+    const packed = await this.pool.getScrollbackLine(this.sessionId, offset);
+    if (packed) {
+      this.applyPackedRowsToScrollbackCache(packed);
+      return this.getScrollbackLine(offset);
     }
 
     return null;
@@ -280,20 +557,9 @@ export class WorkerEmulator implements ITerminalEmulator {
    * Prefetch scrollback lines into cache
    */
   async prefetchScrollbackLines(startOffset: number, count: number): Promise<void> {
-    const buffers = await this.pool.getScrollbackLines(this.sessionId, startOffset, count);
-    if (buffers.size === 0) return;
-
-    const lines = new Map<number, TerminalCell[]>();
-    for (const [offset, buffer] of buffers) {
-      if (this.scrollbackCache.get(offset)) continue;
-      const row = this.acquireScrollbackRow();
-      unpackCellsIntoRow(buffer, row);
-      lines.set(offset, row);
-    }
-
-    if (lines.size > 0) {
-      this.scrollbackCache.setMany(lines);
-    }
+    const packed = await this.pool.getScrollbackLines(this.sessionId, startOffset, count);
+    if (!packed) return;
+    this.applyPackedRowsToScrollbackCache(packed);
   }
 
   getDirtyUpdate(scrollState: TerminalScrollState): DirtyTerminalUpdate {
@@ -329,12 +595,30 @@ export class WorkerEmulator implements ITerminalEmulator {
   }
 
   getTerminalState(): TerminalState {
-    if (this.cachedState) {
-      return { ...this.cachedState };
+    const baseState = this.cachedState ?? createEmptyTerminalState(this._cols, this._rows, this.colors, this.modes);
+    const rows = this._rows;
+    const cols = this._cols;
+    const cells: TerminalCell[][] = new Array(rows);
+
+    for (let y = 0; y < rows; y++) {
+      const packed = this.livePackedCache[y];
+      if (packed && packed.cols === cols) {
+        cells[y] = this.decodePackedRow(packed, baseState.cells[y]);
+      } else {
+        cells[y] = baseState.cells[y] ?? [];
+      }
     }
 
-    // Return empty state if not yet received from worker
-    return createEmptyTerminalState(this._cols, this._rows, this.colors, this.modes);
+    return {
+      ...baseState,
+      cols,
+      rows,
+      cells,
+      cursor: this.cachedUpdate?.cursor ?? baseState.cursor,
+      alternateScreen: this.modes.alternateScreen,
+      mouseTracking: this.modes.mouseTracking,
+      cursorKeyMode: this.modes.cursorKeyMode,
+    };
   }
 
   getCursor(): { x: number; y: number; visible: boolean } {

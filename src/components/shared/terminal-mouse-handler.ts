@@ -169,6 +169,12 @@ export function createTerminalMouseHandler(deps: TerminalMouseDeps) {
         return emulator?.getScrollbackLine(absoluteY) ?? null;
       } else {
         const liveY = absoluteY - scrollbackLength;
+        const liveLineGetter = emulator && 'getLine' in emulator
+          ? (emulator as { getLine?: (row: number) => TerminalCell[] | null }).getLine
+          : undefined;
+        if (liveLineGetter) {
+          return liveLineGetter.call(emulator, liveY) ?? null;
+        }
         return state?.cells[liveY] ?? null;
       }
     };

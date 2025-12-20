@@ -3,6 +3,7 @@
  */
 
 import type { WorkerInbound, SearchResult } from '../emulator-interface';
+import type { PackedRowUpdate } from '../../core/types';
 import type { SessionState, PendingRequest } from './types';
 
 /**
@@ -15,7 +16,7 @@ export async function getScrollbackLine(
   sessionToState: Map<string, SessionState>,
   pendingRequests: Map<number, PendingRequest<unknown>>,
   getNextRequestId: () => number
-): Promise<ArrayBuffer | null> {
+): Promise<PackedRowUpdate | null> {
   const state = sessionToState.get(sessionId);
   if (!state) return null;
 
@@ -29,7 +30,7 @@ export async function getScrollbackLine(
 
   return new Promise((resolve, reject) => {
     pendingRequests.set(requestId, {
-      resolve: (value) => resolve(value as ArrayBuffer | null),
+      resolve: (value) => resolve(value as PackedRowUpdate | null),
       reject,
     });
     workers[state.workerIndex].postMessage(msg);
@@ -47,9 +48,9 @@ export async function getScrollbackLines(
   sessionToState: Map<string, SessionState>,
   pendingRequests: Map<number, PendingRequest<unknown>>,
   getNextRequestId: () => number
-): Promise<Map<number, ArrayBuffer>> {
+): Promise<PackedRowUpdate | null> {
   const state = sessionToState.get(sessionId);
-  if (!state) return new Map();
+  if (!state) return null;
 
   const requestId = getNextRequestId();
   const msg: WorkerInbound = {
@@ -62,7 +63,7 @@ export async function getScrollbackLines(
 
   return new Promise((resolve, reject) => {
     pendingRequests.set(requestId, {
-      resolve: (value) => resolve(value as Map<number, ArrayBuffer>),
+      resolve: (value) => resolve(value as PackedRowUpdate | null),
       reject,
     });
     workers[state.workerIndex].postMessage(msg);
