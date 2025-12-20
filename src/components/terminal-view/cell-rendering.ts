@@ -179,6 +179,12 @@ export function renderRow(
   const isCurrentRow = hasSearch && currentMatch?.lineIndex === absoluteY
   const currentMatchStart = isCurrentRow ? currentMatch?.startCol ?? -1 : -1
   const currentMatchEnd = isCurrentRow ? currentMatch?.endCol ?? -1 : -1
+  const hasCursor = isAtBottom && isFocused && cursorVisible
+  const cursorRow = hasCursor ? cursorY : -1
+  const cursorCol = hasCursor ? cursorX : -1
+  const hasSelectionRange = selectedRange !== null
+  const selectedStart = hasSelectionRange ? selectedRange.start : 0
+  const selectedEnd = hasSelectionRange ? selectedRange.end : -1
   let matchIndex = 0
   let activeMatch = matchRanges ? matchRanges[0] ?? null : null
 
@@ -211,11 +217,10 @@ export function renderRow(
     }
 
     // Fast in-range check for selection (simple comparison vs function call)
-    const isSelected = selectedRange !== null && x >= selectedRange.start && x <= selectedRange.end
+    const isSelected = hasSelectionRange && x >= selectedStart && x <= selectedEnd
 
     // Only show cursor when at bottom (not scrolled back) and focused
-    const isCursor = isAtBottom && isFocused && cursorVisible &&
-                     cursorY === rowIndex && cursorX === x
+    const isCursor = cursorRow === rowIndex && cursorCol === x
 
     // Check if cell is a search match (skip function calls if no active search)
     if (activeMatch && x >= activeMatch.endCol) {
