@@ -185,6 +185,10 @@ export function renderRow(
   // Track the previous cell to detect spacer cells after wide characters
   let prevCellWasWide = false
   let prevCellBg: RGBA | null = null
+  let lastFgKey = -1
+  let lastBgKey = -1
+  let lastFg = fallbackFg
+  let lastBg = fallbackBg
 
   for (let x = 0; x < cols; x++) {
     const cell = row?.[x] ?? null
@@ -243,8 +247,26 @@ export function renderRow(
       const tmpB = fgB; fgB = bgB; bgB = tmpB
     }
 
-    let fg = getCachedRGBA(fgR, fgG, fgB)
-    let bg = getCachedRGBA(bgR, bgG, bgB)
+    const fgKey = (fgR << 16) | (fgG << 8) | fgB
+    const bgKey = (bgR << 16) | (bgG << 8) | bgB
+    let fg: RGBA
+    let bg: RGBA
+
+    if (fgKey === lastFgKey) {
+      fg = lastFg
+    } else {
+      fg = getCachedRGBA(fgR, fgG, fgB)
+      lastFgKey = fgKey
+      lastFg = fg
+    }
+
+    if (bgKey === lastBgKey) {
+      bg = lastBg
+    } else {
+      bg = getCachedRGBA(bgR, bgG, bgB)
+      lastBgKey = bgKey
+      lastBg = bg
+    }
 
     // Apply styling in priority order: cursor > selection > current match > other matches
     if (isCursor) {
