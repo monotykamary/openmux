@@ -20,10 +20,11 @@ import { useSearch } from '../contexts/SearchContext';
 import {
   BLACK,
   getCachedRGBA,
+  SCROLLBAR_TRACK,
+  SCROLLBAR_THUMB,
 } from '../terminal/rendering';
 import {
   renderRow,
-  renderScrollbar,
   fetchRowsForRendering,
   calculatePrefetchRequest,
   updateTransitionCache,
@@ -178,6 +179,7 @@ export function TerminalView(props: TerminalViewProps) {
             await prefetchScrollbackLines(prefetchPtyId, start, count);
             if (mounted) {
               // Trigger re-render after prefetch completes
+              dirtyAll = true;
               requestRenderFrame();
             }
           } finally {
@@ -211,6 +213,7 @@ export function TerminalView(props: TerminalViewProps) {
             const oldScrollbackLength = scrollState.scrollbackLength;
             const newScrollbackLength = update.scrollState.scrollbackLength;
             const isAtScrollbackLimit = update.scrollState.isAtScrollbackLimit ?? false;
+            const scrollbackDelta = newScrollbackLength - oldScrollbackLength;
 
             // Update transition cache based on scrollback changes
             updateTransitionCache(
@@ -271,6 +274,12 @@ export function TerminalView(props: TerminalViewProps) {
             // Update scroll state from unified update to ensure it's in sync with terminal state
             // This prevents race conditions where render uses stale scroll state from cache
             scrollState = update.scrollState;
+
+            const scrollbackChanged = scrollbackDelta !== 0 ||
+              (scrollbackDelta === 0 && isAtScrollbackLimit && oldScrollbackLength > 0);
+            if (prevViewportOffset > 0 && scrollbackChanged) {
+              dirtyAll = true;
+            }
 
             if (scrollState.viewportOffset !== prevViewportOffset) {
               dirtyAll = true;
@@ -382,13 +391,15 @@ export function TerminalView(props: TerminalViewProps) {
       rowCache = fetchedRows;
 
       // Schedule prefetch for missing scrollback lines with buffer zone
-      const prefetchRequest = calculatePrefetchRequest(
-        ptyId,
-        firstMissingOffset,
-        lastMissingOffset,
-        scrollbackLength,
-        rows
-      );
+      const prefetchRequest = firstMissingOffset === -1
+        ? null
+        : calculatePrefetchRequest(
+          ptyId,
+          firstMissingOffset,
+          lastMissingOffset,
+          scrollbackLength,
+          rows
+        );
       if (prefetchRequest && !prefetchInProgress && executePrefetchFn) {
         pendingPrefetch = prefetchRequest;
         // Execute prefetch asynchronously (don't block render)
@@ -441,7 +452,21 @@ export function TerminalView(props: TerminalViewProps) {
       getSearchMatchRanges,
     };
 
-    const useFullRender = dirtyAll || viewportOffset > 0 || hasSelection || hasSearch || !dirtyRows;
+    const useFullRender = dirtyAll || !dirtyRows;
+
+    const showScrollbar = !isAtBottom && scrollbackLength > 0;
+    let scrollbarX = 0;
+    let contentCol = 0;
+    let thumbPosition = 0;
+    let thumbHeight = 0;
+    if (showScrollbar) {
+      const totalLines = scrollbackLength + rows;
+      thumbHeight = Math.max(1, Math.floor(rows * rows / totalLines));
+      const scrollRange = rows - thumbHeight;
+      thumbPosition = Math.floor((1 - viewportOffset / scrollbackLength) * scrollRange);
+      scrollbarX = renderOffsetX + width - 1;
+      contentCol = cols - 1;
+    }
 
     // Render rows (partial when safe)
     for (let y = 0; y < rows; y++) {
@@ -450,6 +475,23 @@ export function TerminalView(props: TerminalViewProps) {
       }
       const row = rowCache[y];
       renderRow(renderTarget, row, y, cols, renderOffsetX, renderOffsetY, renderOptions, renderDeps, fallbackFg, fallbackBg);
+      if (showScrollbar) {
+        const isThumb = y >= thumbPosition && y < thumbPosition + thumbHeight;
+        const contentCell = contentCol >= 0 ? row?.[contentCol] ?? null : null;
+        const underlyingChar = contentCell?.char || ' ';
+        const underlyingFg = contentCell
+          ? getCachedRGBA(contentCell.fg.r, contentCell.fg.g, contentCell.fg.b)
+          : fallbackFg;
+
+        renderTarget.setCell(
+          scrollbarX,
+          y + renderOffsetY,
+          underlyingChar,
+          underlyingFg,
+          isThumb ? SCROLLBAR_THUMB : SCROLLBAR_TRACK,
+          0
+        );
+      }
       if (!useFullRender && dirtyRows) {
         dirtyRows[y] = 0;
       }
@@ -489,19 +531,6 @@ export function TerminalView(props: TerminalViewProps) {
       paddingWasActive = false;
     }
 
-    // Render scrollbar when scrolled back (not at bottom)
-    if (!isAtBottom) {
-      renderScrollbar(renderTarget, rowCache, {
-        viewportOffset,
-        scrollbackLength,
-        rows,
-        cols,
-        width,
-        offsetX: renderOffsetX,
-        offsetY: renderOffsetY,
-      }, fallbackFg);
-    }
-
     if (frameBuffer) {
       buffer.drawFrameBuffer(offsetX, offsetY, frameBuffer);
     }
@@ -523,6 +552,7 @@ export function TerminalView(props: TerminalViewProps) {
         const searchChanged = affectsSearch && searchState !== lastSearchRef;
 
         if (selectionChanged || searchChanged) {
+          dirtyAll = true;
           renderer.requestRender();
         }
 

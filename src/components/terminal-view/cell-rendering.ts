@@ -156,6 +156,8 @@ export function renderRow(
     return
   }
 
+  const rowY = rowIndex + offsetY
+
   const {
     scrollbackLength,
     viewportOffset,
@@ -170,8 +172,8 @@ export function renderRow(
     currentMatch,
   } = options
 
-  // Calculate absolute Y for selection check (accounts for scrollback)
-  const absoluteY = scrollbackLength - viewportOffset + rowIndex
+  const needsAbsoluteY = hasSelection || hasSearch
+  const absoluteY = needsAbsoluteY ? scrollbackLength - viewportOffset + rowIndex : 0
 
   // Get selected column range for this row ONCE (O(1) instead of O(cols) function calls)
   const selectedRange = hasSelection ? deps.getSelectedColumnsForRow(ptyId, absoluteY, cols) : null
@@ -197,11 +199,11 @@ export function renderRow(
   let lastBg = fallbackBg
 
   for (let x = 0; x < cols; x++) {
-    const cell = row?.[x] ?? null
+    const cell = row[x] ?? null
 
     if (!cell) {
       // No cell data - use fallback
-      buffer.setCell(x + offsetX, rowIndex + offsetY, ' ', fallbackFg, fallbackBg, 0)
+      buffer.setCell(x + offsetX, rowY, ' ', fallbackFg, fallbackBg, 0)
       prevCellWasWide = false
       prevCellBg = null
       continue
@@ -210,7 +212,7 @@ export function renderRow(
     // If previous cell was wide (width=2), this is a spacer cell
     // Use drawChar with codepoint 0 to mark as continuation without overwriting the wide char
     if (prevCellWasWide && prevCellBg) {
-      buffer.drawChar(0, x + offsetX, rowIndex + offsetY, prevCellBg, prevCellBg, 0)
+      buffer.drawChar(0, x + offsetX, rowY, prevCellBg, prevCellBg, 0)
       prevCellWasWide = false
       prevCellBg = null
       continue
@@ -222,17 +224,21 @@ export function renderRow(
     // Only show cursor when at bottom (not scrolled back) and focused
     const isCursor = cursorRow === rowIndex && cursorCol === x
 
-    // Check if cell is a search match (skip function calls if no active search)
-    if (activeMatch && x >= activeMatch.endCol) {
-      while (matchRanges && matchIndex < matchRanges.length && x >= matchRanges[matchIndex].endCol) {
-        matchIndex++;
+    let isMatch = false
+    let isCurrent = false
+    if (hasSearch) {
+      // Check if cell is a search match (skip function calls if no active search)
+      if (activeMatch && x >= activeMatch.endCol) {
+        while (matchRanges && matchIndex < matchRanges.length && x >= matchRanges[matchIndex].endCol) {
+          matchIndex++;
+        }
+        activeMatch = matchRanges?.[matchIndex] ?? null
       }
-      activeMatch = matchRanges?.[matchIndex] ?? null
+      isMatch = activeMatch !== null &&
+        x >= activeMatch.startCol &&
+        x < activeMatch.endCol
+      isCurrent = currentMatchStart >= 0 && x >= currentMatchStart && x < currentMatchEnd
     }
-    const isMatch = activeMatch !== null &&
-      x >= activeMatch.startCol &&
-      x < activeMatch.endCol
-    const isCurrent = currentMatchStart >= 0 && x >= currentMatchStart && x < currentMatchEnd
 
     let fg: RGBA
     let bg: RGBA
@@ -314,7 +320,7 @@ export function renderRow(
 
     // Write cell directly to buffer (with offset for pane position)
     // Use fallback space if char is empty to ensure cell is always overwritten
-    buffer.setCell(x + offsetX, rowIndex + offsetY, cell.char || ' ', fg, bg, attributes)
+    buffer.setCell(x + offsetX, rowY, cell.char || ' ', fg, bg, attributes)
 
     // Track if this cell was wide for next iteration
     prevCellWasWide = cell.width === 2
