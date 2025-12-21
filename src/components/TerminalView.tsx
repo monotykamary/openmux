@@ -1251,6 +1251,20 @@ export function TerminalView(props: TerminalViewProps) {
       }
 
       let renderRowData = row;
+
+      // When packed cache is empty for a live row, get fresh data from emulator
+      // This prevents stale cachedRows data from being used after cache clears (e.g., resize)
+      const isLiveRow = !isScrollbackRow;
+      if (isLiveRow && !packedEntry && emulator) {
+        const liveLineGetter = (emulator as { getLine?: (row: number) => TerminalCell[] | null }).getLine;
+        if (liveLineGetter) {
+          const freshRow = liveLineGetter.call(emulator, y);
+          if (freshRow) {
+            renderRowData = freshRow;
+            rowCache[y] = freshRow;
+          }
+        }
+      }
       if (rowHasHighlights && packedEntry) {
         renderRowData = decodePackedRowEntry(packedEntry, cols, rowCache[y] ?? undefined);
         rowCache[y] = renderRowData;
@@ -1260,10 +1274,9 @@ export function TerminalView(props: TerminalViewProps) {
         allowPackedBatch &&
         rowHasHighlights &&
         packedRowBatchBuffer &&
-        (packedEntry || (!isScrollbackRow && renderRowData))
+        (packedEntry || (isLiveRow && renderRowData))
       ) {
         let cachedEntry = packedRowCache ? packedRowCache[y] : null;
-        const isLiveRow = !isScrollbackRow;
         if (isLiveRow) {
           cachedEntry = packedEntry;
           if (!cachedEntry) {
@@ -1341,11 +1354,10 @@ export function TerminalView(props: TerminalViewProps) {
 
       const canBatchRow = allowPackedBatch &&
         !rowHasHighlights &&
-        (packedEntry !== null || (!isScrollbackRow && renderRowData));
+        (packedEntry !== null || (isLiveRow && renderRowData));
 
       if (canBatchRow && packedRowBatchBuffer) {
         let cachedEntry = packedEntry;
-        const isLiveRow = !isScrollbackRow;
         if (isLiveRow) {
           if (!cachedEntry) {
             cachedEntry = createPackedRowCacheEntry(cols);
