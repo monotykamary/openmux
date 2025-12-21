@@ -2,11 +2,15 @@
 set -euo pipefail
 
 # Publish openmux to npm
-# This script verifies GitHub release exists before publishing
+# This script polls GitHub release assets and publishes non-interactively
 
 REPO="monotykamary/openmux"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+EXPECTED_ASSETS=3
+POLL_INTERVAL_SECONDS="${GITHUB_POLL_INTERVAL_SECONDS:-15}"
+POLL_TIMEOUT_SECONDS="${GITHUB_POLL_TIMEOUT_SECONDS:-1200}"
+POLL_DEADLINE=$((SECONDS + POLL_TIMEOUT_SECONDS))
 
 # Colors
 RED='\033[0;31m'
@@ -20,6 +24,13 @@ error() { printf "${RED}✗${NC} %s\n" "$1" >&2; exit 1; }
 
 cd "$PROJECT_DIR"
 
+# Load .env if present
+if [[ -f ".env" ]]; then
+    set -a
+    source ".env"
+    set +a
+fi
+
 # Get version from package.json
 VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 TAG="v$VERSION"
@@ -29,11 +40,23 @@ echo "Publishing openmux $TAG to npm"
 echo "─────────────────────────────────"
 echo ""
 
-# Check if logged into npm
-if ! npm whoami &>/dev/null; then
-    error "Not logged into npm. Run 'npm login' first."
+# Configure npm auth from NPM_TOKEN
+if [[ -z "${NPM_TOKEN:-}" ]]; then
+    error "NPM_TOKEN is not set. Add it to .env or export it in your shell."
 fi
-info "Logged into npm as $(npm whoami)"
+TMP_NPMRC="$(mktemp)"
+trap 'rm -f "$TMP_NPMRC"' EXIT
+{
+    echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}"
+    echo "always-auth=true"
+} > "$TMP_NPMRC"
+export NPM_CONFIG_USERCONFIG="$TMP_NPMRC"
+
+# Check npm auth
+if ! npm whoami &>/dev/null; then
+    error "NPM_TOKEN is invalid or lacks access."
+fi
+info "Authenticated to npm as $(npm whoami)"
 
 # Check for uncommitted changes
 if [[ -n $(git status --porcelain) ]]; then
@@ -47,32 +70,32 @@ if ! git rev-parse "$TAG" &>/dev/null; then
 fi
 info "Tag $TAG exists"
 
-# Check if GitHub release exists with binaries
+# Poll for GitHub release assets
 echo ""
-echo "Checking GitHub release..."
+echo "Waiting for GitHub release assets..."
 
 RELEASE_URL="https://api.github.com/repos/$REPO/releases/tags/$TAG"
-RELEASE_DATA=$(curl -fsSL "$RELEASE_URL" 2>/dev/null || echo "")
+ASSETS=0
+RELEASE_DATA=""
 
-if [[ -z "$RELEASE_DATA" ]]; then
-    error "GitHub release for $TAG not found. Wait for GitHub Actions to complete."
-fi
-
-# Check for expected assets
-ASSETS=$(echo "$RELEASE_DATA" | grep -o '"name": *"openmux-[^"]*\.tar\.gz"' | wc -l)
-if [[ "$ASSETS" -lt 3 ]]; then
-    warn "Expected 3 binary assets, found $ASSETS"
-    echo ""
-    echo "Available assets:"
-    echo "$RELEASE_DATA" | grep -o '"name": *"[^"]*"' | sed 's/"name": *"/  - /' | sed 's/"$//'
-    echo ""
-    read -p "Continue anyway? [y/N] " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
+while [[ $SECONDS -lt $POLL_DEADLINE ]]; do
+    RELEASE_DATA=$(curl -fsSL "$RELEASE_URL" 2>/dev/null || echo "")
+    if [[ -n "$RELEASE_DATA" ]]; then
+        ASSETS=$(echo "$RELEASE_DATA" | grep -o '"name": *"openmux-[^"]*\.tar\.gz"' | wc -l | tr -d ' ')
+        if [[ "$ASSETS" -ge "$EXPECTED_ASSETS" ]]; then
+            info "GitHub release has $ASSETS binary assets"
+            break
+        fi
+        warn "Found $ASSETS/$EXPECTED_ASSETS assets, waiting..."
+    else
+        warn "Release $TAG not available yet, waiting..."
     fi
-else
-    info "GitHub release has $ASSETS binary assets"
+    sleep "$POLL_INTERVAL_SECONDS"
+done
+
+if [[ "$ASSETS" -lt "$EXPECTED_ASSETS" ]]; then
+    echo ""
+    error "Timed out waiting for $EXPECTED_ASSETS GitHub assets for $TAG."
 fi
 
 # Dry run first
@@ -81,17 +104,11 @@ echo "Running npm pack (dry run)..."
 npm pack --dry-run
 
 echo ""
-read -p "Publish to npm? [y/N] " -n 1 -r
-echo
-
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    npm publish
-    echo ""
-    info "Published openmux@$VERSION to npm!"
-    echo ""
-    echo "Users can now install with:"
-    echo "  npm install -g openmux"
-    echo "  bun add -g openmux"
-else
-    echo "Aborted."
-fi
+echo "Publishing to npm..."
+npm publish
+echo ""
+info "Published openmux@$VERSION to npm!"
+echo ""
+echo "Users can now install with:"
+echo "  npm install -g openmux"
+echo "  bun add -g openmux"
