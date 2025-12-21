@@ -18,9 +18,12 @@ import type { Workspaces } from '../core/operations/layout-actions';
 import { DEFAULT_CONFIG } from '../core/config';
 import {
   createSessionLegacy as createSessionOnDisk,
+  listSessionsLegacy as listSessions,
   renameSessionLegacy as renameSessionOnDisk,
   deleteSessionLegacy as deleteSessionOnDisk,
   saveCurrentSession,
+  switchToSession,
+  loadSessionData,
 } from '../effect/bridge';
 import {
   type SessionState,

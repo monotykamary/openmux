@@ -3,7 +3,7 @@
  * Displays directory name, process name, and git branch in a 2-line card format
  */
 
-import type { PtyInfo } from '../../contexts/AggregateViewContext';
+import type { PtyInfo } from '../../contexts/aggregate-view/types';
 import { getDirectoryName } from './utils';
 
 interface PtyCardProps {

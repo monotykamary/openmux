@@ -7,7 +7,7 @@ interface LayoutDeps {
 
 interface TerminalDeps {
   isInitialized: boolean;
-  createPTY: (paneId: string, cols: number, rows: number, cwd?: string) => Promise<void>;
+  createPTY: (paneId: string, cols: number, rows: number, cwd?: string) => Promise<string>;
 }
 
 interface PendingCwdRef {
@@ -21,7 +21,7 @@ interface PtyLifecycleDeps {
   ptyRetryCounter: Accessor<number>;
   setPtyRetryCounter: Setter<number>;
   pendingCwdRef: PendingCwdRef;
-  getSessionCwd: (paneId: string) => string | null;
+  getSessionCwd: (paneId: string) => string | null | undefined;
   markPtyCreated: (paneId: string) => void;
   isPtyCreated: (paneId: string) => boolean;
 }

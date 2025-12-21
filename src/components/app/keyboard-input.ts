@@ -1,8 +1,11 @@
 import { useKeyboard } from '@opentui/solid'
 import type { Accessor } from 'solid-js'
+import type { KeyMode } from '../../core/types'
+import type { SearchKeyboardDeps, KeyEvent as SearchKeyEvent } from './search-keyboard'
+import type { KeyProcessorDeps, KeyEvent as NormalKeyEvent } from './key-processor'
 
 interface KeyboardHandler {
-  mode: 'normal' | 'search'
+  mode: KeyMode
   handleKeyDown: (event: { key: string; ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean }) => boolean
 }
 
@@ -10,19 +13,9 @@ interface KeyboardInputDeps {
   keyboardHandler: KeyboardHandler
   sessionPickerVisible: Accessor<boolean>
   clearAllSelections: () => void
-  getFocusedCursorKeyMode: () => string | null
+  getFocusedCursorKeyMode: () => 'normal' | 'application'
   writeToFocused: (data: string) => void
-  handleSearchKeyboard: (
-    event: { name: string; ctrl?: boolean; shift?: boolean; option?: boolean; meta?: boolean; sequence?: string },
-    deps: {
-      exitSearchMode: () => void
-      keyboardExitSearchMode: () => void
-      setSearchQuery: (query: string) => void
-      nextMatch: () => void
-      prevMatch: () => void
-      getSearchState: () => unknown
-    }
-  ) => void
+  handleSearchKeyboard: (event: SearchKeyEvent, deps: SearchKeyboardDeps) => boolean
   routeKeyboardEventSync: (event: {
     key: string
     ctrl?: boolean
@@ -35,15 +28,8 @@ interface KeyboardInputDeps {
   setSearchQuery: (query: string) => void
   nextMatch: () => void
   prevMatch: () => void
-  getSearchState: () => unknown
-  processNormalModeKey: (
-    event: { name: string; ctrl?: boolean; shift?: boolean; option?: boolean; meta?: boolean; sequence?: string },
-    deps: {
-      clearAllSelections: () => void
-      getFocusedCursorKeyMode: () => string | null
-      writeToFocused: (data: string) => void
-    }
-  ) => void
+  getSearchState: SearchKeyboardDeps['getSearchState']
+  processNormalModeKey: (event: NormalKeyEvent, deps: KeyProcessorDeps) => void
 }
 
 export function useAppKeyboardInput(deps: KeyboardInputDeps): void {
