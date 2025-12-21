@@ -161,6 +161,17 @@ export function TerminalView(props: TerminalViewProps) {
     )
   );
 
+  // Resize events don't always trigger a terminal update, so force a render to avoid blank frames.
+  createEffect(
+    on(
+      [() => props.width, () => props.height],
+      () => {
+        setVersion(v => v + 1);
+        renderer.requestRender();
+      }
+    )
+  );
+
   return (
     <Show
       when={version() > 0}

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.29](https://github.com/monotykamary/openmux/compare/v0.2.28...v0.2.29) (2025-12-21)
+
+
+### Bug Fixes
+
+* **pty:** prefer codex name from argv ([aceac75](https://github.com/monotykamary/openmux/commit/aceac75a7061e439c3396333a4eda999a0bbcc76))
+* remove terminal placeholder and avoid resize flicker ([39a1758](https://github.com/monotykamary/openmux/commit/39a17589a0574095fc79a7e8e432029d1c10ca1d))
+
 ### [0.2.28](https://github.com/monotykamary/openmux/compare/v0.2.27...v0.2.28) (2025-12-20)
 
 
