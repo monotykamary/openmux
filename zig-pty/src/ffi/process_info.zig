@@ -108,6 +108,7 @@ const macos = struct {
     }
 
     /// Get argv[0] basename via sysctl KERN_PROCARGS2.
+    /// If argv[0] is a known interpreter, prefer argv[1] basename.
     /// Returns: length written, or <= 0 on failure.
     fn getArgv0Basename(pid: c_int, buf: [*]u8, len: usize) c_int {
         if (builtin.os.tag != .macos) return constants.ERROR;
@@ -165,20 +166,33 @@ const macos = struct {
 
         // Extract basename from argv[0]
         const argv0 = procargs_buf[argv0_start..argv0_end];
-        var basename_start: usize = 0;
-        for (argv0, 0..) |ch, i| {
-            if (ch == '/') {
-                basename_start = i + 1;
-            }
-        }
-
-        const basename = argv0[basename_start..];
-        if (basename.len == 0) {
+        const argv0_basename = basenameFromPath(argv0);
+        if (argv0_basename.len == 0) {
             return constants.ERROR;
         }
 
-        const copy_len = @min(basename.len, len - 1);
-        @memcpy(buf[0..copy_len], basename[0..copy_len]);
+        // If argv[0] is a known interpreter, prefer argv[1] basename
+        p += 1; // skip null terminator for argv[0]
+        if (p < size and isInterpreterName(argv0_basename)) {
+            const argv1_start = p;
+            while (p < size and procargs_buf[p] != 0) : (p += 1) {}
+            const argv1_end = p;
+            if (argv1_end > argv1_start) {
+                const argv1 = procargs_buf[argv1_start..argv1_end];
+                if (argv1.len > 0 and argv1[0] != '-') {
+                    const argv1_basename = basenameFromPath(argv1);
+                    if (argv1_basename.len > 0) {
+                        const copy_len = @min(argv1_basename.len, len - 1);
+                        @memcpy(buf[0..copy_len], argv1_basename[0..copy_len]);
+                        buf[copy_len] = 0;
+                        return @intCast(copy_len);
+                    }
+                }
+            }
+        }
+
+        const copy_len = @min(argv0_basename.len, len - 1);
+        @memcpy(buf[0..copy_len], argv0_basename[0..copy_len]);
         buf[copy_len] = 0;
 
         return @intCast(copy_len);
@@ -316,6 +330,7 @@ const linux = struct {
     }
 
     /// Get argv[0] basename from /proc/<pid>/cmdline.
+    /// If argv[0] is a known interpreter, prefer argv[1] basename.
     fn getCmdlineBasename(pid: c_int, buf: [*]u8, len: usize) c_int {
         if (builtin.os.tag != .linux) return constants.ERROR;
 
@@ -338,18 +353,31 @@ const linux = struct {
 
         // Extract basename
         const argv0 = cmdline[0..argv0_len];
-        var basename_start: usize = 0;
-        for (argv0, 0..) |ch, i| {
-            if (ch == '/') {
-                basename_start = i + 1;
+        const argv0_basename = basenameFromPath(argv0);
+        if (argv0_basename.len == 0) return constants.ERROR;
+
+        // If argv[0] is a known interpreter, prefer argv[1] basename
+        var p: usize = argv0_len + 1;
+        if (p < @as(usize, @intCast(bytes_read)) and isInterpreterName(argv0_basename)) {
+            const argv1_start = p;
+            while (p < @as(usize, @intCast(bytes_read)) and cmdline[p] != 0) : (p += 1) {}
+            const argv1_end = p;
+            if (argv1_end > argv1_start) {
+                const argv1 = cmdline[argv1_start..argv1_end];
+                if (argv1.len > 0 and argv1[0] != '-') {
+                    const argv1_basename = basenameFromPath(argv1);
+                    if (argv1_basename.len > 0) {
+                        const copy_len = @min(argv1_basename.len, len - 1);
+                        @memcpy(buf[0..copy_len], argv1_basename[0..copy_len]);
+                        buf[copy_len] = 0;
+                        return @intCast(copy_len);
+                    }
+                }
             }
         }
 
-        const basename = argv0[basename_start..];
-        if (basename.len == 0) return constants.ERROR;
-
-        const copy_len = @min(basename.len, len - 1);
-        @memcpy(buf[0..copy_len], basename[0..copy_len]);
+        const copy_len = @min(argv0_basename.len, len - 1);
+        @memcpy(buf[0..copy_len], argv0_basename[0..copy_len]);
         buf[copy_len] = 0;
 
         return @intCast(copy_len);
@@ -421,3 +449,28 @@ const linux = struct {
         return max_pid;
     }
 };
+
+// ============================================================================
+// Shared helpers
+// ============================================================================
+
+fn basenameFromPath(path: []const u8) []const u8 {
+    var basename_start: usize = 0;
+    for (path, 0..) |ch, i| {
+        if (ch == '/') {
+            basename_start = i + 1;
+        }
+    }
+    return path[basename_start..];
+}
+
+fn isInterpreterName(name: []const u8) bool {
+    return std.mem.eql(u8, name, "node") or
+        std.mem.eql(u8, name, "nodejs") or
+        std.mem.eql(u8, name, "bun") or
+        std.mem.eql(u8, name, "deno") or
+        std.mem.eql(u8, name, "python") or
+        std.mem.eql(u8, name, "python3") or
+        std.mem.eql(u8, name, "ruby") or
+        std.mem.eql(u8, name, "perl");
+}
