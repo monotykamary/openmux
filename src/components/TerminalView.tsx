@@ -135,12 +135,8 @@ export function TerminalView(props: TerminalViewProps) {
           style={{
             width: props.width,
             height: props.height,
-            alignItems: 'center',
-            justifyContent: 'center',
           }}
-        >
-          <text fg="#666666">Loading terminal...</text>
-        </box>
+        />
       }
     >
       <box
