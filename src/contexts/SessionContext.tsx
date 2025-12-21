@@ -18,14 +18,9 @@ import type { Workspaces } from '../core/operations/layout-actions';
 import { DEFAULT_CONFIG } from '../core/config';
 import {
   createSessionLegacy as createSessionOnDisk,
-  listSessionsLegacy as listSessions,
-  getActiveSessionIdLegacy as getActiveSessionId,
   renameSessionLegacy as renameSessionOnDisk,
   deleteSessionLegacy as deleteSessionOnDisk,
   saveCurrentSession,
-  loadSessionData,
-  switchToSession,
-  getSessionSummary,
 } from '../effect/bridge';
 import {
   type SessionState,
@@ -34,6 +29,7 @@ import {
   sessionReducer,
   createInitialState,
 } from '../core/operations/session-actions';
+import { createSessionRefresher, initializeSessionContext } from './session/bootstrap';
 
 // Re-export types for external consumers
 export type { SessionState, SessionSummary };
@@ -116,53 +112,15 @@ export function SessionProvider(props: SessionProviderProps) {
   };
 
   // Actions
-  const refreshSessions = async () => {
-    const sessions = await listSessions();
-    dispatch({ type: 'SET_SESSIONS', sessions });
-
-    // Load summaries for all sessions
-    const summaries = new Map<SessionId, SessionSummary>();
-    for (const session of sessions) {
-      const summary = await getSessionSummary(session.id);
-      if (summary) {
-        summaries.set(session.id, summary);
-      }
-    }
-    dispatch({ type: 'SET_SUMMARIES', summaries });
-  };
+  const refreshSessions = createSessionRefresher(dispatch);
 
   // Initialize on mount
   onMount(async () => {
-    await refreshSessions();
-
-    // Get active session or create default
-    let activeId = await getActiveSessionId();
-    const sessions = await listSessions();
-
-    if (!activeId && sessions.length === 0) {
-      // First run - create default session
-      const metadata = await createSessionOnDisk();
-      activeId = metadata.id;
-      dispatch({ type: 'SET_SESSIONS', sessions: [metadata] });
-      dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
-    } else if (activeId) {
-      // Load existing session
-      const session = sessions.find(s => s.id === activeId);
-      if (session) {
-        dispatch({ type: 'SET_ACTIVE_SESSION', id: activeId, session });
-
-        // Update lastSwitchedAt so this session is properly marked as most recent
-        await switchToSession(activeId);
-        await refreshSessions();
-
-        // Load session data and notify parent
-        const data = await loadSessionData(activeId);
-        if (data && Object.keys(data.workspaces).length > 0) {
-          // IMPORTANT: Await onSessionLoad to ensure CWD map is set before initialized
-          await props.onSessionLoad(data.workspaces, data.activeWorkspaceId, data.cwdMap, activeId);
-        }
-      }
-    }
+    await initializeSessionContext({
+      refreshSessions,
+      dispatch,
+      onSessionLoad: props.onSessionLoad,
+    });
 
     dispatch({ type: 'SET_INITIALIZED' });
   });

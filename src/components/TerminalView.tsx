@@ -48,6 +48,7 @@ import {
   type RowRenderCache,
   type MissingRowBuffer,
 } from './terminal-view';
+import { PackedRowCache } from './terminal-view/packed-row-cache';
 
 interface TerminalViewProps {
   ptyId: string;
@@ -109,9 +110,7 @@ export function TerminalView(props: TerminalViewProps) {
   let frameBufferHeight = 0;
   let packedRowBuffer: PackedRowBuffer | null = null;
   let packedRowBatchBuffer: PackedRowBatchBuffer | null = null;
-  let packedRowCache: Array<PackedRowBatchBuffer | null> | null = null;
-  let packedRowCacheCols = 0;
-  let packedRowCacheDirty: Uint8Array | null = null;
+  const packedRowCache = new PackedRowCache();
   let rowTextCache: RowTextCache | null = null;
   let rowRenderCache: RowRenderCache | null = null;
   let missingRowsBuffer: MissingRowBuffer | null = null;
@@ -123,10 +122,6 @@ export function TerminalView(props: TerminalViewProps) {
   // without waiting for async prefetch from the worker.
   const transitionCache = new Map<number, TerminalCell[]>();
   let scrollbackRowCache: (TerminalCell[] | null)[] = [];
-  let scrollbackPackedCache: Map<number, PackedRowBatchBuffer> | null = null;
-  let scrollbackPackedCacheCols = 0;
-  let packedOverlayIndex: Int32Array | null = null;
-  let packedOverlayIndexCols = 0;
   // Cache emulator for sync access to scrollback lines
   let emulator: ITerminalEmulator | null = null;
   // Version counter to trigger re-renders when state changes
@@ -153,7 +148,7 @@ export function TerminalView(props: TerminalViewProps) {
     if (rowCount <= 0) {
       dirtyRows = null;
       clearRowTextCache();
-      clearPackedRowCache();
+      packedRowCache.clearPackedRowCache();
       return;
     }
     if (!dirtyRows || dirtyRows.length !== rowCount) {
@@ -161,7 +156,7 @@ export function TerminalView(props: TerminalViewProps) {
     }
     dirtyRows.fill(1);
     clearRowTextCache();
-    clearPackedRowCache();
+    packedRowCache.clearPackedRowCache();
   };
 
   const markRowDirty = (rowIndex: number, invalidateCache = true) => {
@@ -169,7 +164,7 @@ export function TerminalView(props: TerminalViewProps) {
     dirtyRows[rowIndex] = 1;
     if (invalidateCache) {
       clearRowTextCache(rowIndex);
-      clearPackedRowCache(rowIndex);
+      packedRowCache.clearPackedRowCache(rowIndex);
     }
   };
 
@@ -238,316 +233,6 @@ export function TerminalView(props: TerminalViewProps) {
     }
   };
 
-  const createPackedRowCacheEntry = (cols: number): PackedRowBatchBuffer => {
-    const buffer = new ArrayBuffer(cols * PACKED_CELL_BYTE_STRIDE);
-    return {
-      buffer,
-      bytes: new Uint8Array(buffer),
-      floats: new Float32Array(buffer),
-      uints: new Uint32Array(buffer),
-      capacityCols: cols,
-      capacityRows: 1,
-      overlayX: new Int32Array(cols),
-      overlayY: new Int32Array(cols),
-      overlayCodepoint: new Uint32Array(cols),
-      overlayAttributes: new Uint8Array(cols),
-      overlayFg: new Array(cols).fill(null),
-      overlayBg: new Array(cols).fill(null),
-      overlayCount: 0,
-    };
-  };
-
-  const ensurePackedRowCache = (rows: number, cols: number) => {
-    if (rows <= 0 || cols <= 0) {
-      packedRowCache = null;
-      packedRowCacheCols = 0;
-      packedRowCacheDirty = null;
-      return;
-    }
-    if (!packedRowCache || packedRowCache.length !== rows || packedRowCacheCols !== cols) {
-      packedRowCache = new Array(rows).fill(null);
-      packedRowCacheCols = cols;
-      packedRowCacheDirty = new Uint8Array(rows);
-      packedRowCacheDirty.fill(1);
-    }
-  };
-
-  const clearPackedRowCache = (rowIndex?: number) => {
-    if (!packedRowCache) return;
-    if (rowIndex === undefined) {
-      packedRowCache.fill(null);
-      packedRowCacheDirty?.fill(1);
-      return;
-    }
-    if (rowIndex >= 0 && rowIndex < packedRowCache.length) {
-      if (packedRowCacheDirty) {
-        packedRowCacheDirty[rowIndex] = 1;
-      }
-    }
-  };
-
-  const clearScrollbackPackedCache = () => {
-    scrollbackPackedCache?.clear();
-    scrollbackPackedCacheCols = 0;
-  };
-
-  const ensureScrollbackPackedCache = (cols: number) => {
-    if (cols <= 0) {
-      clearScrollbackPackedCache();
-      return;
-    }
-    if (!scrollbackPackedCache || scrollbackPackedCacheCols !== cols) {
-      scrollbackPackedCache = new Map();
-      scrollbackPackedCacheCols = cols;
-    }
-  };
-
-  const applyPackedRowUpdate = (packedRows: PackedRowUpdate, rowsLimit: number) => {
-    if (!packedRowCache || !packedRowCacheDirty) return;
-    if (packedRows.cols !== packedRowCacheCols) return;
-
-    const rowCount = packedRows.rowIndices.length;
-    if (rowCount === 0) return;
-
-    const rowStride = packedRows.cols * PACKED_CELL_BYTE_STRIDE;
-    if (packedRows.data.byteLength < rowCount * rowStride) return;
-
-    const dataBytes = new Uint8Array(packedRows.data);
-    const overlayRowStarts = packedRows.overlayRowStarts;
-    const overlayX = packedRows.overlayX;
-    const overlayCodepoint = packedRows.overlayCodepoint;
-    const overlayAttributes = packedRows.overlayAttributes;
-    const overlayFg = packedRows.overlayFg;
-    const overlayBg = packedRows.overlayBg;
-
-    for (let i = 0; i < rowCount; i++) {
-      const rowIndex = packedRows.rowIndices[i];
-      if (rowIndex < 0 || rowIndex >= rowsLimit) continue;
-
-      let entry = packedRowCache[rowIndex];
-      if (!entry) {
-        entry = createPackedRowCacheEntry(packedRows.cols);
-        packedRowCache[rowIndex] = entry;
-      }
-
-      const srcOffset = i * rowStride;
-      entry.bytes.set(dataBytes.subarray(srcOffset, srcOffset + rowStride));
-
-      const start = overlayRowStarts[i] ?? 0;
-      const end = overlayRowStarts[i + 1] ?? start;
-      const overlayCount = Math.min(end - start, entry.overlayX.length);
-      entry.overlayCount = overlayCount;
-
-      for (let j = 0; j < overlayCount; j++) {
-        const srcIndex = start + j;
-        entry.overlayX[j] = overlayX[srcIndex];
-        entry.overlayY[j] = 0;
-        entry.overlayCodepoint[j] = overlayCodepoint[srcIndex];
-        entry.overlayAttributes[j] = overlayAttributes[srcIndex];
-
-        const fgOffset = srcIndex * 4;
-        entry.overlayFg[j] = getCachedRGBA(
-          overlayFg[fgOffset],
-          overlayFg[fgOffset + 1],
-          overlayFg[fgOffset + 2]
-        );
-
-        const bgOffset = srcIndex * 4;
-        entry.overlayBg[j] = getCachedRGBA(
-          overlayBg[bgOffset],
-          overlayBg[bgOffset + 1],
-          overlayBg[bgOffset + 2]
-        );
-      }
-
-      packedRowCacheDirty[rowIndex] = 0;
-    }
-  };
-
-  const cacheScrollbackPackedRows = (packedRows: PackedRowUpdate) => {
-    if (!scrollbackPackedCache) return;
-    if (packedRows.cols !== scrollbackPackedCacheCols) return;
-
-    const rowCount = packedRows.rowIndices.length;
-    if (rowCount === 0) return;
-
-    const rowStride = packedRows.cols * PACKED_CELL_BYTE_STRIDE;
-    const dataBytes = new Uint8Array(packedRows.data);
-    const overlayRowStarts = packedRows.overlayRowStarts;
-    const overlayX = packedRows.overlayX;
-    const overlayCodepoint = packedRows.overlayCodepoint;
-    const overlayAttributes = packedRows.overlayAttributes;
-    const overlayFg = packedRows.overlayFg;
-    const overlayBg = packedRows.overlayBg;
-
-    for (let i = 0; i < rowCount; i++) {
-      const offset = packedRows.rowIndices[i];
-      if (offset < 0) continue;
-
-      let entry = scrollbackPackedCache.get(offset) ?? null;
-      if (!entry) {
-        entry = createPackedRowCacheEntry(packedRows.cols);
-        scrollbackPackedCache.set(offset, entry);
-      }
-
-      const srcOffset = i * rowStride;
-      entry.bytes.set(dataBytes.subarray(srcOffset, srcOffset + rowStride));
-
-      const start = overlayRowStarts[i] ?? 0;
-      const end = overlayRowStarts[i + 1] ?? start;
-      const overlayCount = Math.min(end - start, entry.overlayX.length);
-      entry.overlayCount = overlayCount;
-
-      for (let j = 0; j < overlayCount; j++) {
-        const srcIndex = start + j;
-        entry.overlayX[j] = overlayX[srcIndex];
-        entry.overlayY[j] = 0;
-        entry.overlayCodepoint[j] = overlayCodepoint[srcIndex];
-        entry.overlayAttributes[j] = overlayAttributes[srcIndex];
-
-        const fgOffset = srcIndex * 4;
-        entry.overlayFg[j] = getCachedRGBA(
-          overlayFg[fgOffset],
-          overlayFg[fgOffset + 1],
-          overlayFg[fgOffset + 2]
-        );
-
-        const bgOffset = srcIndex * 4;
-        entry.overlayBg[j] = getCachedRGBA(
-          overlayBg[bgOffset],
-          overlayBg[bgOffset + 1],
-          overlayBg[bgOffset + 2]
-        );
-      }
-    }
-  };
-
-  const getScrollbackPackedEntry = (offset: number, cols: number): PackedRowBatchBuffer | null => {
-    if (!scrollbackPackedCache || scrollbackPackedCacheCols !== cols) {
-      return null;
-    }
-    return scrollbackPackedCache.get(offset) ?? null;
-  };
-
-  const ensurePackedOverlayIndex = (cols: number) => {
-    if (!packedOverlayIndex || packedOverlayIndexCols !== cols) {
-      packedOverlayIndex = new Int32Array(cols);
-      packedOverlayIndexCols = cols;
-    }
-    packedOverlayIndex.fill(-1);
-    return packedOverlayIndex;
-  };
-
-  const decodePackedRowEntry = (
-    entry: PackedRowBatchBuffer,
-    cols: number,
-    reuse?: TerminalCell[]
-  ): TerminalCell[] => {
-    const overlayIndex = ensurePackedOverlayIndex(cols);
-    const overlayCount = entry.overlayCount;
-
-    for (let i = 0; i < overlayCount; i++) {
-      const x = entry.overlayX[i];
-      if (x >= 0 && x < cols) {
-        overlayIndex[x] = i;
-      }
-    }
-
-    const row = reuse ?? new Array(cols);
-    if (row.length !== cols) {
-      row.length = cols;
-    }
-
-    const packedFloats = entry.floats;
-    const packedU32 = entry.uints;
-    const packedStride = PACKED_CELL_BYTE_STRIDE / 4;
-
-    for (let x = 0; x < cols; x++) {
-      const overlayIdx = overlayIndex[x];
-      let fgR = 0;
-      let fgG = 0;
-      let fgB = 0;
-      let bgR = 0;
-      let bgG = 0;
-      let bgB = 0;
-      let attributes = 0;
-      let codepoint = 0x20;
-      let width: 1 | 2 = 1;
-
-      if (overlayIdx >= 0) {
-        const overlayCodepoint = entry.overlayCodepoint[overlayIdx];
-        codepoint = overlayCodepoint || 0x20;
-        const fg = entry.overlayFg[overlayIdx];
-        const bg = entry.overlayBg[overlayIdx];
-        if (fg) {
-          fgR = Math.round(fg.r * 255);
-          fgG = Math.round(fg.g * 255);
-          fgB = Math.round(fg.b * 255);
-        }
-        if (bg) {
-          bgR = Math.round(bg.r * 255);
-          bgG = Math.round(bg.g * 255);
-          bgB = Math.round(bg.b * 255);
-        }
-        attributes = entry.overlayAttributes[overlayIdx] ?? 0;
-
-        const nextIdx = x + 1 < cols ? overlayIndex[x + 1] : -1;
-        if (nextIdx >= 0 && entry.overlayCodepoint[nextIdx] === 0) {
-          width = 2;
-        }
-        if (overlayCodepoint === 0) {
-          codepoint = 0x20;
-          width = 1;
-        }
-      } else {
-        const base = x * packedStride;
-        bgR = Math.round(packedFloats[base] * 255);
-        bgG = Math.round(packedFloats[base + 1] * 255);
-        bgB = Math.round(packedFloats[base + 2] * 255);
-        fgR = Math.round(packedFloats[base + 4] * 255);
-        fgG = Math.round(packedFloats[base + 5] * 255);
-        fgB = Math.round(packedFloats[base + 6] * 255);
-        codepoint = packedU32[base + 8] || 0x20;
-      }
-
-      const char = codepoint > 0 ? String.fromCodePoint(codepoint) : ' ';
-      const existing = row[x];
-      if (existing) {
-        existing.char = char;
-        existing.fg.r = fgR;
-        existing.fg.g = fgG;
-        existing.fg.b = fgB;
-        existing.bg.r = bgR;
-        existing.bg.g = bgG;
-        existing.bg.b = bgB;
-        existing.bold = (attributes & ATTR_BOLD) !== 0;
-        existing.italic = (attributes & ATTR_ITALIC) !== 0;
-        existing.underline = (attributes & ATTR_UNDERLINE) !== 0;
-        existing.strikethrough = (attributes & ATTR_STRIKETHROUGH) !== 0;
-        existing.inverse = false;
-        existing.blink = false;
-        existing.dim = false;
-        existing.width = width;
-        existing.hyperlinkId = undefined;
-      } else {
-        row[x] = {
-          char,
-          fg: { r: fgR, g: fgG, b: fgB },
-          bg: { r: bgR, g: bgG, b: bgB },
-          bold: (attributes & ATTR_BOLD) !== 0,
-          italic: (attributes & ATTR_ITALIC) !== 0,
-          underline: (attributes & ATTR_UNDERLINE) !== 0,
-          strikethrough: (attributes & ATTR_STRIKETHROUGH) !== 0,
-          inverse: false,
-          blink: false,
-          dim: false,
-          width,
-        };
-      }
-    }
-
-    return row;
-  };
 
   const ensureRowTextCache = (rowCount: number) => {
     if (rowCount <= 0) {
@@ -624,8 +309,8 @@ export function TerminalView(props: TerminalViewProps) {
         : undefined;
       const packed = packedGetter ? packedGetter.call(emulator, offset) : null;
       if (packed && terminalState && packed.cols === terminalState.cols) {
-        ensureScrollbackPackedCache(terminalState.cols);
-        cacheScrollbackPackedRows(packed);
+        packedRowCache.ensureScrollbackPackedCache(terminalState.cols);
+        packedRowCache.cacheScrollbackPackedRows(packed);
         markRowDirty(rowIndex);
         marked = true;
         continue;
@@ -646,18 +331,18 @@ export function TerminalView(props: TerminalViewProps) {
     frameBuffer = null;
     packedRowBuffer = null;
     packedRowBatchBuffer = null;
-    packedRowCache = null;
-    packedRowCacheCols = 0;
-    packedRowCacheDirty = null;
+    packedRowCache.packedRowCache = null;
+    packedRowCache.packedRowCacheCols = 0;
+    packedRowCache.packedRowCacheDirty = null;
     rowTextCache = null;
     rowRenderCache = null;
     missingRowsBuffer = null;
     pendingMissingRows = null;
     pendingPackedRows = null;
-    scrollbackPackedCache = null;
-    scrollbackPackedCacheCols = 0;
-    packedOverlayIndex = null;
-    packedOverlayIndexCols = 0;
+    packedRowCache.scrollbackPackedCache = null;
+    packedRowCache.scrollbackPackedCacheCols = 0;
+    packedRowCache.packedOverlayIndex = null;
+    packedRowCache.packedOverlayIndexCols = 0;
   });
 
   // Using on() for explicit ptyId dependency - effect re-runs only when ptyId changes
@@ -752,12 +437,12 @@ export function TerminalView(props: TerminalViewProps) {
               isAtScrollbackLimit
             );
 
-            if (scrollbackDelta > 0 && scrollState.viewportOffset > 0 && packedRowCache) {
+            if (scrollbackDelta > 0 && scrollState.viewportOffset > 0 && packedRowCache.packedRowCache) {
               const decodeCols = terminalState?.cols ?? terminalUpdate.cols;
               for (let i = 0; i < scrollbackDelta; i++) {
-                const entry = packedRowCache[i];
+                const entry = packedRowCache.packedRowCache[i];
                 if (!entry || entry.capacityCols < decodeCols) continue;
-                const row = decodePackedRowEntry(entry, decodeCols);
+                const row = packedRowCache.decodePackedRowEntry(entry, decodeCols);
                 transitionCache.set(oldScrollbackLength + i, row);
               }
             }
@@ -769,7 +454,7 @@ export function TerminalView(props: TerminalViewProps) {
               cachedRows = [...terminalUpdate.fullState.cells];
               // Clear transition cache on full refresh
               transitionCache.clear();
-              clearScrollbackPackedCache();
+              packedRowCache.clearScrollbackPackedCache();
               dirtyAll = true;
               markAllRowsDirty(terminalUpdate.fullState.rows);
             } else {
@@ -803,11 +488,14 @@ export function TerminalView(props: TerminalViewProps) {
 
             if (terminalUpdate.packedRows) {
               if (
-                packedRowCache &&
-                packedRowCacheDirty &&
-                packedRowCacheCols === terminalUpdate.packedRows.cols
+                packedRowCache.packedRowCache &&
+                packedRowCache.packedRowCacheDirty &&
+                packedRowCache.packedRowCacheCols === terminalUpdate.packedRows.cols
               ) {
-                applyPackedRowUpdate(terminalUpdate.packedRows, packedRowCache.length);
+                packedRowCache.applyPackedRowUpdate(
+                  terminalUpdate.packedRows,
+                  packedRowCache.packedRowCache.length
+                );
               } else {
                 pendingPackedRows = terminalUpdate.packedRows;
               }
@@ -836,7 +524,7 @@ export function TerminalView(props: TerminalViewProps) {
             const scrollbackChanged = scrollbackDelta !== 0 ||
               (scrollbackDelta === 0 && isAtScrollbackLimit && oldScrollbackLength > 0);
             if (scrollbackChanged) {
-              clearScrollbackPackedCache();
+              packedRowCache.clearScrollbackPackedCache();
             }
             if (prevViewportOffset > 0 && scrollbackChanged) {
               dirtyAll = true;
@@ -877,14 +565,14 @@ export function TerminalView(props: TerminalViewProps) {
           missingRowsBuffer = null;
           rowTextCache = null;
           rowRenderCache = null;
-          packedRowCache = null;
-          packedRowCacheCols = 0;
-          packedRowCacheDirty = null;
+          packedRowCache.packedRowCache = null;
+          packedRowCache.packedRowCacheCols = 0;
+          packedRowCache.packedRowCacheDirty = null;
           prefetchScheduled = false;
           transitionCache.clear();
           scrollbackRowCache.length = 0;
-          scrollbackPackedCache?.clear();
-          scrollbackPackedCacheCols = 0;
+          packedRowCache.scrollbackPackedCache?.clear();
+          packedRowCache.scrollbackPackedCacheCols = 0;
           paddingWasActive = false;
           lastPaddingCols = 0;
           lastPaddingRows = 0;
@@ -940,25 +628,25 @@ export function TerminalView(props: TerminalViewProps) {
 
     if (colsChanged) {
       clearRowTextCache();
-      clearPackedRowCache();
-      clearScrollbackPackedCache();
+      packedRowCache.clearPackedRowCache();
+      packedRowCache.clearScrollbackPackedCache();
       pendingPackedRows = null;
     }
     ensureRowTextCache(rows);
     ensurePackedRowBuffer(cols);
     ensurePackedRowBatchBuffer(cols, rows);
-    ensurePackedRowCache(rows, cols);
+    packedRowCache.ensurePackedRowCache(rows, cols);
     rowRenderCache = packedRowBuffer && rowTextCache
       ? { packedRow: packedRowBuffer, rowText: rowTextCache }
       : null;
 
     if (
       pendingPackedRows &&
-      packedRowCache &&
-      packedRowCacheDirty &&
+      packedRowCache.packedRowCache &&
+      packedRowCache.packedRowCacheDirty &&
       pendingPackedRows.cols === cols
     ) {
-      applyPackedRowUpdate(pendingPackedRows, rows);
+      packedRowCache.applyPackedRowUpdate(pendingPackedRows, rows);
       pendingPackedRows = null;
     } else if (pendingPackedRows && pendingPackedRows.cols !== cols) {
       pendingPackedRows = null;
@@ -991,8 +679,8 @@ export function TerminalView(props: TerminalViewProps) {
         if (!packedGetter) return false;
         const packed = packedGetter.call(emulator, offset);
         if (!packed || packed.cols !== cols) return false;
-        ensureScrollbackPackedCache(cols);
-        cacheScrollbackPackedRows(packed);
+        packedRowCache.ensureScrollbackPackedCache(cols);
+        packedRowCache.cacheScrollbackPackedRows(packed);
         return true;
       };
 
@@ -1242,11 +930,13 @@ export function TerminalView(props: TerminalViewProps) {
 
       if (allowPackedBatch) {
         if (isScrollbackRow) {
-          packedEntry = getScrollbackPackedEntry(absoluteY, cols);
+          packedEntry = packedRowCache.getScrollbackPackedEntry(absoluteY, cols);
           packedEntryDirty = false;
-        } else if (packedRowCache) {
-          packedEntry = packedRowCache[y];
-          packedEntryDirty = packedRowCacheDirty ? packedRowCacheDirty[y] === 1 : rowDirty;
+        } else if (packedRowCache.packedRowCache) {
+          packedEntry = packedRowCache.packedRowCache[y];
+          packedEntryDirty = packedRowCache.packedRowCacheDirty
+            ? packedRowCache.packedRowCacheDirty[y] === 1
+            : rowDirty;
         }
       }
 
@@ -1266,7 +956,7 @@ export function TerminalView(props: TerminalViewProps) {
         }
       }
       if (rowHasHighlights && packedEntry) {
-        renderRowData = decodePackedRowEntry(packedEntry, cols, rowCache[y] ?? undefined);
+        renderRowData = packedRowCache.decodePackedRowEntry(packedEntry, cols, rowCache[y] ?? undefined);
         rowCache[y] = renderRowData;
       }
 
@@ -1276,13 +966,13 @@ export function TerminalView(props: TerminalViewProps) {
         packedRowBatchBuffer &&
         (packedEntry || (isLiveRow && renderRowData))
       ) {
-        let cachedEntry = packedRowCache ? packedRowCache[y] : null;
+        let cachedEntry = packedRowCache.packedRowCache ? packedRowCache.packedRowCache[y] : null;
         if (isLiveRow) {
           cachedEntry = packedEntry;
           if (!cachedEntry) {
-            cachedEntry = createPackedRowCacheEntry(cols);
-            if (packedRowCache) {
-              packedRowCache[y] = cachedEntry;
+            cachedEntry = packedRowCache.createEntry(cols);
+            if (packedRowCache.packedRowCache) {
+              packedRowCache.packedRowCache[y] = cachedEntry;
             }
             packedEntryDirty = true;
           }
@@ -1298,8 +988,8 @@ export function TerminalView(props: TerminalViewProps) {
               cachedEntry,
               0
             );
-            if (packedRowCacheDirty) {
-              packedRowCacheDirty[y] = 0;
+            if (packedRowCache.packedRowCacheDirty) {
+              packedRowCache.packedRowCacheDirty[y] = 0;
             }
           }
         } else {
@@ -1309,7 +999,7 @@ export function TerminalView(props: TerminalViewProps) {
         flushPackedBatch();
         drawPackedRowBatch(
           renderTarget,
-          cachedEntry ?? packedEntry ?? createPackedRowCacheEntry(cols),
+          cachedEntry ?? packedEntry ?? packedRowCache.createEntry(cols),
           cols,
           renderOffsetX,
           renderOffsetY,
@@ -1360,9 +1050,9 @@ export function TerminalView(props: TerminalViewProps) {
         let cachedEntry = packedEntry;
         if (isLiveRow) {
           if (!cachedEntry) {
-            cachedEntry = createPackedRowCacheEntry(cols);
-            if (packedRowCache) {
-              packedRowCache[y] = cachedEntry;
+            cachedEntry = packedRowCache.createEntry(cols);
+            if (packedRowCache.packedRowCache) {
+              packedRowCache.packedRowCache[y] = cachedEntry;
             }
             packedEntryDirty = true;
           }
@@ -1378,8 +1068,8 @@ export function TerminalView(props: TerminalViewProps) {
               cachedEntry,
               0
             );
-            if (packedRowCacheDirty) {
-              packedRowCacheDirty[y] = 0;
+            if (packedRowCache.packedRowCacheDirty) {
+              packedRowCache.packedRowCacheDirty[y] = 0;
             }
           }
         }

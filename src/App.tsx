@@ -2,8 +2,8 @@
  * Main App component for openmux
  */
 
-import { createSignal, createEffect, createMemo, onCleanup, onMount, on } from 'solid-js';
-import { useKeyboard, useTerminalDimensions, useRenderer } from '@opentui/solid';
+import { createSignal, createEffect, onCleanup, onMount, on } from 'solid-js';
+import { useTerminalDimensions, useRenderer } from '@opentui/solid';
 import {
   ThemeProvider,
   LayoutProvider,
@@ -41,9 +41,11 @@ import {
   handleSearchKeyboard,
   processNormalModeKey,
 } from './components/app';
-import { calculateLayoutDimensions } from './components/aggregate';
+import { usePtyLifecycle } from './components/app/pty-lifecycle';
+import { getCopyNotificationRect } from './components/app/copy-notification';
 import { setFocusedPty, setClipboardPasteHandler } from './terminal/focused-pty-registry';
 import { readFromClipboard } from './effect/bridge';
+import { useAppKeyboardInput } from './components/app/keyboard-input';
 
 function AppContent() {
   const dimensions = useTerminalDimensions();
@@ -139,7 +141,7 @@ function AppContent() {
   const handleNewPane = () => {
     // Fire off CWD retrieval in background (don't await)
     getFocusedCwd().then(cwd => {
-      if (cwd) pendingCwdRef = cwd;
+      if (cwd) pendingCwdRef.current = cwd;
     });
 
     // Create pane immediately (shows border instantly)
@@ -148,7 +150,7 @@ function AppContent() {
   };
 
   // Ref for passing CWD to effect (avoids closure issues)
-  let pendingCwdRef: string | null = null;
+  const pendingCwdRef = { current: null as string | null };
 
   // Create paste handler for manual paste (Ctrl+V, prefix+p/])
   const handlePaste = () => {
@@ -218,8 +220,7 @@ function AppContent() {
   // Retry counter to trigger effect re-run when PTY creation fails
   const [ptyRetryCounter, setPtyRetryCounter] = createSignal(0);
 
-  // Guard against concurrent PTY creation (synchronous Set for O(1) check)
-  const pendingPtyCreation = new Set<string>();
+  // Guard against concurrent PTY creation handled in usePtyLifecycle
 
   // Update viewport when terminal resizes
   createEffect(() => {
@@ -249,98 +250,17 @@ function AppContent() {
     )
   );
 
-  // Memoize pane IDs that need PTYs - only changes when panes are added/removed
-  // or when a pane's ptyId status changes. This prevents re-triggering PTY creation
-  // when unrelated pane properties change (rectangle, cursor position, etc.)
-  const panesNeedingPtys = createMemo(() =>
-    layout.panes.filter(p => !p.ptyId).map(p => ({ id: p.id, rectangle: p.rectangle }))
-  );
-
-  // Create PTYs for panes that don't have one
-  // IMPORTANT: Wait for BOTH terminal AND session to be initialized
-  // This prevents creating PTYs before session has a chance to restore workspaces
-  // Also skip while session is switching to avoid creating PTYs for stale panes
-  // Using on() for explicit dependency tracking - only re-runs when these specific values change
-  createEffect(
-    on(
-      [
-        () => terminal.isInitialized,
-        () => sessionState.initialized,
-        () => sessionState.switching,
-        ptyRetryCounter,
-        panesNeedingPtys,
-      ],
-      ([isTerminalInit, isSessionInit, isSwitching, _retry, panes]) => {
-        if (!isTerminalInit) return;
-        if (!isSessionInit) return;
-        if (isSwitching) return;
-
-        const createPtyForPane = (pane: typeof panes[number]) => {
-          try {
-            // SYNC check: verify PTY wasn't created in a previous session/effect run
-            const alreadyCreated = isPtyCreated(pane.id);
-            if (alreadyCreated) {
-              return true; // Already has a PTY
-            }
-
-            // Calculate pane dimensions (account for border)
-            const rect = pane.rectangle ?? { width: 80, height: 24 };
-            const cols = Math.max(1, rect.width - 2);
-            const rows = Math.max(1, rect.height - 2);
-
-            // Check for session-restored CWD first, then pending CWD from new pane handler,
-            // then OPENMUX_ORIGINAL_CWD (set by wrapper to preserve user's cwd)
-            const sessionCwd = getSessionCwdFromCoordinator(pane.id);
-            let cwd = sessionCwd ?? pendingCwdRef ?? process.env.OPENMUX_ORIGINAL_CWD ?? undefined;
-            pendingCwdRef = null; // Clear after use
-
-            // Mark as created BEFORE calling createPTY (persistent marker)
-            markPtyCreated(pane.id);
-
-            // Fire-and-forget PTY creation - don't await to avoid blocking
-            createPTY(pane.id, cols, rows, cwd).catch(err => {
-              console.error(`PTY creation failed for ${pane.id}:`, err);
-            });
-
-            return true;
-          } catch (err) {
-            console.error(`Failed to create PTY for pane ${pane.id}:`, err);
-            return false;
-          } finally {
-            pendingPtyCreation.delete(pane.id);
-          }
-        };
-
-        // Collect panes that need PTY creation (synchronous guard)
-        const panesToProcess: typeof panes[number][] = [];
-        for (const pane of panes) {
-          // SYNCHRONOUS guard: check and add to pendingPtyCreation Set IMMEDIATELY
-          if (pendingPtyCreation.has(pane.id)) {
-            continue;
-          }
-          pendingPtyCreation.add(pane.id);
-          panesToProcess.push(pane);
-        }
-
-        // Single macrotask to process ALL panes - reduces scheduling overhead
-        if (panesToProcess.length > 0) {
-          setTimeout(() => {
-            let anyFailed = false;
-            for (const pane of panesToProcess) {
-              const success = createPtyForPane(pane);
-              if (!success) {
-                anyFailed = true;
-              }
-            }
-            // Single retry trigger if any failed
-            if (anyFailed) {
-              setTimeout(() => setPtyRetryCounter(c => c + 1), 100);
-            }
-          }, 0);
-        }
-      }
-    )
-  );
+  usePtyLifecycle({
+    layout,
+    terminal,
+    sessionState,
+    ptyRetryCounter,
+    setPtyRetryCounter,
+    pendingCwdRef,
+    getSessionCwd: getSessionCwdFromCoordinator,
+    markPtyCreated,
+    isPtyCreated,
+  });
 
   // Resize PTYs and update positions when layout structure or viewport changes
   // Use layoutVersion (structural changes) and viewport instead of panes
@@ -371,61 +291,22 @@ function AppContent() {
     )
   );
 
-  // Handle keyboard input
-  useKeyboard(
-    (event: { name: string; ctrl?: boolean; shift?: boolean; option?: boolean; meta?: boolean; sequence?: string }) => {
-      // Route to overlays via KeyboardRouter (handles confirmation, session picker, aggregate view)
-      // Use event.sequence for printable chars (handles shift for uppercase/symbols)
-      // Fall back to event.name for special keys
-      const charCode = event.sequence?.charCodeAt(0) ?? 0;
-      const isPrintableChar = event.sequence?.length === 1 && charCode >= 32 && charCode < 127;
-      const keyToPass = isPrintableChar ? event.sequence! : event.name;
-
-      const routeResult = routeKeyboardEventSync({
-        key: keyToPass,
-        ctrl: event.ctrl,
-        alt: event.option,
-        shift: event.shift,
-        sequence: event.sequence,
-      });
-
-      // If an overlay handled the key, don't process further
-      if (routeResult.handled) {
-        return;
-      }
-
-      // If in search mode, handle search-specific keys
-      if (keyboardHandler.mode === 'search') {
-        handleSearchKeyboard(event, {
-          exitSearchMode,
-          keyboardExitSearchMode,
-          setSearchQuery,
-          nextMatch,
-          prevMatch,
-          getSearchState: () => search.searchState,
-        });
-        return;
-      }
-
-      // First, check if this is a multiplexer command
-      const handled = handleKeyDown({
-        key: event.name,
-        ctrl: event.ctrl,
-        shift: event.shift,
-        alt: event.option, // OpenTUI uses 'option' for Alt key
-        meta: event.meta,
-      });
-
-      // If not handled by multiplexer and in normal mode, forward to PTY
-      if (!handled && keyboardHandler.mode === 'normal' && !sessionState.showSessionPicker) {
-        processNormalModeKey(event, {
-          clearAllSelections,
-          getFocusedCursorKeyMode,
-          writeToFocused,
-        });
-      }
-    }
-  );
+  useAppKeyboardInput({
+    keyboardHandler: { mode: keyboardHandler.mode, handleKeyDown },
+    sessionPickerVisible: () => sessionState.showSessionPicker,
+    clearAllSelections,
+    getFocusedCursorKeyMode,
+    writeToFocused,
+    handleSearchKeyboard,
+    routeKeyboardEventSync,
+    exitSearchMode,
+    keyboardExitSearchMode,
+    setSearchQuery,
+    nextMatch,
+    prevMatch,
+    getSearchState: () => search.searchState,
+    processNormalModeKey,
+  });
 
   return (
     <box
@@ -467,24 +348,14 @@ function AppContent() {
       <CopyNotification
         visible={selection.copyNotification.visible}
         charCount={selection.copyNotification.charCount}
-        paneRect={(() => {
-          const ptyId = selection.copyNotification.ptyId;
-          if (!ptyId) return null;
-
-          // If aggregate view is open and showing this pty, use the preview rectangle
-          if (aggregateState.showAggregateView && aggregateState.selectedPtyId === ptyId) {
-            const aggLayout = calculateLayoutDimensions({ width: width(), height: height() });
-            return {
-              x: aggLayout.listPaneWidth,
-              y: 0,
-              width: aggLayout.previewPaneWidth,
-              height: aggLayout.contentHeight,
-            };
-          }
-
-          // Otherwise use the normal pane rectangle
-          return layout.panes.find(p => p.ptyId === ptyId)?.rectangle ?? null;
-        })()}
+        paneRect={getCopyNotificationRect({
+          ptyId: selection.copyNotification.ptyId,
+          showAggregateView: aggregateState.showAggregateView,
+          selectedPtyId: aggregateState.selectedPtyId,
+          width: width(),
+          height: height(),
+          panes: layout.panes,
+        })}
       />
     </box>
   );

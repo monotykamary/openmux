@@ -13,29 +13,12 @@ import {
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import { listAllPtysWithMetadata, subscribeToPtyLifecycle, subscribeToAllTitleChanges } from '../effect/bridge';
+import { debounce, filterPtys, buildPtyIndex } from './aggregate-view/helpers';
+import type { PtyInfo } from './aggregate-view/types';
 
 // =============================================================================
 // State Types
 // =============================================================================
-
-/** Git diff statistics */
-export interface GitDiffStats {
-  added: number;
-  removed: number;
-}
-
-/** PTY info for the aggregate view */
-export interface PtyInfo {
-  ptyId: string;
-  cwd: string;
-  gitBranch: string | undefined;
-  gitDiffStats: GitDiffStats | undefined;
-  foregroundProcess: string | undefined;
-  /** Workspace ID where this PTY is located (if found in current session) */
-  workspaceId: number | undefined;
-  /** Pane ID where this PTY is located (if found in current session) */
-  paneId: string | undefined;
-}
 
 interface AggregateViewState {
   /** Whether the aggregate view overlay is shown */
@@ -76,44 +59,6 @@ const initialState: AggregateViewState = {
 // =============================================================================
 // Helper Functions
 // =============================================================================
-
-/**
- * Debounce a function - delays execution until after wait ms have elapsed
- * since the last call. Useful for reducing rapid successive calls.
- */
-function debounce<T extends (...args: unknown[]) => void>(
-  fn: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<T>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), wait);
-  };
-}
-
-/** Filter PTYs by search query (matches cwd, git branch, or process) */
-function filterPtys(ptys: PtyInfo[], query: string): PtyInfo[] {
-  if (!query.trim()) return ptys;
-
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return ptys;
-
-  return ptys.filter((pty) => {
-    const cwd = pty.cwd.toLowerCase();
-    const branch = pty.gitBranch?.toLowerCase() ?? '';
-    const process = pty.foregroundProcess?.toLowerCase() ?? '';
-    // OR logic: match if ANY term matches ANY field
-    return terms.some((term) =>
-      cwd.includes(term) || branch.includes(term) || process.includes(term)
-    );
-  });
-}
-
-/** Build an index map from ptyId to array index for O(1) lookups */
-function buildPtyIndex(ptys: PtyInfo[]): Map<string, number> {
-  return new Map(ptys.map((p, i) => [p.ptyId, i]));
-}
 
 // =============================================================================
 // Context
