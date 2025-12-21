@@ -8,6 +8,7 @@ import { useRenderer } from '@opentui/solid';
 import type { OptimizedBuffer } from '@opentui/core';
 import { useSelection } from '../contexts/SelectionContext';
 import { useSearch } from '../contexts/SearchContext';
+import { useTerminal } from '../contexts/TerminalContext';
 import { TerminalViewState } from './terminal-view/terminal-view-state';
 import { renderTerminal, type RenderDeps } from './terminal-view/terminal-renderer';
 import { setupPtySubscription } from './terminal-view/pty-subscription';
@@ -30,9 +31,25 @@ export function TerminalView(props: TerminalViewProps) {
   const { isCellSelected, getSelectedColumnsForRow, getSelection } = selection;
   const search = useSearch();
   const { isSearchMatch, isCurrentMatch, getSearchMatchRanges } = search;
+  const terminal = useTerminal();
+  const { getTerminalStateSync, getScrollState, getEmulatorSync } = terminal;
 
   const state = new TerminalViewState(props.isFocused);
-  const [version, setVersion] = createSignal(0);
+  const initialState = getTerminalStateSync(props.ptyId);
+  if (initialState) {
+    state.terminalState = initialState;
+    const cachedScroll = getScrollState(props.ptyId);
+    if (cachedScroll) {
+      state.scrollState = cachedScroll;
+    }
+    const cachedEmulator = getEmulatorSync(props.ptyId);
+    if (cachedEmulator) {
+      state.emulator = cachedEmulator;
+    }
+    state.dirtyAll = true;
+    state.markAllRowsDirty(initialState.rows);
+  }
+  const [version, setVersion] = createSignal(initialState ? 1 : 0);
 
   onCleanup(() => state.cleanup());
 
@@ -56,6 +73,23 @@ export function TerminalView(props: TerminalViewProps) {
             }, 0);
           }
         };
+
+        const cachedState = getTerminalStateSync(ptyId);
+        if (!state.terminalState && cachedState) {
+          state.terminalState = cachedState;
+          const cachedScroll = getScrollState(ptyId);
+          if (cachedScroll) {
+            state.scrollState = cachedScroll;
+          }
+          const cachedEmulator = getEmulatorSync(ptyId);
+          if (cachedEmulator) {
+            state.emulator = cachedEmulator;
+          }
+          state.dirtyAll = true;
+          state.markAllRowsDirty(cachedState.rows);
+          setVersion(v => v + 1);
+          renderer.requestRender();
+        }
 
         setupPtySubscription(
           ptyId,

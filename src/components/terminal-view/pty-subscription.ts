@@ -25,12 +25,14 @@ export async function setupPtySubscription(
   getMounted: () => boolean
 ): Promise<PtySubscriptionResult> {
   let unsubscribe: (() => void) | null = null;
-  let cachedRows: TerminalCell[][] = [];
+  let cachedRows: TerminalCell[][] = state.terminalState ? [...state.terminalState.cells] : [];
 
   // Get emulator for scrollback access
   const em = await getEmulator(ptyId);
   if (!getMounted()) return { cleanup: () => {} };
-  state.emulator = em;
+  if (em) {
+    state.emulator = em;
+  }
 
   // Set up prefetch function
   state.executePrefetchFn = async () => {
