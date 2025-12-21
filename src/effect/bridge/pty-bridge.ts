@@ -14,6 +14,7 @@ export {
   writeToPty,
   resizePty,
   setPanePosition,
+  getPtyCwd,
 } from './pty-bridge/io'
 
 export {

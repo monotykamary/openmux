@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { runEffectIgnore } from "../../runtime"
+import { runEffect, runEffectIgnore } from "../../runtime"
 import { Pty } from "../../services"
 import { PtyId, Cols, Rows } from "../../types"
 
@@ -45,4 +45,20 @@ export async function setPanePosition(
       yield* pty.setPanePosition(PtyId.make(ptyId), x, y)
     })
   )
+}
+
+/**
+ * Get the current working directory of a PTY session.
+ */
+export async function getPtyCwd(ptyId: string): Promise<string> {
+  try {
+    return await runEffect(
+      Effect.gen(function* () {
+        const pty = yield* Pty
+        return yield* pty.getCwd(PtyId.make(ptyId))
+      })
+    )
+  } catch {
+    return process.cwd()
+  }
 }
