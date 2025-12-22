@@ -22,6 +22,12 @@ import {
   getCachedRGBA,
 } from '../terminal/rendering';
 import {
+  extractRgb,
+  getDefaultColors,
+  getHostColors,
+} from '../terminal/terminal-colors';
+import { getHostBackgroundColor } from '../effect/bridge';
+import {
   renderRow,
   renderScrollbar,
   fetchRowsForRendering,
@@ -45,6 +51,7 @@ interface TerminalViewProps {
  */
 export function TerminalView(props: TerminalViewProps) {
   const renderer = useRenderer();
+  const hostBgColor = getHostBackgroundColor();
   // Get selection state - keep full context to access selectionVersion reactively
   const selection = useSelection();
   const { isCellSelected, getSelection } = selection;
@@ -230,9 +237,12 @@ export function TerminalView(props: TerminalViewProps) {
 
     if (!state) {
       // Clear the buffer area when state is null (PTY destroyed)
+      const colors = getHostColors() ?? getDefaultColors();
+      const rgb = extractRgb(colors.background);
+      const fallbackBg = getCachedRGBA(rgb.r, rgb.g, rgb.b);
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-          buffer.setCell(x + offsetX, y + offsetY, ' ', BLACK, BLACK, 0);
+          buffer.setCell(x + offsetX, y + offsetY, ' ', BLACK, fallbackBg, 0);
         }
       }
       return;
@@ -359,6 +369,7 @@ export function TerminalView(props: TerminalViewProps) {
             width: props.width,
             height: props.height,
           }}
+          backgroundColor={hostBgColor}
         />
       }
     >
@@ -367,6 +378,7 @@ export function TerminalView(props: TerminalViewProps) {
           width: props.width,
           height: props.height,
         }}
+        backgroundColor={hostBgColor}
         renderAfter={renderTerminal}
       />
     </Show>
