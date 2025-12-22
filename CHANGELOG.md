@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.30](https://github.com/monotykamary/openmux/compare/v0.2.29...v0.2.30) (2025-12-22)
+
+
+### Bug Fixes
+
+* prevent pane flash on init ([070be74](https://github.com/monotykamary/openmux/commit/070be740cdd36725466172311fdf0829afa34a03))
+
+
+### Documentation
+
+* update agent guidance and swap symlinks ([4628346](https://github.com/monotykamary/openmux/commit/4628346d77d600fb7f4950e2b6384862171e888c))
+
 ### [0.2.29](https://github.com/monotykamary/openmux/compare/v0.2.28...v0.2.29) (2025-12-21)
 
 
