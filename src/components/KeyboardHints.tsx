@@ -13,6 +13,7 @@ interface KeyHint {
 
 const NORMAL_MODE_HINTS: KeyHint[] = [
   { key: 'Alt+hjkl', description: 'Navigate panes' },
+  { key: 'Alt+m', description: 'Move pane' },
   { key: 'Alt+n', description: 'New pane' },
   { key: 'Alt+1-9', description: 'Switch workspace' },
   { key: 'Alt+s', description: 'Session picker' },
@@ -29,6 +30,7 @@ const NORMAL_MODE_HINTS: KeyHint[] = [
 const PREFIX_MODE_HINTS: KeyHint[] = [
   { key: 'n/Enter', description: 'New pane' },
   { key: 'h/j/k/l', description: 'Navigate panes' },
+  { key: 'm', description: 'Move pane' },
   { key: '1-9', description: 'Switch workspace' },
   { key: 's', description: 'Session picker' },
   { key: 'g', description: 'Aggregate view' },
@@ -42,6 +44,13 @@ const PREFIX_MODE_HINTS: KeyHint[] = [
   { key: 'd', description: 'Detach' },
   { key: '?', description: 'Toggle hints' },
   { key: 'Esc', description: 'Exit prefix mode' },
+];
+
+const MOVE_MODE_HINTS: KeyHint[] = [
+  { key: 'h', description: 'Move to master' },
+  { key: 'l', description: 'Move to stack' },
+  { key: 'j/k', description: 'Move down/up' },
+  { key: 'Esc', description: 'Cancel' },
 ];
 
 const SEARCH_MODE_HINTS: KeyHint[] = [
@@ -67,6 +76,8 @@ export function KeyboardHints(props: KeyboardHintsProps) {
       ? NORMAL_MODE_HINTS
       : mode === 'search'
         ? SEARCH_MODE_HINTS
+        : mode === 'move'
+          ? MOVE_MODE_HINTS
         : PREFIX_MODE_HINTS;
   };
 

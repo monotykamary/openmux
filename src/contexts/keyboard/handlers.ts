@@ -103,6 +103,11 @@ export function handleAltKey(
       }
       return false;
 
+    // Alt+m to enter move mode
+    case 'm':
+      keyboard.enterMoveMode();
+      return true;
+
     default:
       return false;
   }
@@ -249,6 +254,11 @@ export function handlePrefixModeKey(
         return true;
       }
       exitPrefix();
+      return true;
+
+    // Move mode
+    case 'm':
+      keyboard.enterMoveMode();
       return true;
 
     default:

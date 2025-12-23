@@ -212,7 +212,7 @@ export interface SelectionBounds {
 /**
  * Keyboard mode for prefix key system
  */
-export type KeyMode = 'normal' | 'prefix' | 'search' | 'aggregate' | 'confirm';
+export type KeyMode = 'normal' | 'prefix' | 'search' | 'aggregate' | 'confirm' | 'move';
 
 /** Confirmation dialog type */
 export type ConfirmationType = 'close_pane' | 'exit' | 'kill_pty';

@@ -20,6 +20,7 @@ export interface LayoutState {
 export type LayoutAction =
   | { type: 'FOCUS_PANE'; paneId: NodeId }
   | { type: 'NAVIGATE'; direction: Direction }
+  | { type: 'MOVE_PANE'; direction: Direction }
   | { type: 'NEW_PANE'; ptyId?: string; title?: string }
   | { type: 'CLOSE_PANE' }
   | { type: 'CLOSE_PANE_BY_ID'; paneId: NodeId }

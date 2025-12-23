@@ -12,6 +12,8 @@ export interface KeyboardContextValue {
   exitSearchMode: () => void;
   enterAggregateMode: () => void;
   exitAggregateMode: () => void;
+  enterMoveMode: () => void;
+  exitMoveMode: () => void;
   enterConfirmMode: (confirmationType: ConfirmationType) => void;
   exitConfirmMode: () => void;
   toggleHints: () => void;

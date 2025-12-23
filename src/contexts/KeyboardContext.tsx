@@ -16,6 +16,7 @@ import {
 import { createStore, produce } from 'solid-js/store';
 import type { KeyMode, KeyboardState, WorkspaceId, ConfirmationType } from '../core/types';
 import { PREFIX_KEY, DEFAULT_CONFIG } from '../core/config';
+import { keyToDirection } from '../core/keyboard-utils';
 import { useLayout } from './LayoutContext';
 import type { KeyboardContextValue, KeyboardHandlerOptions } from './keyboard/types';
 import { handleAltKey, handlePrefixModeKey } from './keyboard/handlers';
@@ -94,6 +95,17 @@ export function KeyboardProvider(props: KeyboardProviderProps) {
     setState('mode', 'normal');
   };
 
+  const enterMoveMode = () => {
+    setState(produce((s) => {
+      s.mode = 'move';
+      s.prefixActivatedAt = undefined;
+    }));
+  };
+
+  const exitMoveMode = () => {
+    setState('mode', 'normal');
+  };
+
   const enterConfirmMode = (confirmationType: ConfirmationType) => {
     setState(produce((s) => {
       s.mode = 'confirm';
@@ -121,6 +133,8 @@ export function KeyboardProvider(props: KeyboardProviderProps) {
     exitSearchMode,
     enterAggregateMode,
     exitAggregateMode,
+    enterMoveMode,
+    exitMoveMode,
     enterConfirmMode,
     exitConfirmMode,
     toggleHints,
@@ -203,10 +217,14 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
       return true;
     }
 
-    // Handle Escape to exit prefix mode
+    // Handle Escape to exit prefix/move mode
     if (key === 'Escape' || key === 'escape') {
       if (keyboard.state.mode === 'prefix') {
         keyboard.exitPrefixMode();
+        return true;
+      }
+      if (keyboard.state.mode === 'move') {
+        keyboard.exitMoveMode();
         return true;
       }
       return false;
@@ -229,6 +247,17 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
         onToggleConsole,
         onToggleAggregateView
       );
+    }
+
+    if (keyboard.state.mode === 'move') {
+      const direction = keyToDirection(key);
+      if (!direction) {
+        keyboard.exitMoveMode();
+        return true;
+      }
+      layout.movePane(direction);
+      keyboard.exitMoveMode();
+      return true;
     }
 
     // Normal mode - pass through to terminal

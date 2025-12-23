@@ -9,7 +9,7 @@ import { handleNavigate } from './navigate';
 import { handleNewPane } from './new-pane';
 import { handleClosePane, handleClosePaneById } from './close-pane';
 import { handleSetViewport, handleSwitchWorkspace, handleLoadSession, handleClearAll } from './workspace-ops';
-import { handleSetLayoutMode, handleSetPanePty, handleSetPaneTitle, handleSwapMain, handleToggleZoom } from './pane-ops';
+import { handleSetLayoutMode, handleSetPanePty, handleSetPaneTitle, handleSwapMain, handleMovePane, handleToggleZoom } from './pane-ops';
 
 // Debug timing flag - set to true to see layout reducer timing
 const DEBUG_LAYOUT_TIMING = false;
@@ -24,6 +24,9 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
 
     case 'NAVIGATE':
       return handleNavigate(state, action.direction);
+
+    case 'MOVE_PANE':
+      return handleMovePane(state, action.direction);
 
     case 'NEW_PANE': {
       const start = DEBUG_LAYOUT_TIMING ? performance.now() : 0;

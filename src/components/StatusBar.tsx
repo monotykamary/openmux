@@ -72,6 +72,7 @@ function ModeIndicator(props: ModeIndicatorProps) {
     search: '[SEARCH]',
     aggregate: '[GLOBAL]',
     confirm: '[CONFIRM]',
+    move: '[MOVE]',
   };
 
   return (
