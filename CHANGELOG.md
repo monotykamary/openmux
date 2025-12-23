@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.31](https://github.com/monotykamary/openmux/compare/v0.2.30...v0.2.31) (2025-12-23)
+
+
+### Features
+
+* add detach binding in aggregate view ([55e51ca](https://github.com/monotykamary/openmux/commit/55e51ca1a8abae54fab11ee77b318a47eb786e2a))
+* add shim-based detach/attach support ([0a9302d](https://github.com/monotykamary/openmux/commit/0a9302d21c4bf3389e40900df922995088dbd9fe))
+
+
+### Bug Fixes
+
+* avoid closing new shim client ([2a32823](https://github.com/monotykamary/openmux/commit/2a3282385842901c63c877946ff859407b43d522))
+* confirm quit shuts down shim ([5cee243](https://github.com/monotykamary/openmux/commit/5cee243a6b1f000cce65adada8b0a8c057980a24))
+* detach on client steal ([873789f](https://github.com/monotykamary/openmux/commit/873789f6f08a1b58d4934da1fc07c93c69738da2))
+* ensure quit shuts down shim ([41608d3](https://github.com/monotykamary/openmux/commit/41608d30b1878cf1ef60e328d466a7af4dfdaee6))
+* exit on shim socket close ([b679ca4](https://github.com/monotykamary/openmux/commit/b679ca49c583f426fad176168748d435ea9eb96b))
+* prevent detached clients from stealing ([8eea9bd](https://github.com/monotykamary/openmux/commit/8eea9bdc8676123dc627706243e5899b7144b44f))
+* send snapshots on shim attach ([62e934d](https://github.com/monotykamary/openmux/commit/62e934de117c6da631207441729ee2cab5e6a5a9))
+
+
+### Refactoring
+
+* split shim client modules ([8be5ca4](https://github.com/monotykamary/openmux/commit/8be5ca4b80ea1cde0150d672c61e6005f3157790))
+
+
+### Documentation
+
+* add shim upgrade and ui state notes ([d475e3c](https://github.com/monotykamary/openmux/commit/d475e3cbd7cdf484d3057c400d43872ee888919a))
+* document detach attach architecture ([45fe6c4](https://github.com/monotykamary/openmux/commit/45fe6c45496631628f0b12b1c3c4ae25f864d4b6))
+
 ### [0.2.30](https://github.com/monotykamary/openmux/compare/v0.2.29...v0.2.30) (2025-12-22)
 
 
