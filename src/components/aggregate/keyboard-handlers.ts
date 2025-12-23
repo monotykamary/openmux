@@ -51,6 +51,7 @@ export interface AggregateKeyboardDeps {
 
   // External actions
   onRequestQuit?: () => void;
+  onDetach?: () => void;
   onRequestKillPty?: (ptyId: string) => void;
 
   // Prefix timeout management
@@ -86,6 +87,7 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
     handleEnterSearch,
     handleJumpToPty,
     onRequestQuit,
+    onDetach,
     onRequestKillPty,
     clearPrefixTimeout,
     startPrefixTimeout,
@@ -294,6 +296,14 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
         if (onRequestQuit) {
           onRequestQuit();
         }
+        return true;
+      }
+
+      // Prefix+d to detach
+      if (normalizedKey === 'd') {
+        setPrefixActive(false);
+        clearPrefixTimeout();
+        onDetach?.();
         return true;
       }
     }

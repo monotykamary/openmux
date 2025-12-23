@@ -35,6 +35,7 @@ interface AggregateViewProps {
   width: number;
   height: number;
   onRequestQuit?: () => void;
+  onDetach?: () => void;
   onRequestKillPty?: (ptyId: string) => void;
 }
 
@@ -188,6 +189,7 @@ export function AggregateView(props: AggregateViewProps) {
     handleEnterSearch,
     handleJumpToPty,
     onRequestQuit: props.onRequestQuit,
+    onDetach: props.onDetach,
     onRequestKillPty: props.onRequestKillPty,
     clearPrefixTimeout,
     startPrefixTimeout,

@@ -465,7 +465,13 @@ function AppContent() {
       <SearchOverlay width={width()} height={height()} />
 
       {/* Aggregate view overlay */}
-      <AggregateView width={width()} height={height()} onRequestQuit={confirmationHandlers.handleRequestQuit} onRequestKillPty={confirmationHandlers.handleRequestKillPty} />
+      <AggregateView
+        width={width()}
+        height={height()}
+        onRequestQuit={confirmationHandlers.handleRequestQuit}
+        onDetach={handleDetach}
+        onRequestKillPty={confirmationHandlers.handleRequestKillPty}
+      />
 
       {/* Confirmation dialog */}
       <ConfirmationDialog
