@@ -5,7 +5,7 @@ import { Effect } from 'effect';
 import { runEffect } from '../effect/runtime';
 import { Pty } from '../effect/services';
 import { PtyId, Cols, Rows } from '../effect/types';
-import type { UnifiedTerminalUpdate, TerminalScrollState, TerminalState } from '../core/types';
+import type { UnifiedTerminalUpdate, TerminalScrollState, TerminalState, DirtyTerminalUpdate } from '../core/types';
 import type { ITerminalEmulator } from '../terminal/emulator-interface';
 import { packDirtyUpdate, packTerminalState, packRow } from '../terminal/cell-serialization';
 import { setHostColors } from '../terminal/terminal-colors';
@@ -147,9 +147,10 @@ async function unsubscribeFromPty(ptyId: string): Promise<void> {
   ptySubscriptions.delete(ptyId);
 }
 
-async function subscribeAllPtys(): Promise<void> {
+async function subscribeAllPtys(): Promise<string[]> {
   const ptyIds = await withPty((pty) => pty.listAll()) as Array<string>;
   await Promise.all(ptyIds.map((id) => subscribeToPty(String(id))));
+  return ptyIds;
 }
 
 async function handleLifecycle(): Promise<void> {
@@ -171,6 +172,67 @@ async function handleTitles(): Promise<void> {
   }));
 }
 
+async function sendSnapshot(ptyId: string): Promise<void> {
+  if (!activeClient) return;
+  try {
+    const result = await withPty((pty) =>
+      Effect.gen(function* () {
+        const state = yield* pty.getTerminalState(PtyId.make(ptyId));
+        const scrollState = yield* pty.getScrollState(PtyId.make(ptyId));
+        return { state, scrollState };
+      })
+    ) as { state: TerminalState; scrollState: TerminalScrollState };
+
+    const update: DirtyTerminalUpdate = {
+      dirtyRows: new Map(),
+      cursor: result.state.cursor,
+      scrollState: result.scrollState,
+      cols: result.state.cols,
+      rows: result.state.rows,
+      isFull: true,
+      fullState: result.state,
+      alternateScreen: result.state.alternateScreen,
+      mouseTracking: result.state.mouseTracking,
+      cursorKeyMode: result.state.cursorKeyMode ?? 'normal',
+      inBandResize: false,
+    };
+
+    const packed = packDirtyUpdate(update);
+    const payloads: ArrayBuffer[] = [
+      packed.dirtyRowIndices.buffer.slice(0) as ArrayBuffer,
+      packed.dirtyRowData as ArrayBuffer,
+      (packed.fullStateData ?? new ArrayBuffer(0)) as ArrayBuffer,
+    ];
+
+    sendEvent({
+      type: 'ptyUpdate',
+      ptyId,
+      packed: {
+        cursor: packed.cursor,
+        cols: packed.cols,
+        rows: packed.rows,
+        scrollbackLength: packed.scrollbackLength,
+        isFull: packed.isFull,
+        alternateScreen: packed.alternateScreen,
+        mouseTracking: packed.mouseTracking,
+        cursorKeyMode: packed.cursorKeyMode,
+        inBandResize: packed.inBandResize,
+      },
+      scrollState: {
+        viewportOffset: result.scrollState.viewportOffset,
+        isAtBottom: result.scrollState.isAtBottom,
+      },
+      payloadLengths: payloads.map((payload) => payload.byteLength),
+    }, payloads);
+  } catch {
+    // ignore snapshot errors
+  }
+}
+
+async function sendSnapshots(ptyIds: string[]): Promise<void> {
+  await Promise.all(ptyIds.map((ptyId) => sendSnapshot(ptyId)));
+}
+
 async function attachClient(socket: net.Socket): Promise<void> {
   if (activeClient && !activeClient.destroyed) {
     sendFrame(activeClient, { type: 'detached' });
@@ -183,9 +245,10 @@ async function attachClient(socket: net.Socket): Promise<void> {
   }
 
   activeClient = socket;
-  await subscribeAllPtys();
+  const ptyIds = await subscribeAllPtys();
   await handleLifecycle();
   await handleTitles();
+  await sendSnapshots(ptyIds);
 }
 
 async function detachClient(socket: net.Socket): Promise<void> {
