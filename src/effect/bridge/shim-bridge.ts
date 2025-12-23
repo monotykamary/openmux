@@ -21,6 +21,11 @@ export function onShimDetached(callback: () => void): () => void {
   return ShimClient.onShimDetached(callback);
 }
 
+export async function shutdownShim(): Promise<void> {
+  if (!isShimClient()) return;
+  await ShimClient.shutdownShim();
+}
+
 export async function waitForShimClient(): Promise<void> {
   if (!isShimClient()) return;
   await ShimClient.waitForShim();

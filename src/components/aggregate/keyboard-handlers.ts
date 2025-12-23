@@ -287,7 +287,7 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
 
     // Global prefix commands (work in both list and preview mode)
     if (getPrefixActive()) {
-      // Prefix+q to quit the app
+      // Prefix+q to quit the app (show confirmation modal)
       if (normalizedKey === 'q') {
         setPrefixActive(false);
         clearPrefixTimeout();

@@ -787,6 +787,28 @@ export function onShimDetached(callback: () => void): () => void {
   };
 }
 
+export async function shutdownShim(): Promise<void> {
+  if (connecting) {
+    await connecting.catch(() => {});
+  }
+  if (!socket || socket.destroyed) {
+    return;
+  }
+
+  const requestId = nextRequestId++;
+  const header: ShimHeader = {
+    type: 'request',
+    requestId,
+    method: 'shutdown',
+    payloadLengths: [],
+  };
+  try {
+    socket.write(encodeFrame(header));
+  } catch {
+    // ignore
+  }
+}
+
 export async function waitForShim(): Promise<void> {
   await ensureConnected();
 }

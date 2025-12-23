@@ -30,10 +30,8 @@ export interface ConfirmationHandlerDeps {
   exitConfirmMode: () => void;
 
   // Session actions
-  saveSession: () => Promise<void>;
+  onQuit: () => Promise<void>;
 
-  // Renderer
-  destroyRenderer: () => void;
 }
 
 /**
@@ -50,8 +48,7 @@ export function createConfirmationHandlers(deps: ConfirmationHandlerDeps) {
     destroyPTY,
     enterConfirmMode,
     exitConfirmMode,
-    saveSession,
-    destroyRenderer,
+    onQuit,
   } = deps;
 
   /**
@@ -104,9 +101,7 @@ export function createConfirmationHandlers(deps: ConfirmationHandlerDeps) {
         }, 0);
       }
     } else if (type === 'exit') {
-      await saveSession();
-      destroyRenderer();
-      process.exit(0);
+      await onQuit();
     } else if (type === 'kill_pty') {
       // Kill PTY from aggregate view
       const ptyId = pendingKillPtyId();

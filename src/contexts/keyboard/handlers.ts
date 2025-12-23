@@ -208,14 +208,13 @@ export function handlePrefixModeKey(
       keyboard.toggleHints();
       return true;
 
-    // Quit openmux
+    // Quit openmux (with confirmation)
     case 'q':
-      if (onQuit) {
-        exitPrefix();
-        onQuit();
-        return true;
+      if (onRequestQuit) {
+        onRequestQuit();
+      } else {
+        onQuit?.();
       }
-      onRequestQuit?.();
       return true;
 
     // Detach (tmux-style)

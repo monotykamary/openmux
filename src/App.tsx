@@ -32,6 +32,7 @@ import {
   isPtyCreated,
   getSessionCwd as getSessionCwdFromCoordinator,
   onShimDetached,
+  shutdownShim,
 } from './effect/bridge';
 import { disposeRuntime } from './effect/runtime';
 import type { PasteEvent } from '@opentui/core';
@@ -66,6 +67,27 @@ function AppContent() {
   const renderer = useRenderer();
   let detaching = false;
 
+  // Quit handler - save session, shutdown shim, and cleanup terminal before exiting
+  const handleQuit = async () => {
+    if (detaching) return;
+    detaching = true;
+    await saveSession();
+    await shutdownShim();
+    await disposeRuntime();
+    renderer.destroy();
+    process.exit(0);
+  };
+
+  // Detach handler - save session and exit without shutting down the shim
+  const handleDetach = async () => {
+    if (detaching) return;
+    detaching = true;
+    await saveSession();
+    await disposeRuntime();
+    renderer.destroy();
+    process.exit(0);
+  };
+
 
   // Confirmation dialog state
   const [confirmationState, setConfirmationState] = createSignal<{
@@ -87,8 +109,7 @@ function AppContent() {
     destroyPTY,
     enterConfirmMode,
     exitConfirmMode,
-    saveSession,
-    destroyRenderer: () => renderer.destroy(),
+    onQuit: handleQuit,
   });
 
   // Create paste handler for bracketed paste from host terminal
@@ -163,22 +184,6 @@ function AppContent() {
   // Create paste handler for manual paste (Ctrl+V, prefix+p/])
   const handlePaste = () => {
     pasteToFocused();
-  };
-
-  // Quit handler - save session and cleanup terminal before exiting
-  const handleQuit = async () => {
-    if (detaching) return;
-    detaching = true;
-    // Save the current session before quitting
-    await saveSession();
-    // Dispose Effect runtime to cleanup services
-    await disposeRuntime();
-    renderer.destroy();
-    process.exit(0);
-  };
-
-  const handleDetach = async () => {
-    await handleQuit();
   };
 
   // Session picker toggle handler
@@ -457,7 +462,7 @@ function AppContent() {
       <SearchOverlay width={width()} height={height()} />
 
       {/* Aggregate view overlay */}
-      <AggregateView width={width()} height={height()} onRequestQuit={handleQuit} onRequestKillPty={confirmationHandlers.handleRequestKillPty} />
+      <AggregateView width={width()} height={height()} onRequestQuit={confirmationHandlers.handleRequestQuit} onRequestKillPty={confirmationHandlers.handleRequestKillPty} />
 
       {/* Confirmation dialog */}
       <ConfirmationDialog

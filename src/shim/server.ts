@@ -259,6 +259,14 @@ async function handleRequest(socket: net.Socket, header: ShimHeader, payloads: B
         sendResponse(socket, requestId);
         return;
 
+      case 'shutdown':
+        await withPty((pty) => pty.destroyAll());
+        sendResponse(socket, requestId);
+        setTimeout(() => {
+          process.exit(0);
+        }, 10);
+        return;
+
       case 'setPanePosition':
         await withPty((pty) => pty.setPanePosition(
           PtyId.make(params.ptyId as string),

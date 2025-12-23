@@ -70,6 +70,7 @@ export {
   registerPtyPane,
   getSessionPtyMapping,
   onShimDetached,
+  shutdownShim,
   waitForShimClient,
 } from "./shim-bridge"
 
