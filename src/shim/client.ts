@@ -431,6 +431,12 @@ async function connectSocket(): Promise<void> {
       client.on('close', () => {
         socket = null;
         reader = null;
+        if (!detached) {
+          detached = true;
+          for (const callback of detachedSubscribers) {
+            callback();
+          }
+        }
       });
       resolve();
     };
