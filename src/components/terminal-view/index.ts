@@ -18,7 +18,6 @@ export {
 export {
   fetchRowsForRendering,
   calculatePrefetchRequest,
-  updateTransitionCache,
   type RowFetchingOptions,
   type RowFetchResult,
   type PrefetchRequest,

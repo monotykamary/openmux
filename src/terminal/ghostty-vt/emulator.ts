@@ -48,6 +48,7 @@ export class GhosttyVTEmulator implements ITerminalEmulator {
   private needsFullRefresh = false;
 
   private scrollbackCache = new ScrollbackCache(1000);
+  private scrollbackSnapshotDirty = true;
   private decoder = new TextDecoder();
 
   constructor(cols: number, rows: number, colors: TerminalColors) {
@@ -102,6 +103,7 @@ export class GhosttyVTEmulator implements ITerminalEmulator {
     this.titleParser.processData(text);
     const stripped = stripProblematicOscSequences(text);
     if (stripped.length > 0) {
+      this.scrollbackSnapshotDirty = true;
       this.terminal.write(stripped);
       if (!this.updatesEnabled) {
         this.needsFullRefresh = true;
@@ -123,6 +125,7 @@ export class GhosttyVTEmulator implements ITerminalEmulator {
 
     this._cols = cols;
     this._rows = rows;
+    this.scrollbackSnapshotDirty = true;
     this.terminal.resize(cols, rows);
     if (!this.updatesEnabled) {
       this.needsFullRefresh = true;
@@ -139,6 +142,7 @@ export class GhosttyVTEmulator implements ITerminalEmulator {
     this.terminal.write("\x1bc");
     this.currentTitle = "";
     this.scrollbackCache.clear();
+    this.scrollbackSnapshotDirty = true;
     if (!this.updatesEnabled) {
       this.needsFullRefresh = true;
       return;
@@ -171,24 +175,7 @@ export class GhosttyVTEmulator implements ITerminalEmulator {
   }
 
   getScrollbackLine(offset: number): TerminalCell[] | null {
-    return this.scrollbackCache.get(offset);
-  }
-
-  async prefetchScrollbackLines(startOffset: number, count: number): Promise<void> {
-    this.terminal.update();
-    const lines = new Map<number, TerminalCell[]>();
-    for (let i = 0; i < count; i++) {
-      const offset = startOffset + i;
-      const cached = this.scrollbackCache.get(offset);
-      if (cached) {
-        lines.set(offset, cached);
-        continue;
-      }
-      const line = this.terminal.getScrollbackLine(offset);
-      if (!line) break;
-      lines.set(offset, convertLine(line, this._cols, this.colors));
-    }
-    this.scrollbackCache.setMany(lines);
+    return this.fetchScrollbackLine(offset);
   }
 
   getDirtyUpdate(scrollState: TerminalScrollState): DirtyTerminalUpdate {
@@ -383,7 +370,10 @@ export class GhosttyVTEmulator implements ITerminalEmulator {
     const cached = this.scrollbackCache.get(offset);
     if (cached) return cached;
 
-    this.terminal.update();
+    if (this.scrollbackSnapshotDirty) {
+      this.terminal.update();
+      this.scrollbackSnapshotDirty = false;
+    }
     const line = this.terminal.getScrollbackLine(offset);
     if (!line) return null;
 
@@ -394,6 +384,7 @@ export class GhosttyVTEmulator implements ITerminalEmulator {
 
   private prepareUpdate(forceFull: boolean): void {
     const dirtyState = this.terminal.update();
+    this.scrollbackSnapshotDirty = false;
     const cursor = this.terminal.getCursor();
     const scrollbackLength = this.terminal.getScrollbackLength();
     const isAtScrollbackLimit = scrollbackLength >= SCROLLBACK_LIMIT;

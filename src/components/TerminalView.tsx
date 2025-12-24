@@ -33,7 +33,6 @@ import {
   renderScrollbar,
   fetchRowsForRendering,
   calculatePrefetchRequest,
-  updateTransitionCache,
 } from './terminal-view';
 
 const visiblePtyCounts = new Map<string, number>();
@@ -103,11 +102,6 @@ export function TerminalView(props: TerminalViewProps) {
   let pendingRender = false;
   // Track if content changed (vs just position change)
   let contentDirty = true;
-  // Cache for lines transitioning from live terminal to scrollback
-  // When scrollback grows, the top rows of the terminal move to scrollback.
-  // We capture them before the state update so we can render them immediately
-  // without waiting for async prefetch from the emulator.
-  const transitionCache = new Map<number, TerminalCell[]>();
   // Cache emulator for sync access to scrollback lines
   let emulator: ITerminalEmulator | null = null;
   // Version counter to trigger re-renders when state changes
@@ -191,27 +185,11 @@ export function TerminalView(props: TerminalViewProps) {
             if (!mounted) return;
 
             const { terminalUpdate } = update;
-            const oldScrollbackLength = scrollState.scrollbackLength;
-            const newScrollbackLength = update.scrollState.scrollbackLength;
-            const isAtScrollbackLimit = update.scrollState.isAtScrollbackLimit ?? false;
-
-            // Update transition cache based on scrollback changes
-            updateTransitionCache(
-              transitionCache,
-              terminalState,
-              oldScrollbackLength,
-              newScrollbackLength,
-              scrollState.viewportOffset,
-              isAtScrollbackLimit
-            );
-
             // Update terminal state
             if (terminalUpdate.isFull && terminalUpdate.fullState) {
               // Full refresh: store complete state
               terminalState = terminalUpdate.fullState;
               cachedRows = [...terminalUpdate.fullState.cells];
-              // Clear transition cache on full refresh
-              transitionCache.clear();
             } else {
               // Delta update: merge dirty rows into cached state
               const existingState = terminalState;
@@ -303,7 +281,6 @@ export function TerminalView(props: TerminalViewProps) {
     const { rowCache, firstMissingOffset, lastMissingOffset } = fetchRowsForRendering(
       state,
       emulator,
-      transitionCache,
       { viewportOffset, scrollbackLength, rows }
     );
 
@@ -315,7 +292,9 @@ export function TerminalView(props: TerminalViewProps) {
       scrollbackLength,
       rows
     );
-    if (prefetchRequest && !prefetchInProgress && executePrefetchFn) {
+    const supportsPrefetch = !!emulator &&
+      typeof (emulator as { prefetchScrollbackLines?: unknown }).prefetchScrollbackLines === 'function';
+    if (prefetchRequest && supportsPrefetch && !prefetchInProgress && executePrefetchFn) {
       pendingPrefetch = prefetchRequest;
       // Execute prefetch asynchronously (don't block render)
       queueMicrotask(executePrefetchFn);

@@ -23,7 +23,6 @@ export interface RowFetchResult {
 export function fetchRowsForRendering(
   state: TerminalState,
   emulator: ITerminalEmulator | null,
-  transitionCache: Map<number, TerminalCell[]>,
   options: RowFetchingOptions
 ): RowFetchResult {
   const { viewportOffset, scrollbackLength, rows } = options
@@ -47,12 +46,8 @@ export function fetchRowsForRendering(
         // Before scrollback
         rowCache[y] = null
       } else if (absoluteY < scrollbackLength) {
-        // In scrollback buffer - try emulator cache first, then transition cache
-        let line = currentEmulator?.getScrollbackLine(absoluteY) ?? null
-        // Fall back to transition cache for lines that just moved from live terminal
-        if (line === null) {
-          line = transitionCache.get(absoluteY) ?? null
-        }
+        // In scrollback buffer - ask emulator (may populate cache synchronously)
+        const line = currentEmulator?.getScrollbackLine(absoluteY) ?? null
         rowCache[y] = line
         // Track missing scrollback lines (null when should have data)
         if (line === null && currentEmulator) {
@@ -100,35 +95,4 @@ export function calculatePrefetchRequest(
   const count = prefetchEnd - prefetchStart + 1
 
   return { ptyId, start: prefetchStart, count }
-}
-
-/**
- * Update transition cache when scrollback grows
- * Captures lines transitioning from live terminal to scrollback
- */
-export function updateTransitionCache(
-  transitionCache: Map<number, TerminalCell[]>,
-  terminalState: TerminalState | null,
-  oldScrollbackLength: number,
-  newScrollbackLength: number,
-  viewportOffset: number,
-  isAtScrollbackLimit: boolean
-): void {
-  const scrollbackDelta = newScrollbackLength - oldScrollbackLength
-
-  if (scrollbackDelta > 0 && terminalState && viewportOffset > 0) {
-    // Capture lines transitioning from live terminal to scrollback BEFORE updating state.
-    // We capture them so we can render them immediately without waiting for async prefetch.
-    for (let i = 0; i < scrollbackDelta; i++) {
-      const row = terminalState.cells[i]
-      if (row) {
-        transitionCache.set(oldScrollbackLength + i, row)
-      }
-    }
-  } else if (scrollbackDelta < 0 ||
-             (scrollbackDelta === 0 && isAtScrollbackLimit && oldScrollbackLength > 0)) {
-    // Content shifted (at scrollback limit) or reset - clear stale transition cache entries
-    // to prevent returning wrong data for offsets that now have different content
-    transitionCache.clear()
-  }
 }

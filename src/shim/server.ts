@@ -439,10 +439,6 @@ function createServerHandlers(options?: ShimServerOptions) {
           const count = params.count as number;
           const emulator = await withPty((pty) => pty.getEmulator(PtyId.make(ptyId))) as ITerminalEmulator;
 
-          if ('prefetchScrollbackLines' in emulator && typeof emulator.prefetchScrollbackLines === 'function') {
-            await (emulator as any).prefetchScrollbackLines(startOffset, count);
-          }
-
           const lineOffsets: number[] = [];
           const payloads: ArrayBuffer[] = [];
 
