@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.40](https://github.com/monotykamary/openmux/compare/v0.2.39...v0.2.40) (2025-12-24)
+
+
+### Refactoring
+
+* consolidate scroll state sources ([84bbbf9](https://github.com/monotykamary/openmux/commit/84bbbf9b913c17bb68295c529dc5c259f1a1ac58))
+* simplify scrollback rendering ([d952b0c](https://github.com/monotykamary/openmux/commit/d952b0cc3af042c6cd019991dcbf0ebfb9610a4b))
+* simplify terminal caches and scroll handling ([a852112](https://github.com/monotykamary/openmux/commit/a8521124f9ec3a938473743b0bbdd754378e41de))
+
 ### [0.2.39](https://github.com/monotykamary/openmux/compare/v0.2.38...v0.2.39) (2025-12-24)
 
 
