@@ -161,7 +161,7 @@ export class XtwinopsQueryParser implements QueryParser {
 /**
  * Parser for other XTWINOPS sequences to drop silently (ESC[Ps;...t)
  * Catches window manipulation commands like resize (8;rows;cols;t) that
- * ghostty-web doesn't support and would log warnings.
+ * ghostty-vt doesn't support and would log warnings.
  * This parser should come AFTER XtwinopsQueryParser to not intercept queries.
  */
 export class XtwinopsDropParser implements QueryParser {

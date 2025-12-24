@@ -52,7 +52,7 @@ Each session runs in a minimal shim process (`openmux --shim <session-id>`):
 ```typescript
 // Shim responsibilities:
 // 1. Own PTYs for one session (spawn, hold file descriptors)
-// 2. Run ghostty emulator for terminal state
+// 2. Run ghostty-vt emulator for terminal state
 // 3. Listen on Unix socket for client connections
 // 4. Stream PTY output to connected client
 // 5. Buffer output when no client connected
@@ -68,7 +68,7 @@ Each session runs in a minimal shim process (`openmux --shim <session-id>`):
 ```
 1. openmux spawns: openmux --shim session-abc
 2. shim creates socket at ~/.config/openmux/sockets/session-abc.sock
-3. shim spawns PTYs, initializes ghostty emulators
+3. shim spawns PTYs, initializes ghostty-vt emulators
 4. openmux connects to socket via ShimClient service
 5. shim streams terminal state, openmux renders
 ```
@@ -78,7 +78,7 @@ Each session runs in a minimal shim process (`openmux --shim <session-id>`):
 ```
 1. openmux disconnects from shim-A socket
 2. shim-A continues running, PTYs stay alive
-3. shim-A buffers output (ghostty emulator maintains state)
+3. shim-A buffers output (ghostty-vt emulator maintains state)
 4. openmux connects to shim-B socket
 5. shim-B sends terminal state snapshot + live stream
 ```

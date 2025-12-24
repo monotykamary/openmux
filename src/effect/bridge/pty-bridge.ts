@@ -284,7 +284,7 @@ export async function getScrollbackLine(
 /**
  * Prefetch scrollback lines into the emulator's cache.
  * Used to load scrollback lines before they're needed for rendering.
- * For WorkerEmulator, this fetches lines from the worker thread.
+ * For emulators with prefetch support, this populates the scrollback cache.
  */
 export async function prefetchScrollbackLines(
   ptyId: string,
@@ -296,7 +296,7 @@ export async function prefetchScrollbackLines(
       Effect.gen(function* () {
         const pty = yield* Pty
         const emulator = yield* pty.getEmulator(PtyId.make(ptyId))
-        // Check if emulator has async prefetch (WorkerEmulator)
+        // Check if emulator has async prefetch support
         if ('prefetchScrollbackLines' in emulator && typeof emulator.prefetchScrollbackLines === 'function') {
           yield* Effect.promise(() => (emulator as { prefetchScrollbackLines: (start: number, count: number) => Promise<void> }).prefetchScrollbackLines(startOffset, count))
         }

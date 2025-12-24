@@ -137,7 +137,7 @@ export class OscClipboardQueryParser extends TerminatedSequenceParser {
 
 /**
  * Parser for unhandled OSC sequences to drop silently (e.g., OSC 66)
- * Catches OSC sequences that ghostty-web doesn't support and would log warnings.
+ * Catches OSC sequences that ghostty-vt doesn't support and would log warnings.
  *
  * Note: OSC 0/1/2 (title sequences) are NOT dropped here because the title parser
  * in the worker needs to see them. They are stripped in the worker after title parsing.

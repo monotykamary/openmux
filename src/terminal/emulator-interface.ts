@@ -1,12 +1,8 @@
 /**
  * ITerminalEmulator - Interface for terminal emulator implementations
  *
- * This interface abstracts terminal emulation to support both:
- * - Main thread emulation (GhosttyEmulator)
- * - Worker-based emulation (WorkerEmulator)
- *
- * The abstraction enables moving VT parsing to Web Workers while keeping
- * the rest of the codebase unchanged.
+ * This interface abstracts terminal emulation so the PTY layer doesn't
+ * care about the backend (native libghostty-vt, shim client, etc.).
  */
 
 import type {
@@ -18,7 +14,7 @@ import type {
 import type { TerminalColors } from './terminal-colors';
 
 /**
- * Terminal emulator interface - implemented by both GhosttyEmulator and WorkerEmulator
+ * Terminal emulator interface - implemented by native and remote emulators.
  */
 export interface ITerminalEmulator {
   /** Current terminal width in columns */
@@ -137,7 +133,7 @@ export interface ITerminalEmulator {
 
   /**
    * Subscribe to terminal state updates (fires when write() completes processing)
-   * This is essential for async emulators (workers) where write() doesn't block.
+   * This is essential for async emulators where write() doesn't block.
    * @returns Unsubscribe function
    */
   onUpdate(callback: () => void): () => void;
@@ -163,7 +159,7 @@ export interface ITerminalEmulator {
 }
 
 /**
- * Terminal modes that need to be communicated from worker to main thread
+ * Terminal modes that need to be communicated from emulator to UI
  */
 export interface TerminalModes {
   mouseTracking: boolean;
@@ -174,7 +170,7 @@ export interface TerminalModes {
 }
 
 /**
- * Serialized dirty update for worker communication
+ * Serialized dirty update for transport
  * Uses ArrayBuffer for efficient transfer via Transferable
  */
 export interface SerializedDirtyUpdate {
@@ -202,51 +198,8 @@ export interface SerializedDirtyUpdate {
   inBandResize: boolean;
 }
 
-// ============================================================================
-// Worker Message Types
-// ============================================================================
-
 /**
- * Messages sent from main thread to worker
- */
-export type WorkerInbound =
-  | { type: 'init'; sessionId: string; cols: number; rows: number; colors: WorkerTerminalColors }
-  | { type: 'write'; sessionId: string; data: ArrayBuffer }
-  | { type: 'resize'; sessionId: string; cols: number; rows: number }
-  | { type: 'reset'; sessionId: string }
-  | { type: 'getScrollbackLine'; sessionId: string; offset: number; requestId: number }
-  | { type: 'getScrollbackLines'; sessionId: string; startOffset: number; count: number; requestId: number }
-  | { type: 'getTerminalState'; sessionId: string; requestId: number }
-  | { type: 'search'; sessionId: string; query: string; requestId: number; limit?: number }
-  | { type: 'destroy'; sessionId: string };
-
-/**
- * Messages sent from worker to main thread
- */
-export type WorkerOutbound =
-  | { type: 'ready' }
-  | { type: 'initialized'; sessionId: string }
-  | { type: 'update'; sessionId: string; update: SerializedDirtyUpdate }
-  | { type: 'titleChange'; sessionId: string; title: string }
-  | { type: 'modeChange'; sessionId: string; modes: TerminalModes }
-  | { type: 'scrollbackLine'; requestId: number; cells: ArrayBuffer | null }
-  | { type: 'scrollbackLines'; requestId: number; cells: ArrayBuffer[]; offsets: number[] }
-  | { type: 'terminalState'; requestId: number; state: ArrayBuffer }
-  | { type: 'searchResults'; requestId: number; matches: SearchMatch[]; hasMore: boolean }
-  | { type: 'destroyed'; sessionId: string }
-  | { type: 'error'; sessionId?: string; requestId?: number; message: string };
-
-/**
- * Terminal colors for worker initialization
- */
-export interface WorkerTerminalColors {
-  foreground: { r: number; g: number; b: number };
-  background: { r: number; g: number; b: number };
-  palette: Array<{ r: number; g: number; b: number }>;
-}
-
-/**
- * Search match result from worker
+ * Search match result
  */
 export interface SearchMatch {
   /** Line index (0 = first scrollback line, scrollbackLength = first visible line) */

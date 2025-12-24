@@ -320,7 +320,7 @@ export function unpackTerminalState(buffer: ArrayBuffer): TerminalState {
 // ============================================================================
 
 /**
- * Pack a DirtyTerminalUpdate into a SerializedDirtyUpdate for worker transfer
+ * Pack a DirtyTerminalUpdate into a SerializedDirtyUpdate for transport
  */
 export function packDirtyUpdate(update: DirtyTerminalUpdate): SerializedDirtyUpdate {
   const dirtyRowIndices = new Uint16Array(update.dirtyRows.size);

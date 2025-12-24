@@ -1,14 +1,14 @@
 #!/usr/bin/env bun
 /**
- * Standalone ghostty-web test - bypasses OpenTUI entirely
+ * Standalone ghostty-vt test - bypasses OpenTUI entirely
  * Run: bun scripts/test-ghostty-raw.ts
  *
- * This script tests what ghostty-web's WASM VT parser actually outputs,
+ * This script tests what libghostty-vt's native VT parser actually outputs,
  * helping determine if defensive code in ghostty-emulator.ts is necessary
  * or if rendering issues are in the OpenTUI layer.
  */
 
-import { Ghostty, CellFlags, type GhosttyCell } from 'ghostty-web';
+import { CellFlags, GhosttyVtTerminal, type GhosttyCell } from '../src/terminal/ghostty-vt';
 
 // Standard xterm-256 palette (first 16 colors)
 const PALETTE = [
@@ -86,12 +86,19 @@ function analyzeResults(name: string, line: GhosttyCell[]): string[] {
   return issues;
 }
 
-async function main() {
-  console.log('=== ghostty-web Raw Cell Test ===');
-  console.log('Testing WASM VT parser output directly (no OpenTUI)\n');
+function getLine(term: GhosttyVtTerminal, row: number): GhosttyCell[] | null {
+  term.update();
+  const viewport = term.getViewport();
+  if (viewport.length === 0) return null;
+  const start = row * term.cols;
+  return viewport.slice(start, start + term.cols);
+}
 
-  const ghostty = await Ghostty.load();
-  const term = ghostty.createTerminal(80, 24, {
+async function main() {
+  console.log('=== ghostty-vt Raw Cell Test ===');
+  console.log('Testing native VT parser output directly (no OpenTUI)\n');
+
+  const term = new GhosttyVtTerminal(80, 24, {
     scrollbackLimit: 100,
     fgColor: 0xffffff,
     bgColor: 0x000000,
@@ -162,7 +169,7 @@ async function main() {
     term.write(test.data);
 
     // Get line 0
-    const line = term.getLine(0);
+    const line = getLine(term, 0);
     if (!line) {
       console.log(`--- ${test.name} ---`);
       console.log('  <no line data>\n');
@@ -201,11 +208,11 @@ async function main() {
   console.log('=== Summary ===');
   console.log(`Total issues found: ${totalIssues}`);
   if (totalIssues === 0) {
-    console.log('ghostty-web appears to handle all test cases correctly.');
+    console.log('ghostty-vt appears to handle all test cases correctly.');
     console.log('Defensive code in ghostty-emulator.ts may be over-engineering.');
   } else {
     console.log('Some issues detected - defensive code may be justified.');
-    console.log('Consider reporting issues upstream to ghostty-web.');
+    console.log('Consider reporting issues upstream to ghostty.');
   }
 }
 

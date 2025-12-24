@@ -6,12 +6,11 @@
       "name": "openmux",
       "dependencies": {
         "@effect/cli": "^0.72.1",
-        "@effect/platform": "^0.93.7",
-        "@opentui/core": "^0.1.60",
-        "@opentui/solid": "^0.1.60",
-        "effect": "^3.19.11",
-        "ghostty-web": "^0.3.0",
-        "solid-js": "^1.9.9",
+        "@effect/platform": "^0.93.8",
+        "@opentui/core": "^0.1.62",
+        "@opentui/solid": "^0.1.62",
+        "effect": "^3.19.13",
+        "solid-js": "^1.9.10",
       },
       "devDependencies": {
         "@effect/eslint-plugin": "^0.3.2",
@@ -23,7 +22,7 @@
         "@vitest/coverage-v8": "^4.0.16",
         "eslint": "^9.39.2",
         "standard-version": "^9.5.0",
-        "vitest": "^4.0.15",
+        "vitest": "^4.0.16",
       },
       "peerDependencies": {
         "typescript": "^5.9.3",
@@ -626,8 +625,6 @@
     "get-caller-file": ["get-caller-file@2.0.5", "", {}, "sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg=="],
 
     "get-pkg-repo": ["get-pkg-repo@4.2.1", "", { "dependencies": { "@hutson/parse-repository-url": "^3.0.0", "hosted-git-info": "^4.0.0", "through2": "^2.0.0", "yargs": "^16.2.0" }, "bin": { "get-pkg-repo": "src/cli.js" } }, "sha512-2+QbHjFRfGB74v/pYWjd5OhU3TDIC2Gv/YKUTk/tCvAz0pkn/Mz6P3uByuBimLOcPvN2jYdScl3xGFSrx0jEcA=="],
-
-    "ghostty-web": ["ghostty-web@0.3.0", "", {}, "sha512-SAdSHWYF20GMZUB0n8kh1N6Z4ljMnuUqT8iTB2n5FAPswEV10MejEpLlhW/769GL5+BQa1NYwEg9y/XCckV5+A=="],
 
     "gifwrap": ["gifwrap@0.10.1", "", { "dependencies": { "image-q": "^4.0.0", "omggif": "^1.0.10" } }, "sha512-2760b1vpJHNmLzZ/ubTtNnEx5WApN/PYWJvXvgS+tL1egTTthayFYIQQNi136FLEDcN/IyEY2EcGpIITD6eYUw=="],
 

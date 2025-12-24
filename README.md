@@ -9,7 +9,7 @@ A terminal multiplexer with master-stack layout (Zellij-style), built with:
 - **OpenTUI** - Terminal UI library with SolidJS reconciler
 - **SolidJS** - Reactive UI framework
 - **zig-pty** - PTY support for Bun (pure Zig implementation)
-- **ghostty-web** - Terminal emulation via WASM
+- **libghostty-vt** - Native terminal emulation (VT parser/state)
 
 ![openmux screenshot](assets/openmux-screenshot.png)
 
@@ -94,7 +94,7 @@ bun dev        # Run with watch mode
              │ PTY I/O + emulation
              v
 ┌─────────────────────────┐
-│ zig-pty + ghostty-web   │  worker pool
+│ zig-pty + libghostty-vt │
 └─────────────────────────┘
 ```
 
@@ -223,7 +223,8 @@ src/
 ├── terminal/                       # PTY and terminal emulation
 │   ├── index.ts                    # Terminal exports
 │   ├── pty-manager.ts              # PTY session lifecycle (zig-pty)
-│   ├── ghostty-emulator.ts         # Terminal emulator (ghostty-web WASM)
+│   ├── ghostty-vt/                 # Native libghostty-vt bindings + emulator
+│   ├── ghostty-emulator/           # Cell conversion utilities
 │   ├── input-handler.ts            # Key/mouse to escape sequence encoder
 │   ├── graphics-passthrough.ts     # Kitty Graphics/Sixel protocol
 │   ├── capabilities.ts             # Terminal capability detection
@@ -245,7 +246,7 @@ Current status:
 - [x] OpenTUI component layer
 - [x] Keyboard navigation system
 - [x] PTY integration
-- [x] ghostty-web WASM terminal emulation
+- [x] libghostty-vt native terminal emulation
 - [x] Workspaces (1-9)
 - [x] Layout modes (vertical/horizontal/stacked)
 - [x] Session persistence

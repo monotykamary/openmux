@@ -20,9 +20,10 @@
     "build:release": "./scripts/build.sh --release",
     "install:local": "./scripts/build.sh --install",
     "prepare": "effect-language-service patch",
-    "test": "vitest run && cd zig-pty && zig build test --summary all",
+    "test": "vitest run && (cd zig-pty && zig build test --summary all) && ./scripts/test-ghostty-vt.sh",
     "test:ts": "vitest run",
     "test:zig": "cd zig-pty && zig build test --summary all",
+    "test:ghostty-vt": "./scripts/test-ghostty-vt.sh",
     "test:watch": "vitest",
     "check:circular": "bunx madge --circular --extensions ts,tsx src/",
     "lint:effect": "effect-language-service diagnostics --format pretty --project ./tsconfig.json",
@@ -77,7 +78,6 @@
     "@opentui/core": "^0.1.62",
     "@opentui/solid": "^0.1.62",
     "effect": "^3.19.13",
-    "ghostty-web": "^0.3.0",
     "solid-js": "^1.9.10"
   }
 }

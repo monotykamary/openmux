@@ -382,9 +382,9 @@ describe('scrollback-cache-invalidation', () => {
     });
   });
 
-  describe('worker-side cache invalidation', () => {
-    it('should clear worker cache when scrollback length changes', () => {
-      // Simulates emulator-worker.ts handleWrite() logic
+  describe('packed cache invalidation', () => {
+    it('should clear packed cache when scrollback length changes', () => {
+      // Simulates packed scrollback cache invalidation after new output.
       let scrollbackCache = new Map<number, ArrayBuffer>();
       let lastScrollbackLength = 50;
 
@@ -407,7 +407,7 @@ describe('scrollback-cache-invalidation', () => {
       expect(lastScrollbackLength).toBe(100);
     });
 
-    it('should preserve worker cache when scrollback length unchanged', () => {
+    it('should preserve packed cache when scrollback length unchanged', () => {
       let scrollbackCache = new Map<number, ArrayBuffer>();
       let lastScrollbackLength = 100;
 

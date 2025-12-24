@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
@@ -41,6 +43,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+
+      - name: Apply ghostty-vt patch
+        run: ./scripts/update-ghostty-vt.sh --patch-only
 
       - name: Build
         id: build

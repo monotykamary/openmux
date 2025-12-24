@@ -1,7 +1,7 @@
 import type { TerminalCell, TerminalState, TerminalScrollState } from '../../core/types';
 import type { SearchResult, ITerminalEmulator } from '../../terminal/emulator-interface';
 import { getDefaultColors, getHostColors } from '../../terminal/terminal-colors';
-import { ScrollbackCache } from '../../terminal/worker-emulator/scrollback-cache';
+import { ScrollbackCache } from '../../terminal/emulator-utils/scrollback-cache';
 
 export type RemoteEmulatorDeps = {
   getPtyState: (ptyId: string) => {

@@ -180,7 +180,7 @@ export function codepointToChar(codepoint: number, isInvisible: boolean = false)
     // Private Use Area (nerd fonts) through end of BMP, excluding U+FFFD
     return String.fromCharCode(cp);
   } else if (cp >= 0x10000 && cp <= 0xcffff) {
-    // Planes 1-12 (skip Plane 13 - unassigned, ghostty-web returns garbage here)
+    // Planes 1-12 (skip Plane 13 - unassigned, ghostty-vt returns garbage here)
     try {
       return String.fromCodePoint(cp);
     } catch {
@@ -203,6 +203,6 @@ export function codepointToChar(codepoint: number, isInvisible: boolean = false)
   }
 
   // Implicitly skip: DEL (0x7F), C1 controls (0x80-0x9F), surrogates (0xD800-0xDFFF),
-  // replacement char (0xFFFD), non-characters, Plane 13 + Plane 16 (ghostty-web bug)
+  // replacement char (0xFFFD), non-characters, Plane 13 + Plane 16 (ghostty-vt bug)
   return ' ';
 }

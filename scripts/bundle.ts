@@ -23,23 +23,4 @@ if (!mainResult.success) {
   process.exit(1);
 }
 
-// Bundle worker separately (no Solid plugin needed, no JSX)
-// Output as emulator-worker.ts to match the URL reference in worker-pool.ts
-const workerResult = await Bun.build({
-  entrypoints: ["./src/terminal/emulator-worker.ts"],
-  outdir: "./dist",
-  minify: true,
-  target: "bun",
-  packages: "bundle",
-  naming: "emulator-worker.ts", // Keep .ts extension to match URL reference
-});
-
-if (!workerResult.success) {
-  console.error("Worker bundle failed:");
-  for (const log of workerResult.logs) {
-    console.error(log);
-  }
-  process.exit(1);
-}
-
 console.log("Bundle created successfully");

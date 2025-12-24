@@ -12,7 +12,7 @@ client (UI) attachable during or after the upgrade.
 
 ## Constraints
 - PTY masters are owned by the shim. They must remain open across upgrades.
-- The shim owns emulator state (screen buffer + scrollback) via worker pool.
+- The shim owns emulator state (screen buffer + scrollback) via native emulator.
 - Current protocol has no version negotiation or capabilities exchange.
 - Bun/Node do not expose native SCM_RIGHTS helpers; we may need a helper in Zig
   (or a small native bridge) to pass FDs.
@@ -47,7 +47,7 @@ client (UI) attachable during or after the upgrade.
 
 ## Emulator State Migration
 To preserve on-screen buffer and scrollback:
-- Add `exportState()` in worker emulators (full buffer + scrollback + cursor + modes).
+- Add `exportState()` in emulators (full buffer + scrollback + cursor + modes).
 - Add `importState()` to seed a fresh emulator after upgrade.
 - If this is too heavy, accept scrollback loss for v1 of hot upgrade.
 

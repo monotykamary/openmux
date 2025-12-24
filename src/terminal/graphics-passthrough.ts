@@ -2,7 +2,7 @@
  * Graphics Protocol Passthrough
  *
  * Intercepts Kitty graphics and Sixel sequences from PTY output
- * and routes them directly to the host terminal, bypassing ghostty-web parsing.
+ * and routes them directly to the host terminal, bypassing ghostty-vt parsing.
  *
  * This enables GPU-accelerated apps (like OpenTUI) to render graphics
  * when running inside openmux panes.

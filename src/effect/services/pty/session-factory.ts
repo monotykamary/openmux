@@ -3,7 +3,7 @@
  */
 import { Effect } from "effect"
 import { spawnAsync } from "../../../../zig-pty/ts/index"
-import { createWorkerEmulator } from "../../../terminal/worker-emulator"
+import { createGhosttyVTEmulator } from "../../../terminal/ghostty-vt/emulator"
 import { GraphicsPassthrough } from "../../../terminal/graphics-passthrough"
 import { TerminalQueryPassthrough } from "../../../terminal/terminal-query-passthrough"
 import { createSyncModeParser } from "../../../terminal/sync-mode-parser"
@@ -11,7 +11,6 @@ import { getCapabilityEnvironment } from "../../../terminal/capabilities"
 import { PtySpawnError } from "../../errors"
 import { PtyId, Cols, Rows, makePtyId } from "../../types"
 import type { InternalPtySession } from "./types"
-import type { EmulatorWorkerPool } from "../../../terminal/worker-pool"
 import type { TerminalColors } from "../../../terminal/terminal-colors"
 import { notifySubscribers } from "./notification"
 import { createDataHandler } from "./data-handler"
@@ -19,7 +18,6 @@ import { setupQueryPassthrough } from "./query-setup"
 
 
 export interface SessionFactoryDeps {
-  workerPool: EmulatorWorkerPool
   colors: TerminalColors
   defaultShell: string
   onLifecycleEvent: (event: { type: 'created' | 'destroyed'; ptyId: PtyId }) => Effect.Effect<void>
@@ -47,9 +45,9 @@ export function createSession(
     const cwd = options.cwd ?? process.cwd()
     const shell = deps.defaultShell
 
-    // Create worker-based emulator (non-blocking - worker buffers until initialized)
+    // Create native emulator (libghostty-vt)
     const emulator = yield* Effect.try({
-      try: () => createWorkerEmulator(deps.workerPool, cols, rows, deps.colors),
+      try: () => createGhosttyVTEmulator(cols, rows, deps.colors),
       catch: (error) =>
         PtySpawnError.make({ shell, cwd, cause: error }),
     })
@@ -112,7 +110,7 @@ export function createSession(
       deps.onTitleChange(id, title)
     })
 
-    // Subscribe to emulator updates (critical for async workers)
+    // Subscribe to emulator updates (drives unified subscribers)
     emulator.onUpdate(() => {
       notifySubscribers(session)
     })

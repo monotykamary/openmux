@@ -98,20 +98,15 @@ download_and_extract() {
     printf "  ${GREEN}✓${NC} Extracted\n"
 
     # Move files to ~/.openmux/bin/
+    mv "$tmp_dir/openmux" "$BIN_DIR/"
     mv "$tmp_dir/openmux-bin" "$BIN_DIR/"
-    mv "$tmp_dir/librust_pty.$LIB_EXT" "$BIN_DIR/"
-    chmod +x "$BIN_DIR/openmux-bin"
+    mv "$tmp_dir/libzig_pty.$LIB_EXT" "$BIN_DIR/"
+    mv "$tmp_dir/libghostty-vt.$LIB_EXT" "$BIN_DIR/" || true
+    mv "$tmp_dir/bunfig.toml" "$BIN_DIR/" || true
+    chmod +x "$BIN_DIR/openmux-bin" "$BIN_DIR/openmux"
 
     # Write version file
     echo "${VERSION#v}" > "$BIN_DIR/.version"
-
-    # Create wrapper script
-    cat > "$BIN_DIR/openmux" << WRAPPER
-#!/usr/bin/env bash
-export BUN_PTY_LIB="\${BUN_PTY_LIB:-$BIN_DIR/librust_pty.$LIB_EXT}"
-exec "$BIN_DIR/openmux-bin" "\$@"
-WRAPPER
-    chmod +x "$BIN_DIR/openmux"
 
     printf "  ${GREEN}✓${NC} Installed to $BIN_DIR\n"
 }

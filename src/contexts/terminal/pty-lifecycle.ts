@@ -95,7 +95,7 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
     rows: number,
     cwd?: string
   ): Promise<string> => {
-    // Worker pool initializes Ghostty WASM in each worker on demand
+    // Ghostty-vt is initialized per PTY session
     const ptyId = await createPtySession({ cols, rows, cwd });
 
     // Track the mapping immediately

@@ -8,7 +8,7 @@
  * The flow:
  * 1. Application (e.g., codex) writes ESC[6n to query cursor position
  * 2. This goes through the PTY and arrives at pty.onData()
- * 3. We intercept it, get cursor position from ghostty-web emulator
+ * 3. We intercept it, get cursor position from the emulator
  * 4. We write the response (ESC[row;colR) back to the PTY
  * 5. Application receives the response
  *

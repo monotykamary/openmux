@@ -1,6 +1,5 @@
 /**
- * Worker Emulator module
- * Re-exports all worker emulator utilities
+ * Emulator utilities shared by local and remote backends.
  */
 
 export {

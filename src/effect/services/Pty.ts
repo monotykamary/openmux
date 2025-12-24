@@ -1,11 +1,10 @@
 /**
  * PTY service for managing terminal pseudo-terminal sessions.
- * Wraps zig-pty with ghostty-web VT parsing.
+ * Wraps zig-pty with native libghostty-vt parsing.
  */
 import { Context, Effect, Layer, Ref, HashMap, Option } from "effect"
 import type { TerminalState, UnifiedTerminalUpdate } from "../../core/types"
 import type { ITerminalEmulator } from "../../terminal/emulator-interface"
-import { getWorkerPool, initWorkerPool } from "../../terminal/worker-pool"
 import { getHostColors, getDefaultColors } from "../../terminal/terminal-colors"
 import { PtySpawnError, PtyNotFoundError, PtyCwdError } from "../errors"
 import { PtyId, Cols, Rows, makePtyId } from "../types"
@@ -145,10 +144,6 @@ export class Pty extends Context.Tag("@openmux/Pty")<
     Effect.gen(function* () {
       const config = yield* AppConfig
 
-      // Initialize worker pool for terminal emulation
-      yield* Effect.promise(() => initWorkerPool(2))
-      const workerPool = getWorkerPool()
-
       // Internal session storage
       const sessionsRef = yield* Ref.make(
         HashMap.empty<PtyId, InternalPtySession>()
@@ -183,7 +178,6 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         const colors = getHostColors() ?? getDefaultColors()
         const { id, session } = yield* createSession(
           {
-            workerPool,
             colors,
             defaultShell: config.defaultShell,
             onLifecycleEvent: (event) => lifecycleRegistry.notify(event),

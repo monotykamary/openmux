@@ -50,7 +50,7 @@ export function createDataHandler(options: DataHandlerOptions) {
         }
 
         // Note: notifySubscribers is called via emulator.onUpdate() callback
-        // This ensures proper timing for both sync (GhosttyEmulator) and async (WorkerEmulator)
+        // This ensures proper timing for both sync and async emulators
         session.pendingNotify = false
       })
     }

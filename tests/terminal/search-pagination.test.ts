@@ -1,5 +1,5 @@
 /**
- * Tests for search pagination in emulator-worker
+ * Tests for search pagination in the terminal emulator.
  *
  * These tests verify that search results are properly paginated to prevent
  * memory exhaustion when searching through large scrollback buffers.
@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import type { SearchMatch } from '../../src/terminal/emulator-interface';
 
-// Simulate the search pagination logic from emulator-worker.ts handleSearch()
+// Simulate the search pagination logic from the emulator search handler.
 function simulateSearchWithLimit(
   lines: string[],
   query: string,
@@ -92,7 +92,7 @@ describe('search-pagination', () => {
     });
 
     it('returns empty results for empty query (real implementation)', () => {
-      // The real implementation in emulator-worker.ts returns early for empty query
+      // The real implementation returns early for empty query.
       // This test documents that behavior - the simulateSearch function doesn't have
       // this optimization, so we test the expected real behavior separately
       const lines = ['hello', 'world'];

@@ -61,6 +61,9 @@ get_lib_info() {
             LIB_NAME_FALLBACK="zig_pty.dll"
             ;;
     esac
+
+    # libghostty-vt has a stable name across platforms
+    GHOSTTY_LIB_NAME="libghostty-vt.$LIB_EXT"
 }
 
 # Build zig-pty native library
@@ -87,10 +90,88 @@ build_zig_pty() {
     echo "Built zig-pty native library"
 }
 
+# Build ghostty-vt native library
+build_ghostty_vt() {
+    echo "Building ghostty-vt native library..."
+
+    local ghostty_dir="${GHOSTTY_VT_DIR:-$PROJECT_DIR/ghostty}"
+    if [[ ! -d "$ghostty_dir" ]]; then
+        ghostty_dir="$PROJECT_DIR/vendor/ghostty"
+    fi
+
+    if [[ ! -d "$ghostty_dir" ]]; then
+        echo "Error: ghostty directory not found. Set GHOSTTY_VT_DIR or add ghostty sources."
+        exit 1
+    fi
+
+    if [[ ! -f "$ghostty_dir/include/ghostty/vt/terminal.h" ]]; then
+        if [[ "$ghostty_dir" == "$PROJECT_DIR/vendor/ghostty" && -x "$PROJECT_DIR/scripts/update-ghostty-vt.sh" ]]; then
+            GHOSTTY_VT_DIR="$ghostty_dir" "$PROJECT_DIR/scripts/update-ghostty-vt.sh" --patch-only
+        fi
+    fi
+
+    if [[ ! -f "$ghostty_dir/include/ghostty/vt/terminal.h" ]]; then
+        echo "Error: ghostty-vt patch missing (include/ghostty/vt/terminal.h not found)."
+        echo "Run: scripts/update-ghostty-vt.sh --patch-only"
+        exit 1
+    fi
+
+    if ! command -v zig &> /dev/null; then
+        echo "Error: zig compiler not found. Please install Zig: https://ziglang.org/download/"
+        exit 1
+    fi
+
+    local ghostty_version
+    ghostty_version=$(grep -E 'version = "' "$ghostty_dir/build.zig.zon" | head -1 | sed -E 's/.*version = "([^"]+)".*/\1/')
+    if [[ -z "$ghostty_version" ]]; then
+        echo "Error: could not determine ghostty version from $ghostty_dir/build.zig.zon"
+        exit 1
+    fi
+
+    cd "$ghostty_dir"
+    zig build lib-vt -Doptimize=ReleaseFast -Dversion-string="$ghostty_version"
+    cd "$PROJECT_DIR"
+
+    echo "Built ghostty-vt native library"
+}
+
+sign_macos_artifacts() {
+    if [[ "$OS" != "darwin" ]]; then
+        return 0
+    fi
+
+    if [[ -n "${OPENMUX_SKIP_CODESIGN:-}" ]]; then
+        echo "Skipping codesign (OPENMUX_SKIP_CODESIGN set)."
+        return 0
+    fi
+
+    if ! command -v codesign &> /dev/null; then
+        echo "Warning: codesign not found; skipping macOS ad-hoc signing."
+        return 0
+    fi
+
+    local sign_identity="${OPENMUX_CODESIGN_ID:--}"
+    local targets=(
+        "$DIST_DIR/$BINARY_NAME-bin"
+        "$DIST_DIR/libzig_pty.$LIB_EXT"
+        "$DIST_DIR/$GHOSTTY_LIB_NAME"
+    )
+
+    for target in "${targets[@]}"; do
+        if [[ ! -f "$target" ]]; then
+            echo "Error: codesign target not found at $target"
+            exit 1
+        fi
+    done
+
+    echo "Ad-hoc signing macOS artifacts..."
+    codesign --force --sign "$sign_identity" "${targets[@]}"
+}
+
 cleanup() {
     find "$PROJECT_DIR" -maxdepth 1 -name "*.bun-build" -type f -delete 2>/dev/null || true
     # Clean up intermediate bundle artifacts (keep binary, libs, wasm, etc.)
-    rm -f "$DIST_DIR"/index.js "$DIST_DIR"/emulator-worker.ts 2>/dev/null || true
+    rm -f "$DIST_DIR"/index.js 2>/dev/null || true
     rm -rf "$DIST_DIR"/chunk-*.js "$DIST_DIR"/terminal 2>/dev/null || true
 }
 
@@ -105,6 +186,8 @@ usage() {
     echo "Environment variables:"
     echo "  INSTALL_DIR      Binary install directory (default: ~/.local/bin)"
     echo "  LIB_INSTALL_DIR  Library install directory (default: ~/.local/lib/openmux)"
+    echo "  OPENMUX_SKIP_CODESIGN  Skip macOS ad-hoc signing when set"
+    echo "  OPENMUX_CODESIGN_ID    Override codesign identity (default: ad-hoc -)"
     exit 0
 }
 
@@ -116,6 +199,7 @@ build() {
 
     # Build zig-pty native library first
     build_zig_pty
+    build_ghostty_vt
 
     # Bundle with Solid.js plugin (bun build --compile doesn't run preload scripts)
     # This transforms JSX and bundles all dependencies into a single file
@@ -134,9 +218,8 @@ build() {
     fi
 
     # Compile the bundled output into a standalone binary
-    # bundle.ts creates both index.js and emulator-worker.ts in dist/
     local compile_status=0
-    bun build --compile --minify "$DIST_DIR/index.js" "$DIST_DIR/emulator-worker.ts" --outfile "$DIST_DIR/$BINARY_NAME-bin" || compile_status=$?
+    bun build --compile --minify "$DIST_DIR/index.js" --outfile "$DIST_DIR/$BINARY_NAME-bin" || compile_status=$?
 
     # Restore bunfig.toml
     if [[ -f "$bunfig_backup_path" ]]; then
@@ -165,11 +248,30 @@ build() {
         exit 1
     fi
 
+    # Copy ghostty-vt native library
+    local ghostty_dir="${GHOSTTY_VT_DIR:-$PROJECT_DIR/ghostty}"
+    if [[ ! -d "$ghostty_dir" ]]; then
+        ghostty_dir="$PROJECT_DIR/vendor/ghostty"
+    fi
+    local ghostty_lib="$ghostty_dir/zig-out/lib/$GHOSTTY_LIB_NAME"
+    if [[ ! -f "$ghostty_lib" ]]; then
+        ghostty_lib="$ghostty_dir/zig-out/lib/ghostty-vt.$LIB_EXT"
+    fi
+    if [[ -f "$ghostty_lib" ]]; then
+        cp "$ghostty_lib" "$DIST_DIR/$GHOSTTY_LIB_NAME"
+        echo "Copied: $(basename "$ghostty_lib") -> $DIST_DIR/$GHOSTTY_LIB_NAME"
+    else
+        echo "Error: Could not find native ghostty-vt library at $ghostty_lib"
+        exit 1
+    fi
+
     # Create empty bunfig.toml in dist to prevent parent config from being used
     echo "# openmux runtime config (empty - preload already compiled in)" > "$DIST_DIR/bunfig.toml"
 
     # Create wrapper script
     create_wrapper "$DIST_DIR/$BINARY_NAME"
+
+    sign_macos_artifacts
 
     cleanup
     echo "Built: $DIST_DIR/$BINARY_NAME"
@@ -186,6 +288,7 @@ create_wrapper() {
 @echo off
 set "SCRIPT_DIR=%~dp0"
 set "ZIG_PTY_LIB=%SCRIPT_DIR%zig_pty.dll"
+set "GHOSTTY_VT_LIB=%SCRIPT_DIR%libghostty-vt.dll"
 if not defined OPENMUX_ORIGINAL_CWD set "OPENMUX_ORIGINAL_CWD=%CD%"
 cd /d "%SCRIPT_DIR%"
 "%SCRIPT_DIR%openmux-bin.exe" %*
@@ -198,6 +301,7 @@ WRAPPER
 #!/usr/bin/env bash
 SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 export ZIG_PTY_LIB="\${ZIG_PTY_LIB:-\$SCRIPT_DIR/libzig_pty.$LIB_EXT}"
+export GHOSTTY_VT_LIB="\${GHOSTTY_VT_LIB:-\$SCRIPT_DIR/$GHOSTTY_LIB_NAME}"
 export OPENMUX_ORIGINAL_CWD="\${OPENMUX_ORIGINAL_CWD:-\$(pwd)}"
 cd "\$SCRIPT_DIR"
 exec "./openmux-bin" "\$@"
@@ -220,6 +324,7 @@ create_release() {
         "$BINARY_NAME" \
         "$BINARY_NAME-bin" \
         "libzig_pty.$LIB_EXT" \
+        "$GHOSTTY_LIB_NAME" \
         "bunfig.toml"
 
     echo "Created: $tarball_path"
@@ -240,9 +345,12 @@ install_binary() {
     cp "$DIST_DIR/$BINARY_NAME-bin" "$LIB_INSTALL_DIR/$BINARY_NAME-bin"
     chmod +x "$LIB_INSTALL_DIR/$BINARY_NAME-bin"
 
-    # Copy native library
+    # Copy native libraries
     if [[ -f "$DIST_DIR/libzig_pty.$LIB_EXT" ]]; then
         cp "$DIST_DIR/libzig_pty.$LIB_EXT" "$LIB_INSTALL_DIR/libzig_pty.$LIB_EXT"
+    fi
+    if [[ -f "$DIST_DIR/$GHOSTTY_LIB_NAME" ]]; then
+        cp "$DIST_DIR/$GHOSTTY_LIB_NAME" "$LIB_INSTALL_DIR/$GHOSTTY_LIB_NAME"
     fi
 
     # Copy empty bunfig.toml to prevent parent config from being used
@@ -255,6 +363,7 @@ install_binary() {
         cat > "$INSTALL_DIR/$BINARY_NAME.cmd" << WRAPPER
 @echo off
 set "ZIG_PTY_LIB=$LIB_INSTALL_DIR\\zig_pty.dll"
+set "GHOSTTY_VT_LIB=$LIB_INSTALL_DIR\\libghostty-vt.dll"
 if not defined OPENMUX_ORIGINAL_CWD set "OPENMUX_ORIGINAL_CWD=%CD%"
 cd /d "$LIB_INSTALL_DIR"
 "$LIB_INSTALL_DIR\\$BINARY_NAME-bin.exe" %*
@@ -263,6 +372,7 @@ WRAPPER
         cat > "$INSTALL_DIR/$BINARY_NAME" << WRAPPER
 #!/usr/bin/env bash
 export ZIG_PTY_LIB="\${ZIG_PTY_LIB:-$LIB_INSTALL_DIR/libzig_pty.$LIB_EXT}"
+export GHOSTTY_VT_LIB="\${GHOSTTY_VT_LIB:-$LIB_INSTALL_DIR/$GHOSTTY_LIB_NAME}"
 export OPENMUX_ORIGINAL_CWD="\${OPENMUX_ORIGINAL_CWD:-\$(pwd)}"
 cd "$LIB_INSTALL_DIR"
 exec "./$BINARY_NAME-bin" "\$@"

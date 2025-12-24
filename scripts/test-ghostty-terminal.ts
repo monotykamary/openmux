@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 /**
- * Standalone ghostty-web terminal - bypasses OpenTUI entirely
+ * Standalone ghostty-vt terminal - bypasses OpenTUI entirely
  * Run: bun scripts/test-ghostty-terminal.ts [command]
  *
- * This spawns a real PTY, pipes it through ghostty-web's VT parser,
+ * This spawns a real PTY, pipes it through ghostty-vt's VT parser,
  * and renders directly to stdout using ANSI sequences.
- * No OpenTUI involved - just ghostty-web → terminal output.
+ * No OpenTUI involved - just ghostty-vt → terminal output.
  *
  * Examples:
  *   bun scripts/test-ghostty-terminal.ts
@@ -14,7 +14,7 @@
  *   bun scripts/test-ghostty-terminal.ts bash -c "cat /path/to/large/file"
  */
 
-import { Ghostty, CellFlags, type GhosttyCell, type GhosttyTerminal } from 'ghostty-web';
+import { CellFlags, GhosttyVtTerminal, type GhosttyCell } from '../src/terminal/ghostty-vt';
 import { spawn, type IPty } from '../zig-pty/src/index';
 
 // Get terminal size
@@ -75,11 +75,14 @@ function leaveAltScreen(): string {
 }
 
 // Render full screen from ghostty terminal state
-function renderScreen(term: GhosttyTerminal, cols: number, rows: number): string {
+function renderScreen(term: GhosttyVtTerminal, cols: number, rows: number): string {
+  term.update();
+  const viewport = term.getViewport();
   let out = moveCursor(0, 0);
 
   for (let y = 0; y < rows; y++) {
-    const line = term.getLine(y);
+    const start = y * cols;
+    const line = viewport.length > 0 ? viewport.slice(start, start + cols) : null;
 
     out += moveCursor(0, y);
 
@@ -142,9 +145,8 @@ async function main() {
   // Small delay to let user read the message
   await Bun.sleep(500);
 
-  // Initialize ghostty
-  const ghostty = await Ghostty.load();
-  const term = ghostty.createTerminal(cols, rows, {
+  // Initialize ghostty-vt
+  const term = new GhosttyVtTerminal(cols, rows, {
     scrollbackLimit: 1000,
     fgColor: 0xffffff,
     bgColor: 0x000000,

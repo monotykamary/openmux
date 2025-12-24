@@ -2,7 +2,7 @@
 
 ## Summary
 
-High-frequency terminal animations (e.g., spinning color wheels, rapid cursor movements) exhibit visual "smearing" artifacts when rendered through bun-pty. This is a limitation of bun-pty's read loop implementation, **not** OpenTUI or ghostty-web.
+High-frequency terminal animations (e.g., spinning color wheels, rapid cursor movements) exhibit visual "smearing" artifacts when rendered through bun-pty. This is a limitation of bun-pty's read loop implementation, **not** OpenTUI or libghostty-vt.
 
 ## Symptoms
 
@@ -18,7 +18,7 @@ High-frequency terminal animations (e.g., spinning color wheels, rapid cursor mo
 |------|--------|
 | `python3 scripts/spinner.py` (direct execution) | **No smearing** |
 | `bun scripts/test-pty-passthrough.ts` (bun-pty → stdout, no ghostty/OpenTUI) | **Smears** |
-| `bun scripts/test-direct-stdout.ts` (bun-pty → ghostty → stdout, no OpenTUI) | **Smears** |
+| `bun scripts/test-direct-stdout.ts` (bun-pty → ghostty-vt → stdout, no OpenTUI) | **Smears** |
 | Various OpenTUI rendering approaches | **All smear** (when using bun-pty) |
 
 This definitively proves the issue originates in bun-pty, not in the rendering pipeline.
@@ -104,7 +104,7 @@ The following scripts were created during investigation:
 
 - `scripts/spinner.py` - Direct Python spinner (baseline, no smearing)
 - `scripts/test-pty-passthrough.ts` - Raw bun-pty to stdout (smears)
-- `scripts/test-direct-stdout.ts` - bun-pty + ghostty, no OpenTUI (smears)
+- `scripts/test-direct-stdout.ts` - bun-pty + ghostty-vt, no OpenTUI (smears)
 - `scripts/test-batched-pty-clean.ts` - Batching attempt (still smears)
 
 ## References

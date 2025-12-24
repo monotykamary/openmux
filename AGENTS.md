@@ -13,12 +13,19 @@ bun run lint          # Lint Effect code (effect-language-service)
 bun run build         # Build standalone binary (./scripts/build.sh)
 bun run build:release # Build optimized binary
 bun run install:local # Build and install locally
-bun run test          # Run TS + Zig tests
+bun run test          # Run TS + Zig + Ghostty VT tests
 bun run test:ts       # Run Vitest only
 bun run test:zig      # Run Zig PTY tests only
+bun run test:ghostty-vt # Run Ghostty VT Zig tests
 bun run test:watch    # Run Vitest in watch mode
 bun run check:circular # Detect circular deps in src/
 ```
+
+## libghostty-vt Notes
+
+- Ghostty is tracked as a submodule in `vendor/ghostty`.
+- Update + apply the terminal C API patch with `scripts/update-ghostty-vt.sh`.
+- `scripts/build.sh` builds `libghostty-vt` via `zig build lib-vt` before bundling.
 
 ## Technology Stack
 
@@ -26,12 +33,12 @@ bun run check:circular # Detect circular deps in src/
 - **OpenTUI** - Terminal UI library with SolidJS reconciler (@opentui/core, @opentui/solid)
 - **SolidJS** - Reactive UI framework via OpenTUI's SolidJS reconciler
 - **zig-pty** - PTY support for shell process management (pure Zig implementation)
-- **ghostty-web** - WASM-based terminal emulator (VT parsing)
+- **libghostty-vt** - Native terminal emulator (VT parsing/state)
 - **Effect** - Typed functional programming for services (gradual migration in src/effect/)
 
 ## Architecture Overview
 
-openmux is a terminal multiplexer with a master-stack tiling layout (Zellij-style). The UI is SolidJS components rendered to the terminal via OpenTUI, with PTYs managed in Zig and emulated via ghostty-web workers.
+openmux is a terminal multiplexer with a master-stack tiling layout (Zellij-style). The UI is SolidJS components rendered to the terminal via OpenTUI, with PTYs managed in Zig and emulated via native libghostty-vt.
 
 ### Entry Points
 
@@ -47,7 +54,7 @@ Keyboard Input → KeyboardContext → Layout/Terminal actions
                     Master-stack layout calculation
                                 ↓
                        PaneContainer/TerminalView
-PTY Data → zig-pty → WorkerEmulator (ghostty-web) → Shim protocol → TerminalContext
+PTY Data → zig-pty → GhosttyVTEmulator (libghostty-vt) → Shim protocol → TerminalContext
                                 ↓
                    TerminalView + AggregateView preview
 Session data → SessionContext → disk persistence → SessionBridge (Layout/Terminal)
@@ -83,7 +90,7 @@ ThemeProvider              // Styling/theming
 - `workspace-utils.ts`, `coordinates/`, `scroll-utils.ts`, `keyboard-utils.ts`
 
 **Terminal layer (src/terminal/)**
-- `worker-pool/`, `worker-emulator/`, `emulator-worker.ts` - ghostty-web worker orchestration
+- `ghostty-vt/`, `emulator-utils/` - native libghostty-vt bindings + shared emulator helpers
 - `emulator-interface.ts` - ITerminalEmulator abstraction
 - `input-handler.ts`, `sync-mode-parser.ts` - Input/escape handling
 - `title-parser.ts`, `terminal-query-passthrough/` - Title/query parsing

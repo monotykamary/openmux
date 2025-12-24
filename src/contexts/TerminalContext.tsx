@@ -88,7 +88,7 @@ interface TerminalContextValue {
   getEmulatorSync: (ptyId: string) => ITerminalEmulator | null;
   /** Get cached terminal state synchronously (for selection text extraction) */
   getTerminalStateSync: (ptyId: string) => TerminalState | null;
-  /** Check if ghostty is initialized */
+  /** Check if ghostty-vt is initialized */
   isInitialized: boolean;
   /** Find which session owns a PTY (returns sessionId and paneId, or null if not found) */
   findSessionForPty: (ptyId: string) => { sessionId: string; paneId: string } | null;
@@ -157,13 +157,12 @@ export function TerminalProvider(props: TerminalProviderProps) {
     getFocusedPtyId,
   });
 
-  // Initialize ghostty and detect host terminal capabilities on mount
+  // Initialize ghostty-vt and detect host terminal capabilities on mount
   onMount(() => {
     if (initialized) return;
     initialized = true;
 
     // Detect host capabilities first (for graphics passthrough)
-    // Worker pool initializes its own Ghostty WASM in each worker
     detectHostCapabilities()
       .then(() => {
         if (!isShimClient()) {
