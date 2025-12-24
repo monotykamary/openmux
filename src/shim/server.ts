@@ -3,9 +3,6 @@ import fs from 'fs/promises';
 import { dirname } from 'path';
 
 import { Effect } from 'effect';
-import { runEffect } from '../effect/runtime';
-import type { AppServices } from '../effect/runtime';
-import { Pty } from '../effect/services';
 import { PtyId, Cols, Rows } from '../effect/types';
 import type { UnifiedTerminalUpdate, TerminalScrollState, TerminalState, DirtyTerminalUpdate } from '../core/types';
 import type { ITerminalEmulator } from '../terminal/emulator-interface';
@@ -47,6 +44,10 @@ async function removeSocketFile(socketPath: string): Promise<void> {
 }
 
 const defaultWithPty: WithPty = async (fn) => {
+  const [{ runEffect }, { Pty }] = await Promise.all([
+    import('../effect/runtime'),
+    import('../effect/services'),
+  ]);
   const effect = Effect.gen(function* () {
     const pty = (yield* Pty) as any;
     const result = fn(pty);
@@ -54,7 +55,7 @@ const defaultWithPty: WithPty = async (fn) => {
       return yield* result;
     }
     return result;
-  }) as Effect.Effect<unknown, unknown, AppServices>;
+  }) as Effect.Effect<unknown, unknown, any>;
   return runEffect(effect) as Promise<any>;
 };
 
