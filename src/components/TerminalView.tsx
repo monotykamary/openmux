@@ -14,7 +14,6 @@ import {
   subscribeUnifiedToPty,
   getEmulator,
   setPtyUpdateEnabled as setPtyUpdateEnabledBridge,
-  prefetchScrollbackLines,
 } from '../effect/bridge';
 import { useSelection } from '../contexts/SelectionContext';
 import { useSearch } from '../contexts/SearchContext';
@@ -152,7 +151,11 @@ export function TerminalView(props: TerminalViewProps) {
           prefetchInProgress = true;
 
           try {
-            await prefetchScrollbackLines(prefetchPtyId, start, count);
+            const currentEmulator = emulator;
+            if (currentEmulator && 'prefetchScrollbackLines' in currentEmulator) {
+              await (currentEmulator as { prefetchScrollbackLines: (start: number, count: number) => Promise<void> })
+                .prefetchScrollbackLines(start, count);
+            }
             if (mounted) {
               // Trigger re-render after prefetch completes
               requestRenderFrame();

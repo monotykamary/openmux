@@ -4,7 +4,7 @@
  */
 
 import type { TerminalScrollState } from '../../core/types';
-import { clampScrollOffset, calculateScrollDelta, isAtBottom } from '../../core/scroll-utils';
+import { clampScrollOffset, calculateScrollDelta } from '../../core/scroll-utils';
 import {
   getScrollState as getScrollStateFromBridge,
   setScrollOffset as setScrollOffsetBridge,
@@ -38,7 +38,6 @@ export function createScrollHandlers(ptyCaches: PtyCachesLike) {
 
   /**
    * Scroll terminal by delta lines
-   * Uses optimistic cache updates for responsiveness
    */
   const scrollTerminal = (ptyId: string, delta: number): void => {
     const cached = ptyCaches.scrollStates.get(ptyId);
@@ -50,12 +49,6 @@ export function createScrollHandlers(ptyCaches: PtyCachesLike) {
         cached.scrollbackLength
       );
       setScrollOffsetBridge(ptyId, clampedOffset);
-      // Update cache optimistically with clamped value
-      ptyCaches.scrollStates.set(ptyId, {
-        ...cached,
-        viewportOffset: clampedOffset,
-        isAtBottom: isAtBottom(clampedOffset),
-      });
     } else {
       // Fallback: fetch state and then scroll (handles edge cases where cache isn't populated)
       getScrollStateFromBridge(ptyId).then((state) => {
@@ -67,12 +60,6 @@ export function createScrollHandlers(ptyCaches: PtyCachesLike) {
             state.scrollbackLength
           );
           setScrollOffsetBridge(ptyId, clampedOffset);
-          // Populate cache with clamped value
-          ptyCaches.scrollStates.set(ptyId, {
-            viewportOffset: clampedOffset,
-            scrollbackLength: state.scrollbackLength,
-            isAtBottom: isAtBottom(clampedOffset),
-          });
         }
       });
     }
@@ -80,7 +67,6 @@ export function createScrollHandlers(ptyCaches: PtyCachesLike) {
 
   /**
    * Set absolute scroll offset
-   * Uses optimistic cache updates for responsiveness
    */
   const handleSetScrollOffset = (ptyId: string, offset: number): void => {
     const cached = ptyCaches.scrollStates.get(ptyId);
@@ -89,31 +75,13 @@ export function createScrollHandlers(ptyCaches: PtyCachesLike) {
       ? clampScrollOffset(offset, cached.scrollbackLength)
       : Math.max(0, offset);
     setScrollOffsetBridge(ptyId, clampedOffset);
-    // Update cache optimistically with clamped value
-    if (cached) {
-      ptyCaches.scrollStates.set(ptyId, {
-        ...cached,
-        viewportOffset: clampedOffset,
-        isAtBottom: isAtBottom(clampedOffset),
-      });
-    }
   };
 
   /**
    * Scroll terminal to bottom
-   * Uses optimistic cache updates for responsiveness
    */
   const handleScrollToBottom = (ptyId: string): void => {
     scrollToBottomBridge(ptyId);
-    // Update cache optimistically
-    const cached = ptyCaches.scrollStates.get(ptyId);
-    if (cached) {
-      ptyCaches.scrollStates.set(ptyId, {
-        ...cached,
-        viewportOffset: 0,
-        isAtBottom: true,
-      });
-    }
   };
 
   return {

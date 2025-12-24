@@ -53,24 +53,24 @@ export function createCacheAccessors(deps: CacheAccessorDeps) {
     const focusedPtyId = getFocusedPtyId();
     if (!focusedPtyId) return 'normal';
 
-    const terminalState = ptyCaches.terminalStates.get(focusedPtyId);
-    return terminalState?.cursorKeyMode ?? 'normal';
+    const emulator = ptyCaches.emulators.get(focusedPtyId);
+    return emulator?.getCursorKeyMode() ?? 'normal';
   };
 
   /**
    * Check if mouse tracking is enabled for a PTY (sync - uses cache)
    */
   const isMouseTrackingEnabled = (ptyId: string): boolean => {
-    const terminalState = ptyCaches.terminalStates.get(ptyId);
-    return terminalState?.mouseTracking ?? false;
+    const emulator = ptyCaches.emulators.get(ptyId);
+    return emulator?.isMouseTrackingEnabled() ?? false;
   };
 
   /**
    * Check if terminal is in alternate screen mode (sync - uses cache)
    */
   const isAlternateScreen = (ptyId: string): boolean => {
-    const terminalState = ptyCaches.terminalStates.get(ptyId);
-    return terminalState?.alternateScreen ?? false;
+    const emulator = ptyCaches.emulators.get(ptyId);
+    return emulator?.isAlternateScreen() ?? false;
   };
 
   /**
@@ -84,7 +84,8 @@ export function createCacheAccessors(deps: CacheAccessorDeps) {
    * Get cached terminal state synchronously (for selection text extraction)
    */
   const getTerminalStateSync = (ptyId: string): TerminalState | null => {
-    return ptyCaches.terminalStates.get(ptyId) ?? null;
+    const emulator = ptyCaches.emulators.get(ptyId);
+    return emulator?.getTerminalState() ?? null;
   };
 
   /**

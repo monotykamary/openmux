@@ -11,9 +11,6 @@ import { handleClosePane, handleClosePaneById } from './close-pane';
 import { handleSetViewport, handleSwitchWorkspace, handleLoadSession, handleClearAll } from './workspace-ops';
 import { handleSetLayoutMode, handleSetPanePty, handleSetPaneTitle, handleSwapMain, handleMovePane, handleToggleZoom } from './pane-ops';
 
-// Debug timing flag - set to true to see layout reducer timing
-const DEBUG_LAYOUT_TIMING = false;
-
 /**
  * Layout reducer - handles all layout-related actions
  */
@@ -28,32 +25,14 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
     case 'MOVE_PANE':
       return handleMovePane(state, action.direction);
 
-    case 'NEW_PANE': {
-      const start = DEBUG_LAYOUT_TIMING ? performance.now() : 0;
-      const result = handleNewPane(state, action.ptyId, action.title);
-      if (DEBUG_LAYOUT_TIMING) {
-        console.log(`[LAYOUT] NEW_PANE took ${(performance.now() - start).toFixed(2)}ms`);
-      }
-      return result;
-    }
+    case 'NEW_PANE':
+      return handleNewPane(state, action.ptyId, action.title);
 
-    case 'CLOSE_PANE': {
-      const start = DEBUG_LAYOUT_TIMING ? performance.now() : 0;
-      const result = handleClosePane(state);
-      if (DEBUG_LAYOUT_TIMING) {
-        console.log(`[LAYOUT] CLOSE_PANE took ${(performance.now() - start).toFixed(2)}ms`);
-      }
-      return result;
-    }
+    case 'CLOSE_PANE':
+      return handleClosePane(state);
 
-    case 'CLOSE_PANE_BY_ID': {
-      const start = DEBUG_LAYOUT_TIMING ? performance.now() : 0;
-      const result = handleClosePaneById(state, action.paneId);
-      if (DEBUG_LAYOUT_TIMING) {
-        console.log(`[LAYOUT] CLOSE_PANE_BY_ID took ${(performance.now() - start).toFixed(2)}ms`);
-      }
-      return result;
-    }
+    case 'CLOSE_PANE_BY_ID':
+      return handleClosePaneById(state, action.paneId);
 
     case 'SET_VIEWPORT':
       return handleSetViewport(state, action.viewport);

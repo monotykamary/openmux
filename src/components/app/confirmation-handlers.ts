@@ -85,19 +85,15 @@ export function createConfirmationHandlers(deps: ConfirmationHandlerDeps) {
     setConfirmationState({ visible: false, type: 'close_pane' });
 
     if (type === 'close_pane') {
-      const closeStart = performance.now();
       // Get the focused pane's PTY ID before closing (so we can destroy it)
       const ptyId = getFocusedPtyId();
       closePane();
-      console.log(`[CLOSE] closePane dispatched: ${(performance.now() - closeStart).toFixed(2)}ms`);
       // Destroy the PTY to kill the terminal process
       // Defer to macrotask to avoid blocking animations
       // Pass skipPaneClose=true since we already closed the pane above
       if (ptyId) {
         setTimeout(() => {
-          const destroyStart = performance.now();
           destroyPTY(ptyId, { skipPaneClose: true });
-          console.log(`[CLOSE] destroyPTY: ${(performance.now() - destroyStart).toFixed(2)}ms`);
         }, 0);
       }
     } else if (type === 'exit') {

@@ -27,7 +27,6 @@ export {
   subscribeToScroll,
   subscribeUnifiedToPty,
   getScrollbackLine,
-  prefetchScrollbackLines,
   getEmulator,
   setPtyUpdateEnabled,
   subscribeToPtyLifecycle,

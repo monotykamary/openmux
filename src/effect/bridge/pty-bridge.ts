@@ -282,32 +282,6 @@ export async function getScrollbackLine(
 }
 
 /**
- * Prefetch scrollback lines into the emulator's cache.
- * Used to load scrollback lines before they're needed for rendering.
- * For emulators with prefetch support, this populates the scrollback cache.
- */
-export async function prefetchScrollbackLines(
-  ptyId: string,
-  startOffset: number,
-  count: number
-): Promise<void> {
-  try {
-    await runEffect(
-      Effect.gen(function* () {
-        const pty = yield* Pty
-        const emulator = yield* pty.getEmulator(PtyId.make(ptyId))
-        // Check if emulator has async prefetch support
-        if ('prefetchScrollbackLines' in emulator && typeof emulator.prefetchScrollbackLines === 'function') {
-          yield* Effect.promise(() => (emulator as { prefetchScrollbackLines: (start: number, count: number) => Promise<void> }).prefetchScrollbackLines(startOffset, count))
-        }
-      })
-    )
-  } catch {
-    // Ignore errors - prefetch is best-effort
-  }
-}
-
-/**
  * Get the terminal emulator instance for direct access.
  * Primarily used for scrollback rendering in TerminalView.
  * Should be called once and cached for sync access in render loops.

@@ -117,7 +117,6 @@ export function TerminalProvider(props: TerminalProviderProps) {
 
   // Unified caches for PTY state (used by usePtySubscription)
   const ptyCaches: PtyCaches = {
-    terminalStates: new Map<string, TerminalState>(),
     scrollStates: new Map<string, TerminalScrollState>(),
     emulators: new Map<string, ITerminalEmulator>(),
   };
@@ -305,15 +304,6 @@ export function TerminalProvider(props: TerminalProviderProps) {
   const writeToFocused = (data: string) => {
     const focusedPtyId = getFocusedPtyId();
     if (focusedPtyId) {
-      // Reset scroll cache to bottom (typing auto-scrolls)
-      const cached = ptyCaches.scrollStates.get(focusedPtyId);
-      if (cached && cached.viewportOffset > 0) {
-        ptyCaches.scrollStates.set(focusedPtyId, {
-          ...cached,
-          viewportOffset: 0,
-          isAtBottom: true,
-        });
-      }
       // Fire and forget for responsive typing
       writeToPty(focusedPtyId, data);
     }
@@ -333,15 +323,6 @@ export function TerminalProvider(props: TerminalProviderProps) {
 
   // Write to a specific PTY
   const handleWriteToPTY = (ptyId: string, data: string) => {
-    // Reset scroll cache to bottom (typing auto-scrolls)
-    const cached = ptyCaches.scrollStates.get(ptyId);
-    if (cached && cached.viewportOffset > 0) {
-      ptyCaches.scrollStates.set(ptyId, {
-        ...cached,
-        viewportOffset: 0,
-        isAtBottom: true,
-      });
-    }
     // Fire and forget for responsive typing
     writeToPty(ptyId, data);
   };
@@ -354,15 +335,6 @@ export function TerminalProvider(props: TerminalProviderProps) {
     const clipboardText = await readFromClipboard();
     if (!clipboardText) return false;
 
-    // Reset scroll cache to bottom (pasting auto-scrolls)
-    const cached = ptyCaches.scrollStates.get(focusedPtyId);
-    if (cached && cached.viewportOffset > 0) {
-      ptyCaches.scrollStates.set(focusedPtyId, {
-        ...cached,
-        viewportOffset: 0,
-        isAtBottom: true,
-      });
-    }
     writeToPty(focusedPtyId, clipboardText);
     return true;
   };
