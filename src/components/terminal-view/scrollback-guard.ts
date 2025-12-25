@@ -1,5 +1,12 @@
 import type { TerminalCell } from '../../core/types'
 
+/**
+ * Scrollback render guard
+ *
+ * Purpose: avoid rendering partial scrollback when some rows are temporarily
+ * unavailable from the emulator. This complements the emulator-side LRU cache
+ * (performance) by providing view-side consistency during scroll interactions.
+ */
 export interface ScrollbackGuardOptions {
   desiredViewportOffset: number
   desiredScrollbackLength: number
