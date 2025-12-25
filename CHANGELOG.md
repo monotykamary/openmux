@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.42](https://github.com/monotykamary/openmux/compare/v0.2.41...v0.2.42) (2025-12-25)
+
+
+### Features
+
+* **config:** add configurable keybindings and config docs ([623ed9f](https://github.com/monotykamary/openmux/commit/623ed9fad2d624d3ee0cb669d166b2981d33e36f))
+
 ### [0.2.41](https://github.com/monotykamary/openmux/compare/v0.2.40...v0.2.41) (2025-12-25)
 
 
