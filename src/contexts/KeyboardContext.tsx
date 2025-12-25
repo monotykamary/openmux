@@ -14,12 +14,12 @@ import {
   type ParentProps,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import type { KeyMode, KeyboardState, WorkspaceId, ConfirmationType } from '../core/types';
-import { PREFIX_KEY, DEFAULT_CONFIG } from '../core/config';
-import { keyToDirection } from '../core/keyboard-utils';
+import type { KeyboardState, ConfirmationType } from '../core/types';
 import { useLayout } from './LayoutContext';
 import type { KeyboardContextValue, KeyboardHandlerOptions } from './keyboard/types';
-import { handleAltKey, handlePrefixModeKey } from './keyboard/handlers';
+import { handleNormalModeAction, handlePrefixModeAction, handleMoveModeAction } from './keyboard/handlers';
+import { useConfig } from './ConfigContext';
+import { eventToCombo, matchKeybinding } from '../core/keybindings';
 
 // Re-export types for convenience
 export type { KeyboardContextValue, KeyboardHandlerOptions } from './keyboard/types';
@@ -37,6 +37,7 @@ const KeyboardContext = createContext<KeyboardContextValue | null>(null);
 interface KeyboardProviderProps extends ParentProps {}
 
 export function KeyboardProvider(props: KeyboardProviderProps) {
+  const config = useConfig();
   const initialState: KeyboardState = {
     mode: 'normal',
     showHints: false,
@@ -46,6 +47,7 @@ export function KeyboardProvider(props: KeyboardProviderProps) {
 
   // Prefix mode timeout
   createEffect(() => {
+    const timeoutMs = config.keybindings().prefixTimeoutMs;
     if (state.mode !== 'prefix' || !state.prefixActivatedAt) return;
 
     const timeout = setTimeout(() => {
@@ -53,7 +55,7 @@ export function KeyboardProvider(props: KeyboardProviderProps) {
         s.mode = 'normal';
         s.prefixActivatedAt = undefined;
       }));
-    }, DEFAULT_CONFIG.prefixTimeout);
+    }, timeoutMs);
 
     onCleanup(() => clearTimeout(timeout));
   });
@@ -169,18 +171,7 @@ export function useKeyboardState(): KeyboardContextValue {
 export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
   const keyboard = useKeyboardState();
   const layout = useLayout();
-  const {
-    onPaste,
-    onNewPane,
-    onQuit,
-    onDetach,
-    onRequestQuit,
-    onRequestClosePane,
-    onToggleSessionPicker,
-    onEnterSearch,
-    onToggleConsole,
-    onToggleAggregateView,
-  } = options;
+  const config = useConfig();
 
   const handleKeyDown = (event: {
     key: string;
@@ -189,75 +180,55 @@ export function useKeyboardHandler(options: KeyboardHandlerOptions = {}) {
     shift?: boolean;
     meta?: boolean;
   }) => {
-    const { key, ctrl, alt } = event;
+    const { key, ctrl, alt, shift, meta } = event;
+    const keybindings = config.keybindings();
+    const keyEvent = { key, ctrl, alt, shift, meta };
 
     // Note: We do NOT intercept Ctrl+V here. Applications like Claude Code need to
     // receive Ctrl+V directly so they can trigger their own clipboard reading (which
     // supports images). For text paste, use prefix+] or prefix+p, or Cmd+V on macOS
     // (which triggers bracketed paste via PasteEvent handled in App.tsx).
 
-    // Handle Alt keybindings (prefix-less actions) in normal mode
-    if (keyboard.state.mode === 'normal' && alt) {
-      return handleAltKey(
-        key,
-        keyboard,
-        layout,
-        layout.activeWorkspace.layoutMode,
-        onNewPane,
-        onToggleSessionPicker,
-        onEnterSearch,
-        onToggleAggregateView,
-        onRequestClosePane
-      );
-    }
-
-    // Handle Ctrl+B to enter prefix mode (only in normal mode)
-    if (keyboard.state.mode === 'normal' && ctrl && key.toLowerCase() === PREFIX_KEY) {
+    // Handle prefix key (only in normal mode)
+    if (keyboard.state.mode === 'normal' && eventToCombo(keyEvent) === keybindings.prefixKey) {
       keyboard.enterPrefixMode();
       return true;
     }
 
-    // Handle Escape to exit prefix/move mode
-    if (key === 'Escape' || key === 'escape') {
-      if (keyboard.state.mode === 'prefix') {
-        keyboard.exitPrefixMode();
-        return true;
-      }
-      if (keyboard.state.mode === 'move') {
-        keyboard.exitMoveMode();
-        return true;
-      }
-      return false;
-    }
-
     // Prefix mode commands
     if (keyboard.state.mode === 'prefix') {
-      return handlePrefixModeKey(
-        key,
-        keyboard,
-        layout,
-        onPaste,
-        onNewPane,
-        onQuit,
-        onDetach,
-        onRequestQuit,
-        onRequestClosePane,
-        onToggleSessionPicker,
-        onEnterSearch,
-        onToggleConsole,
-        onToggleAggregateView
-      );
+      const action = matchKeybinding(keybindings.prefix, keyEvent);
+      return action
+        ? handlePrefixModeAction(
+          action,
+          keyboard,
+          layout,
+          layout.activeWorkspace.layoutMode,
+          options
+        )
+        : false;
     }
 
     if (keyboard.state.mode === 'move') {
-      const direction = keyToDirection(key);
-      if (!direction) {
-        keyboard.exitMoveMode();
-        return true;
+      const action = matchKeybinding(keybindings.move, keyEvent);
+      if (action) {
+        return handleMoveModeAction(action, keyboard, layout);
       }
-      layout.movePane(direction);
       keyboard.exitMoveMode();
       return true;
+    }
+
+    if (keyboard.state.mode === 'normal') {
+      const action = matchKeybinding(keybindings.normal, keyEvent);
+      if (!action) return false;
+
+      return handleNormalModeAction(
+        action,
+        keyboard,
+        layout,
+        layout.activeWorkspace.layoutMode,
+        options
+      );
     }
 
     // Normal mode - pass through to terminal

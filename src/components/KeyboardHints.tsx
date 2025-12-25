@@ -4,63 +4,17 @@
 
 import { Show, For } from 'solid-js';
 import { useKeyboardState } from '../contexts/KeyboardContext';
-import type { KeyMode } from '../core/types';
+import { useConfig } from '../contexts/ConfigContext';
+import { formatComboSet, formatKeyCombo, type ResolvedKeybindingMap } from '../core/keybindings';
 
 interface KeyHint {
   key: string;
   description: string;
 }
 
-const NORMAL_MODE_HINTS: KeyHint[] = [
-  { key: 'Alt+hjkl', description: 'Navigate panes' },
-  { key: 'Alt+m', description: 'Move pane' },
-  { key: 'Alt+n', description: 'New pane' },
-  { key: 'Alt+1-9', description: 'Switch workspace' },
-  { key: 'Alt+s', description: 'Session picker' },
-  { key: 'Alt+g', description: 'Aggregate view' },
-  { key: 'Alt+f', description: 'Search in scrollback' },
-  { key: 'Alt+[/]', description: 'Cycle layout mode' },
-  { key: 'Alt+z', description: 'Toggle zoom' },
-  { key: 'Alt+x', description: 'Close pane' },
-  { key: 'Ctrl/Cmd+V', description: 'Paste' },
-  { key: 'Click', description: 'Focus pane' },
-  { key: 'Ctrl+b', description: 'Enter prefix mode' },
-];
-
-const PREFIX_MODE_HINTS: KeyHint[] = [
-  { key: 'n/Enter', description: 'New pane' },
-  { key: 'h/j/k/l', description: 'Navigate panes' },
-  { key: 'm', description: 'Move pane' },
-  { key: '1-9', description: 'Switch workspace' },
-  { key: 's', description: 'Session picker' },
-  { key: 'g', description: 'Aggregate view' },
-  { key: '/', description: 'Search in scrollback' },
-  { key: 'v/H/t', description: 'Layout: vert/horiz/stack' },
-  { key: 'z', description: 'Toggle zoom' },
-  { key: 'x', description: 'Close pane' },
-  { key: '] or p', description: 'Paste' },
-  { key: '`', description: 'Toggle debug console' },
-  { key: 'q', description: 'Quit openmux' },
-  { key: 'd', description: 'Detach' },
-  { key: '?', description: 'Toggle hints' },
-  { key: 'Esc', description: 'Exit prefix mode' },
-];
-
-const MOVE_MODE_HINTS: KeyHint[] = [
-  { key: 'h', description: 'Move to master' },
-  { key: 'l', description: 'Move to stack' },
-  { key: 'j/k', description: 'Move down/up' },
-  { key: 'Esc', description: 'Cancel' },
-];
-
-const SEARCH_MODE_HINTS: KeyHint[] = [
-  { key: 'Type', description: 'Enter search query' },
-  { key: 'Ctrl+n', description: 'Next match' },
-  { key: 'Ctrl+p', description: 'Previous match' },
-  { key: 'Enter', description: 'Confirm and exit' },
-  { key: 'Esc', description: 'Cancel and restore' },
-  { key: 'Backspace', description: 'Delete character' },
-];
+function getCombos(bindings: ResolvedKeybindingMap, action: string): string[] {
+  return bindings.byAction.get(action) ?? [];
+}
 
 interface KeyboardHintsProps {
   width: number;
@@ -69,16 +23,113 @@ interface KeyboardHintsProps {
 
 export function KeyboardHints(props: KeyboardHintsProps) {
   const { state } = useKeyboardState();
+  const config = useConfig();
+
+  const normalHints = () => {
+    const bindings = config.keybindings().normal;
+    const navigationCombos = [
+      ...getCombos(bindings, 'pane.focus.west'),
+      ...getCombos(bindings, 'pane.focus.south'),
+      ...getCombos(bindings, 'pane.focus.north'),
+      ...getCombos(bindings, 'pane.focus.east'),
+    ];
+    const workspaceCombos = Array.from({ length: 9 }, (_, i) =>
+      getCombos(bindings, `workspace.switch.${i + 1}`)
+    ).flat();
+    const cycleCombos = [
+      ...getCombos(bindings, 'layout.cycle.prev'),
+      ...getCombos(bindings, 'layout.cycle.next'),
+    ];
+
+    return [
+      { key: formatComboSet(navigationCombos), description: 'Navigate panes' },
+      { key: formatComboSet(getCombos(bindings, 'mode.move')), description: 'Move pane' },
+      { key: formatComboSet(getCombos(bindings, 'pane.new')), description: 'New pane' },
+      { key: formatComboSet(workspaceCombos), description: 'Switch workspace' },
+      { key: formatComboSet(getCombos(bindings, 'session.picker.toggle')), description: 'Session picker' },
+      { key: formatComboSet(getCombos(bindings, 'aggregate.toggle')), description: 'Aggregate view' },
+      { key: formatComboSet(getCombos(bindings, 'search.open')), description: 'Search in scrollback' },
+      { key: formatComboSet(cycleCombos), description: 'Cycle layout mode' },
+      { key: formatComboSet(getCombos(bindings, 'pane.zoom')), description: 'Toggle zoom' },
+      { key: formatComboSet(getCombos(bindings, 'pane.close')), description: 'Close pane' },
+      { key: 'Ctrl/Cmd+V', description: 'Paste' },
+      { key: 'Click', description: 'Focus pane' },
+      { key: formatKeyCombo(config.keybindings().prefixKey), description: 'Enter prefix mode' },
+    ];
+  };
+
+  const prefixHints = () => {
+    const bindings = config.keybindings().prefix;
+    const navigationCombos = [
+      ...getCombos(bindings, 'pane.focus.west'),
+      ...getCombos(bindings, 'pane.focus.south'),
+      ...getCombos(bindings, 'pane.focus.north'),
+      ...getCombos(bindings, 'pane.focus.east'),
+    ];
+    const workspaceCombos = Array.from({ length: 9 }, (_, i) =>
+      getCombos(bindings, `workspace.switch.${i + 1}`)
+    ).flat();
+    const layoutModeCombos = [
+      ...getCombos(bindings, 'layout.mode.vertical'),
+      ...getCombos(bindings, 'layout.mode.horizontal'),
+      ...getCombos(bindings, 'layout.mode.stacked'),
+    ];
+
+    return [
+      { key: formatComboSet(getCombos(bindings, 'pane.new')), description: 'New pane' },
+      { key: formatComboSet(navigationCombos), description: 'Navigate panes' },
+      { key: formatComboSet(getCombos(bindings, 'mode.move')), description: 'Move pane' },
+      { key: formatComboSet(workspaceCombos), description: 'Switch workspace' },
+      { key: formatComboSet(getCombos(bindings, 'session.picker.toggle')), description: 'Session picker' },
+      { key: formatComboSet(getCombos(bindings, 'aggregate.toggle')), description: 'Aggregate view' },
+      { key: formatComboSet(getCombos(bindings, 'search.open')), description: 'Search in scrollback' },
+      { key: formatComboSet(layoutModeCombos), description: 'Layout: vert/horiz/stack' },
+      { key: formatComboSet(getCombos(bindings, 'pane.zoom')), description: 'Toggle zoom' },
+      { key: formatComboSet(getCombos(bindings, 'pane.close')), description: 'Close pane' },
+      { key: formatComboSet(getCombos(bindings, 'clipboard.paste')), description: 'Paste' },
+      { key: formatComboSet(getCombos(bindings, 'console.toggle')), description: 'Toggle debug console' },
+      { key: formatComboSet(getCombos(bindings, 'app.quit')), description: 'Quit openmux' },
+      { key: formatComboSet(getCombos(bindings, 'app.detach')), description: 'Detach' },
+      { key: formatComboSet(getCombos(bindings, 'hints.toggle')), description: 'Toggle hints' },
+      { key: formatComboSet(getCombos(bindings, 'mode.cancel')), description: 'Exit prefix mode' },
+    ];
+  };
+
+  const moveHints = () => {
+    const bindings = config.keybindings().move;
+    const verticalCombos = [
+      ...getCombos(bindings, 'pane.move.south'),
+      ...getCombos(bindings, 'pane.move.north'),
+    ];
+    return [
+      { key: formatComboSet(getCombos(bindings, 'pane.move.west')), description: 'Move to master' },
+      { key: formatComboSet(getCombos(bindings, 'pane.move.east')), description: 'Move to stack' },
+      { key: formatComboSet(verticalCombos), description: 'Move down/up' },
+      { key: formatComboSet(getCombos(bindings, 'mode.cancel')), description: 'Cancel' },
+    ];
+  };
+
+  const searchHints = () => {
+    const bindings = config.keybindings().search;
+    return [
+      { key: 'Type', description: 'Enter search query' },
+      { key: formatComboSet(getCombos(bindings, 'search.next')), description: 'Next match' },
+      { key: formatComboSet(getCombos(bindings, 'search.prev')), description: 'Previous match' },
+      { key: formatComboSet(getCombos(bindings, 'search.confirm')), description: 'Confirm and exit' },
+      { key: formatComboSet(getCombos(bindings, 'search.cancel')), description: 'Cancel and restore' },
+      { key: formatComboSet(getCombos(bindings, 'search.delete')), description: 'Delete character' },
+    ];
+  };
 
   const hints = () => {
     const mode = state.mode;
     return mode === 'normal'
-      ? NORMAL_MODE_HINTS
+      ? normalHints()
       : mode === 'search'
-        ? SEARCH_MODE_HINTS
+        ? searchHints()
         : mode === 'move'
-          ? MOVE_MODE_HINTS
-        : PREFIX_MODE_HINTS;
+          ? moveHints()
+        : prefixHints();
   };
 
   // Center the hints overlay

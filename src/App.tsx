@@ -5,6 +5,8 @@
 import { createSignal, createEffect, createMemo, onCleanup, onMount, on } from 'solid-js';
 import { useKeyboard, useTerminalDimensions, useRenderer } from '@opentui/solid';
 import {
+  ConfigProvider,
+  useConfig,
   ThemeProvider,
   LayoutProvider,
   KeyboardProvider,
@@ -48,6 +50,7 @@ import { setFocusedPty, setClipboardPasteHandler } from './terminal/focused-pty-
 import { readFromClipboard } from './effect/bridge';
 
 function AppContent() {
+  const config = useConfig();
   const dimensions = useTerminalDimensions();
   const width = () => dimensions().width;
   const height = () => dimensions().height;
@@ -419,6 +422,7 @@ function AppContent() {
           nextMatch,
           prevMatch,
           getSearchState: () => search.searchState,
+          keybindings: config.keybindings().search,
         });
         return;
       }
@@ -532,8 +536,19 @@ function AppWithTerminal() {
 
 export function App() {
   return (
-    <ThemeProvider>
-      <LayoutProvider>
+    <ConfigProvider>
+      <ConfiguredApp />
+    </ConfigProvider>
+  );
+}
+
+function ConfiguredApp() {
+  const config = useConfig();
+  const currentConfig = () => config.config();
+
+  return (
+    <ThemeProvider theme={currentConfig().theme}>
+      <LayoutProvider config={currentConfig().layout}>
         <KeyboardProvider>
           <AppWithTerminal />
         </KeyboardProvider>

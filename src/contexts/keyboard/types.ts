@@ -31,6 +31,3 @@ export interface KeyboardHandlerOptions {
   onToggleConsole?: () => void;
   onToggleAggregateView?: () => void;
 }
-
-/** Layout modes for cycling */
-export const LAYOUT_MODES: Array<'vertical' | 'horizontal' | 'stacked'> = ['vertical', 'horizontal', 'stacked'];

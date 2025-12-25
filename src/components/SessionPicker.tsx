@@ -6,7 +6,9 @@ import { Show, For, createEffect, onCleanup } from 'solid-js';
 import { useSession, type SessionSummary } from '../contexts/SessionContext';
 import type { SessionMetadata } from '../core/types';
 import { useTheme } from '../contexts/ThemeContext';
+import { useConfig } from '../contexts/ConfigContext';
 import { registerKeyboardHandler } from '../effect/bridge';
+import { formatComboSet, matchKeybinding, type ResolvedKeybindingMap } from '../core/keybindings';
 
 interface SessionPickerProps {
   width: number;
@@ -35,6 +37,7 @@ function formatRelativeTime(timestamp: number): string {
 
 export function SessionPicker(props: SessionPickerProps) {
   const theme = useTheme();
+  const config = useConfig();
   // Keep session context to access filteredSessions reactively (it's a getter)
   const session = useSession();
   const {
@@ -63,81 +66,54 @@ export function SessionPicker(props: SessionPickerProps) {
     if (!state.showSessionPicker) return false;
 
     const { key } = event;
-    // Normalize key names (OpenTUI uses lowercase for special keys)
-    const normalizedKey = key.toLowerCase();
+    const bindings = config.keybindings().sessionPicker;
+    const action = matchKeybinding(state.isRenaming ? bindings.rename : bindings.list, {
+      key,
+      ctrl: event.ctrl,
+      alt: event.alt,
+      shift: event.shift,
+    });
 
     // If renaming, handle rename-specific keys
     if (state.isRenaming) {
-      if (normalizedKey === 'escape') {
+      if (action === 'session.picker.rename.cancel') {
         cancelRename();
         return true;
       }
-      if (normalizedKey === 'return' || normalizedKey === 'enter') {
+      if (action === 'session.picker.rename.confirm') {
         if (state.renamingSessionId && state.renameValue.trim()) {
           renameSession(state.renamingSessionId, state.renameValue.trim());
         }
         return true;
       }
-      if (normalizedKey === 'backspace') {
+      if (action === 'session.picker.rename.delete') {
         updateRenameValue(state.renameValue.slice(0, -1));
         return true;
       }
       // Single printable character
-      if (key.length === 1 && !event.ctrl && !event.alt) {
+      if (key.length === 1 && !event.ctrl && !event.alt && !action) {
         updateRenameValue(state.renameValue + key);
         return true;
       }
       return true; // Consume all keys while renaming
     }
 
-    // Normal picker navigation
-    // Ctrl+key commands (don't conflict with search)
-    if (event.ctrl) {
-      switch (normalizedKey) {
-        case 'n': {
-          // Create new session
-          createSession();
-          return true;
-        }
-
-        case 'r': {
-          // Start rename
-          const selected = session.filteredSessions[state.selectedIndex];
-          if (selected) {
-            startRename(selected.id, selected.name);
-          }
-          return true;
-        }
-
-        case 'x':
-        case 'd': {
-          // Delete session
-          const selected = session.filteredSessions[state.selectedIndex];
-          if (selected && session.filteredSessions.length > 1) {
-            deleteSession(selected.id);
-          }
-          return true;
-        }
-      }
-    }
-
-    switch (normalizedKey) {
-      case 'escape':
+    switch (action) {
+      case 'session.picker.close':
         closePicker();
         // Save session when closing picker
         saveSession();
         return true;
 
-      case 'down':
+      case 'session.picker.down':
         navigateDown();
         return true;
 
-      case 'up':
+      case 'session.picker.up':
         navigateUp();
         return true;
 
-      case 'return':
-      case 'enter': {
+      case 'session.picker.select': {
         const selected = session.filteredSessions[state.selectedIndex];
         if (selected) {
           // If selecting the already-active session, just close the picker
@@ -150,19 +126,63 @@ export function SessionPicker(props: SessionPickerProps) {
         return true;
       }
 
-      case 'backspace':
+      case 'session.picker.filter.delete':
         // Remove last character from search
         setSearchQuery(state.searchQuery.slice(0, -1));
         return true;
 
-      default:
-        // Single printable character - add to search
-        if (key.length === 1 && !event.ctrl && !event.alt) {
-          setSearchQuery(state.searchQuery + key);
-          return true;
+      case 'session.picker.create':
+        createSession();
+        return true;
+
+      case 'session.picker.rename': {
+        const selected = session.filteredSessions[state.selectedIndex];
+        if (selected) {
+          startRename(selected.id, selected.name);
         }
-        return false;
+        return true;
+      }
+
+      case 'session.picker.delete': {
+        const selected = session.filteredSessions[state.selectedIndex];
+        if (selected && session.filteredSessions.length > 1) {
+          deleteSession(selected.id);
+        }
+        return true;
+      }
+
+      default:
+        break;
     }
+
+    // Single printable character - add to search
+    if (key.length === 1 && !event.ctrl && !event.alt) {
+      setSearchQuery(state.searchQuery + key);
+      return true;
+    }
+    return false;
+  };
+
+  const buildHintText = () => {
+    if (state.isRenaming) {
+      const bindings = config.keybindings().sessionPicker.rename;
+      const confirm = formatComboSet(getCombos(bindings, 'session.picker.rename.confirm'));
+      const cancel = formatComboSet(getCombos(bindings, 'session.picker.rename.cancel'));
+      const remove = formatComboSet(getCombos(bindings, 'session.picker.rename.delete'));
+      return `Type:rename ${confirm}:confirm ${cancel}:cancel ${remove}:delete`;
+    }
+
+    const bindings = config.keybindings().sessionPicker.list;
+    const nav = formatComboSet([
+      ...getCombos(bindings, 'session.picker.up'),
+      ...getCombos(bindings, 'session.picker.down'),
+    ]);
+    const select = formatComboSet(getCombos(bindings, 'session.picker.select'));
+    const create = formatComboSet(getCombos(bindings, 'session.picker.create'));
+    const rename = formatComboSet(getCombos(bindings, 'session.picker.rename'));
+    const remove = formatComboSet(getCombos(bindings, 'session.picker.delete'));
+    const close = formatComboSet(getCombos(bindings, 'session.picker.close'));
+    return `${nav}:nav ${select}:select ${create}:new ${rename}:rename ${remove}:del ${close}:close`;
   };
 
   // Register keyboard handler with KeyboardRouter
@@ -243,14 +263,16 @@ export function SessionPicker(props: SessionPickerProps) {
             <text fg="#444444">{'─'.repeat(overlayWidth() - 4)}</text>
           </box>
           <box style={{ height: 1 }}>
-            <text fg="#666666">
-              ↑↓:nav Enter:select ^n:new ^r:rename ^x:del Esc:close
-            </text>
+            <text fg="#666666">{buildHintText()}</text>
           </box>
         </box>
       </box>
     </Show>
   );
+}
+
+function getCombos(bindings: ResolvedKeybindingMap, action: string): string[] {
+  return bindings.byAction.get(action) ?? [];
 }
 
 interface SessionRowProps {

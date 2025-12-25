@@ -3,6 +3,8 @@
  * Provides dimension calculations for the aggregate layout
  */
 
+import { formatComboSet, type ResolvedKeybindingMap, type ResolvedKeybindings } from '../../core/keybindings';
+
 // Re-export borderStyleMap from Pane for convenience
 export { borderStyleMap } from '../Pane';
 
@@ -75,13 +77,43 @@ export function calculateLayoutDimensions(config: LayoutConfig): LayoutDimension
 /**
  * Generate hints text based on current mode
  */
-export function getHintsText(inSearchMode: boolean, previewMode: boolean): string {
+
+function getCombos(bindings: ResolvedKeybindingMap, action: string): string[] {
+  return bindings.byAction.get(action) ?? [];
+}
+
+export function getHintsText(
+  inSearchMode: boolean,
+  previewMode: boolean,
+  keybindings: ResolvedKeybindings
+): string {
+  const aggregateBindings = keybindings.aggregate;
+
   if (inSearchMode) {
-    return 'Enter: confirm | Esc: cancel | ^n/^p: next/prev';
+    const confirm = formatComboSet(getCombos(aggregateBindings.search, 'aggregate.search.confirm'));
+    const cancel = formatComboSet(getCombos(aggregateBindings.search, 'aggregate.search.cancel'));
+    const next = formatComboSet(getCombos(aggregateBindings.search, 'aggregate.search.next'));
+    const prev = formatComboSet(getCombos(aggregateBindings.search, 'aggregate.search.prev'));
+    return `${confirm}: confirm | ${cancel}: cancel | ${next}/${prev}: next/prev`;
   }
-  return previewMode
-    ? 'Alt+Esc: back | Alt+F: search | Alt+X: kill'
-    : '↑↓/jk: navigate | Enter: interact | Tab: jump | Alt+X: kill | Alt+Esc: close';
+
+  if (previewMode) {
+    const back = formatComboSet(getCombos(aggregateBindings.preview, 'aggregate.preview.exit'));
+    const search = formatComboSet(getCombos(aggregateBindings.preview, 'aggregate.preview.search'));
+    const kill = formatComboSet(getCombos(aggregateBindings.preview, 'aggregate.kill'));
+    return `${back}: back | ${search}: search | ${kill}: kill`;
+  }
+
+  const navCombos = [
+    ...getCombos(aggregateBindings.list, 'aggregate.list.up'),
+    ...getCombos(aggregateBindings.list, 'aggregate.list.down'),
+  ];
+  const navigate = formatComboSet(navCombos);
+  const interact = formatComboSet(getCombos(aggregateBindings.list, 'aggregate.list.preview'));
+  const jump = formatComboSet(getCombos(aggregateBindings.list, 'aggregate.list.jump'));
+  const kill = formatComboSet(getCombos(aggregateBindings.list, 'aggregate.kill'));
+  const close = formatComboSet(getCombos(aggregateBindings.list, 'aggregate.list.close'));
+  return `${navigate}: navigate | ${interact}: interact | ${jump}: jump | ${kill}: kill | ${close}: close`;
 }
 
 /**

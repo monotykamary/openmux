@@ -10,6 +10,7 @@
 import { Show, For, createSignal, createEffect, onCleanup, createMemo } from 'solid-js';
 import { useAggregateView } from '../contexts/AggregateViewContext';
 import { useKeyboardState } from '../contexts/KeyboardContext';
+import { useConfig } from '../contexts/ConfigContext';
 import { useLayout } from '../contexts/LayoutContext';
 import { useSession } from '../contexts/SessionContext';
 import { useTerminal } from '../contexts/TerminalContext';
@@ -40,6 +41,7 @@ interface AggregateViewProps {
 }
 
 export function AggregateView(props: AggregateViewProps) {
+  const config = useConfig();
   const {
     state,
     closeAggregateView,
@@ -161,7 +163,7 @@ export function AggregateView(props: AggregateViewProps) {
   const startPrefixTimeout = () => {
     prefixTimeout = setTimeout(() => {
       setPrefixActive(false);
-    }, 2000);
+    }, config.keybindings().prefixTimeoutMs);
   };
 
   // Create keyboard handler using factory
@@ -173,6 +175,7 @@ export function AggregateView(props: AggregateViewProps) {
     getSearchState: () => search.searchState,
     getInSearchMode: inSearchMode,
     getPrefixActive: prefixActive,
+    getKeybindings: () => config.keybindings(),
     setFilterQuery,
     setInSearchMode,
     setPrefixActive,
@@ -229,7 +232,7 @@ export function AggregateView(props: AggregateViewProps) {
   const hostBgColor = getHostBackgroundColor();
 
   // Build hints text based on mode
-  const hintsText = () => getHintsText(inSearchMode(), state.previewMode);
+  const hintsText = () => getHintsText(inSearchMode(), state.previewMode, config.keybindings());
 
   // Build search/filter text
   const filterText = () => getFilterText(state.filterQuery);

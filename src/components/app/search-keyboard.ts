@@ -3,6 +3,7 @@
  * Handles keyboard input when the terminal is in search mode
  */
 import type { SearchState } from '../../contexts/search/types'
+import { matchKeybinding, type ResolvedKeybindingMap } from '../../core/keybindings'
 
 export interface SearchKeyboardDeps {
   exitSearchMode: (restore: boolean) => void
@@ -11,6 +12,7 @@ export interface SearchKeyboardDeps {
   nextMatch: () => void
   prevMatch: () => void
   getSearchState: () => SearchState | null
+  keybindings: ResolvedKeybindingMap
 }
 
 export interface KeyEvent {
@@ -30,20 +32,25 @@ export function handleSearchKeyboard(
   event: KeyEvent,
   deps: SearchKeyboardDeps
 ): boolean {
-  const key = event.name.toLowerCase()
+  const action = matchKeybinding(deps.keybindings, {
+    key: event.name,
+    ctrl: event.ctrl,
+    alt: event.option,
+    shift: event.shift,
+    meta: event.meta,
+  })
 
-  if (key === 'escape') {
-    // Cancel search, restore original scroll position
-    deps.exitSearchMode(true)
-    deps.keyboardExitSearchMode()
-    return true
-  }
-
-  if (key === 'return' || key === 'enter') {
-    // Confirm search, stay at current position
-    deps.exitSearchMode(false)
-    deps.keyboardExitSearchMode()
-    return true
+  switch (action) {
+    case 'search.cancel':
+      deps.exitSearchMode(true)
+      deps.keyboardExitSearchMode()
+      return true
+    case 'search.confirm':
+      deps.exitSearchMode(false)
+      deps.keyboardExitSearchMode()
+      return true
+    default:
+      break
   }
 
   // Wait for searchState to be initialized before handling navigation/input
@@ -52,20 +59,17 @@ export function handleSearchKeyboard(
     return true // Consume key but don't process
   }
 
-  if (key === 'n' && event.ctrl && !event.shift && !event.option) {
-    // Next match (Ctrl+n)
+  if (action === 'search.next') {
     deps.nextMatch()
     return true
   }
 
-  if ((key === 'n' && event.ctrl && event.shift) || (key === 'p' && event.ctrl)) {
-    // Previous match (Ctrl+Shift+N or Ctrl+p)
+  if (action === 'search.prev') {
     deps.prevMatch()
     return true
   }
 
-  if (key === 'backspace') {
-    // Delete last character from query
+  if (action === 'search.delete') {
     deps.setSearchQuery(currentSearchState.query.slice(0, -1))
     return true
   }

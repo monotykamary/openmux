@@ -15,7 +15,7 @@ import {
 import { createStore, produce } from 'solid-js/store';
 import type { SessionId, SessionMetadata, WorkspaceId } from '../core/types';
 import type { Workspaces } from '../core/operations/layout-actions';
-import { DEFAULT_CONFIG } from '../core/config';
+import { useConfig } from './ConfigContext';
 import {
   createSessionLegacy as createSessionOnDisk,
   listSessionsLegacy as listSessions,
@@ -107,6 +107,7 @@ interface SessionProviderProps extends ParentProps {
 
 export function SessionProvider(props: SessionProviderProps) {
   const [state, setState] = createStore<SessionState>(createInitialState());
+  const config = useConfig();
 
   // Helper to dispatch actions through the reducer
   const dispatch = (action: SessionAction) => {
@@ -170,7 +171,8 @@ export function SessionProvider(props: SessionProviderProps) {
 
   // Auto-save interval
   createEffect(() => {
-    if (!state.activeSession || DEFAULT_CONFIG.autoSaveInterval === 0) return;
+    const intervalMs = config.config().session.autoSaveIntervalMs;
+    if (!state.activeSession || intervalMs === 0) return;
 
     const interval = setInterval(async () => {
       const workspaces = props.getWorkspaces();
@@ -184,7 +186,7 @@ export function SessionProvider(props: SessionProviderProps) {
           props.getCwd
         );
       }
-    }, DEFAULT_CONFIG.autoSaveInterval);
+    }, intervalMs);
 
     onCleanup(() => clearInterval(interval));
   });

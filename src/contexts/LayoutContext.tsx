@@ -6,6 +6,7 @@ import {
   createContext,
   useContext,
   createMemo,
+  createEffect,
   batch,
   type ParentProps,
 } from 'solid-js';
@@ -72,19 +73,40 @@ interface LayoutProviderProps extends ParentProps {
 }
 
 export function LayoutProvider(props: LayoutProviderProps) {
-  const mergedConfig = { ...DEFAULT_CONFIG, ...props.config };
+  const mergedConfig = createMemo(() => ({
+    ...DEFAULT_CONFIG,
+    ...props.config,
+  }));
 
   const initialState: LayoutState = {
     workspaces: {},
     activeWorkspaceId: 1,
     viewport: { x: 0, y: 0, width: 80, height: 24 },
-    config: mergedConfig,
+    config: mergedConfig(),
     layoutVersion: 0,
   };
 
   // We use createStore but apply the existing reducer for state transitions
   // This preserves the well-tested reducer logic
   const [state, setState] = createStore<LayoutState>(initialState);
+
+  // Update layout config and recalculate rectangles when config changes
+  createEffect(() => {
+    const nextConfig = mergedConfig();
+    setState(produce((draft) => {
+      draft.config = nextConfig;
+      for (const [id, workspace] of Object.entries(draft.workspaces)) {
+        if (workspace?.mainPane) {
+          draft.workspaces[id as unknown as WorkspaceId] = calculateMasterStackLayout(
+            workspace,
+            draft.viewport,
+            nextConfig
+          );
+        }
+      }
+      draft.layoutVersion++;
+    }));
+  });
 
   // Apply state update using batch to group all updates into a single render cycle
   const applyState = (newState: LayoutState) => {

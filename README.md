@@ -171,6 +171,23 @@ Each workspace has a layout mode that determines how panes are arranged:
 
 Sessions persist your workspace layouts and pane working directories. Sessions are auto-saved to `~/.config/openmux/sessions/` and can be switched via the session picker (`Alt+s` or `Ctrl+b s`).
 
+### Configuration
+
+openmux loads `~/.config/openmux/config.toml` (or `$XDG_CONFIG_HOME/openmux/config.toml`). If the file is missing, a full default config is generated on startup. Deleting the file and restarting openmux will regenerate it.
+
+Config changes are hot-reloaded while openmux is running (layout, theme, and keybindings update live).
+
+See [`CONFIG.md`](CONFIG.md) for the full generated config.
+
+Environment variables override the config file for layout values:
+
+- `OPENMUX_WINDOW_GAP`
+- `OPENMUX_MIN_PANE_WIDTH`
+- `OPENMUX_MIN_PANE_HEIGHT`
+- `OPENMUX_STACK_RATIO` (maps to `layout.defaultSplitRatio`)
+
+To unbind a keybinding, set its value to `null` or `"unbind"`.
+
 ### Detach / Attach
 
 Use `Ctrl+b d` to detach and leave the background shim running. Reattach by launching `openmux` again. Detach/attach uses a single-client lock; a new client steals the lock and the previous client detaches.
@@ -183,60 +200,6 @@ A fullscreen overlay (`Alt+a` or `Ctrl+b a`) that lets you browse all PTYs acros
 - **Interactive terminal preview** with full input support (keyboard + mouse)
 - **Filter by typing** to search by process name, directory, or git branch
 - Navigate with `j/k` or arrow keys, `Enter` to interact, `Prefix+Esc` to return to list
-
-## Project Structure
-
-```
-src/
-├── core/                           # Core layout and session management
-│   ├── types.ts                    # Type definitions (Workspace, Pane, etc.)
-│   ├── config.ts                   # Configuration and defaults
-│   ├── keyboard-utils.ts           # hjkl to Direction conversion
-│   ├── operations/
-│   │   ├── index.ts                # Layout operations exports
-│   │   └── master-stack-layout.ts  # Master-stack layout calculations
-│   └── session/                    # Session persistence
-│       ├── index.ts                # Session exports
-│       ├── session-manager.ts      # High-level session operations
-│       ├── session-serializer.ts   # Serialize/deserialize sessions
-│       └── session-storage.ts      # Disk I/O for sessions
-│
-├── components/                     # OpenTUI SolidJS components
-│   ├── index.ts                    # Component exports
-│   ├── Pane.tsx                    # Individual pane with border/focus
-│   ├── PaneContainer.tsx           # Layout pane renderer
-│   ├── TerminalView.tsx            # Terminal rendering with buffer API
-│   ├── StatusBar.tsx               # Bottom status bar
-│   ├── KeyboardHints.tsx           # Keyboard shortcuts overlay
-│   ├── SessionPicker.tsx           # Session selection modal
-│   └── AggregateView.tsx           # PTY browser overlay
-│
-├── contexts/                       # SolidJS contexts for state
-│   ├── index.ts                    # Context exports
-│   ├── LayoutContext.tsx           # Workspace/pane layout state (store + actions)
-│   ├── TerminalContext.tsx         # PTY management and lifecycle
-│   ├── KeyboardContext.tsx         # Prefix mode and key state
-│   ├── SessionContext.tsx          # Session management and persistence
-│   ├── ThemeContext.tsx            # Theme/styling configuration
-│   └── AggregateViewContext.tsx    # Aggregate view state management
-│
-├── terminal/                       # PTY and terminal emulation
-│   ├── index.ts                    # Terminal exports
-│   ├── pty-manager.ts              # PTY session lifecycle (zig-pty)
-│   ├── ghostty-vt/                 # Native libghostty-vt bindings + emulator
-│   ├── ghostty-emulator/           # Cell conversion utilities
-│   ├── input-handler.ts            # Key/mouse to escape sequence encoder
-│   ├── graphics-passthrough.ts     # Kitty Graphics/Sixel protocol
-│   ├── capabilities.ts             # Terminal capability detection
-│   └── terminal-colors.ts          # Color palette detection
-│
-├── utils/
-│   ├── index.ts                    # Utils exports
-│   └── clipboard.ts                # Clipboard read/write
-│
-├── App.tsx                         # Main app component with provider hierarchy
-└── index.tsx                       # Entry point (Bun + OpenTUI renderer)
-```
 
 ## Development Status
 
@@ -256,8 +219,8 @@ Current status:
 - [x] Scrollback support
 - [x] Aggregate view (PTY browser)
 - [x] Attach/detach (steal + lock)
-- [ ] Configurable keybindings
-- [ ] Configurable settings and colors
+- [x] Configurable keybindings
+- [x] Configurable settings and colors
 
 ## License
 

@@ -5,6 +5,8 @@
 import { Show, createSignal, createEffect, onCleanup } from 'solid-js';
 import type { ConfirmationType } from '../core/types';
 import { registerKeyboardHandler } from '../effect/bridge';
+import { useConfig } from '../contexts/ConfigContext';
+import { matchKeybinding } from '../core/keybindings';
 
 export type { ConfirmationType };
 
@@ -33,6 +35,7 @@ const MESSAGES: Record<ConfirmationType, { title: string; message: string }> = {
 };
 
 export function ConfirmationDialog(props: ConfirmationDialogProps) {
+  const appConfig = useConfig();
   // Track which button is focused: 0 = Confirm, 1 = Cancel (default)
   const [focusedButton, setFocusedButton] = createSignal(1);
 
@@ -53,36 +56,31 @@ export function ConfirmationDialog(props: ConfirmationDialogProps) {
     if (!props.visible) return false;
 
     const { key } = event;
-    const normalizedKey = key.toLowerCase();
+    const action = matchKeybinding(appConfig.keybindings().confirmation, {
+      key,
+      ctrl: event.ctrl,
+      alt: event.alt,
+      shift: event.shift,
+    });
 
-    switch (normalizedKey) {
-      case 'escape':
+    switch (action) {
+      case 'confirm.cancel':
         props.onCancel();
         return true;
-
-      case 'return':
-      case 'enter':
-        // Execute the focused button's action
+      case 'confirm.accept':
         if (focusedButton() === 0) {
           props.onConfirm();
         } else {
           props.onCancel();
         }
         return true;
-
-      case 'left':
-      case 'h':
-        setFocusedButton(0); // Confirm
+      case 'confirm.focus.confirm':
+        setFocusedButton(0);
         return true;
-
-      case 'right':
-      case 'l':
-      case 'tab':
-        setFocusedButton(1); // Cancel
+      case 'confirm.focus.cancel':
+        setFocusedButton(1);
         return true;
-
       default:
-        // Consume all keys while dialog is open
         return true;
     }
   };
@@ -93,7 +91,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps) {
     onCleanup(() => unsubscribe());
   });
 
-  const config = () => MESSAGES[props.type];
+  const dialogConfig = () => MESSAGES[props.type];
 
   // Calculate overlay dimensions
   const overlayWidth = () => Math.min(56, props.width - 4);
@@ -130,13 +128,13 @@ export function ConfirmationDialog(props: ConfirmationDialogProps) {
           zIndex: 200,
         }}
         backgroundColor="#1a1a1a"
-        title={config().title}
+        title={dialogConfig().title}
         titleAlignment="center"
       >
         <box style={{ flexDirection: 'column' }}>
           {/* Message */}
           <box style={{ height: 1 }}>
-            <text fg="#CCCCCC">{config().message}</text>
+            <text fg="#CCCCCC">{dialogConfig().message}</text>
           </box>
 
           {/* Separator */}

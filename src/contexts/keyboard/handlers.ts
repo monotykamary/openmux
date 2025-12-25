@@ -2,266 +2,249 @@
  * Keyboard handler functions
  */
 
-import type { WorkspaceId } from '../../core/types';
+import type { Direction, WorkspaceId } from '../../core/types';
 import type { useLayout } from '../LayoutContext';
-import { keyToDirection } from '../../core/keyboard-utils';
-import type { KeyboardContextValue, LAYOUT_MODES } from './types';
+import type { KeyboardContextValue, KeyboardHandlerOptions } from './types';
 
 const LAYOUT_MODES_ARRAY: Array<'vertical' | 'horizontal' | 'stacked'> = ['vertical', 'horizontal', 'stacked'];
 
-/**
- * Handle Alt key combinations (prefix-less actions)
- */
-export function handleAltKey(
-  key: string,
+function parseDirection(action: string, prefix: string): Direction | null {
+  if (!action.startsWith(prefix)) return null;
+  const dir = action.slice(prefix.length);
+  if (dir === 'north' || dir === 'south' || dir === 'east' || dir === 'west') {
+    return dir;
+  }
+  return null;
+}
+
+function parseWorkspaceSwitch(action: string): WorkspaceId | null {
+  if (!action.startsWith('workspace.switch.')) return null;
+  const raw = action.slice('workspace.switch.'.length);
+  const id = Number(raw);
+  if (Number.isInteger(id) && id >= 1 && id <= 9) {
+    return id as WorkspaceId;
+  }
+  return null;
+}
+
+function cycleLayout(
+  layout: ReturnType<typeof useLayout>,
+  currentLayoutMode: 'vertical' | 'horizontal' | 'stacked',
+  direction: 'prev' | 'next'
+) {
+  const currentIndex = LAYOUT_MODES_ARRAY.indexOf(currentLayoutMode);
+  const offset = direction === 'prev' ? -1 : 1;
+  const newIndex = (currentIndex + offset + LAYOUT_MODES_ARRAY.length) % LAYOUT_MODES_ARRAY.length;
+  layout.setLayoutMode(LAYOUT_MODES_ARRAY[newIndex]!);
+}
+
+export function handleNormalModeAction(
+  action: string,
   keyboard: KeyboardContextValue,
   layout: ReturnType<typeof useLayout>,
   currentLayoutMode: 'vertical' | 'horizontal' | 'stacked',
-  onNewPane?: () => void,
-  onToggleSessionPicker?: () => void,
-  onEnterSearch?: () => void,
-  onToggleAggregateView?: () => void,
-  onRequestClosePane?: () => void
+  options: KeyboardHandlerOptions
 ): boolean {
-  // Alt+hjkl for navigation
-  const direction = keyToDirection(key);
+  const direction = parseDirection(action, 'pane.focus.');
   if (direction) {
     layout.navigate(direction);
     return true;
   }
 
-  // Alt+1-9 for workspace switching
-  if (/^[1-9]$/.test(key)) {
-    const workspaceId = parseInt(key, 10) as WorkspaceId;
+  const workspaceId = parseWorkspaceSwitch(action);
+  if (workspaceId) {
     layout.switchWorkspace(workspaceId);
     return true;
   }
 
-  switch (key) {
-    // Alt+n or Alt+Enter for new pane
-    case 'n':
-    case 'Enter':
-      if (onNewPane) {
-        onNewPane();
-      } else {
-        layout.newPane();
-      }
+  switch (action) {
+    case 'pane.new':
+      options.onNewPane ? options.onNewPane() : layout.newPane();
       return true;
-
-    // Alt+[ to cycle layout mode backward
-    case '[':
-      {
-        const currentIndex = LAYOUT_MODES_ARRAY.indexOf(currentLayoutMode);
-        const newIndex = (currentIndex - 1 + LAYOUT_MODES_ARRAY.length) % LAYOUT_MODES_ARRAY.length;
-        layout.setLayoutMode(LAYOUT_MODES_ARRAY[newIndex]!);
-      }
+    case 'pane.close':
+      options.onRequestClosePane ? options.onRequestClosePane() : layout.closePane();
       return true;
-
-    // Alt+] to cycle layout mode forward
-    case ']':
-      {
-        const currentIndex = LAYOUT_MODES_ARRAY.indexOf(currentLayoutMode);
-        const newIndex = (currentIndex + 1) % LAYOUT_MODES_ARRAY.length;
-        layout.setLayoutMode(LAYOUT_MODES_ARRAY[newIndex]!);
-      }
-      return true;
-
-    // Alt+x to close pane (with confirmation)
-    case 'x':
-      if (onRequestClosePane) {
-        onRequestClosePane();
-      } else {
-        layout.closePane();
-      }
-      return true;
-
-    // Alt+z to toggle zoom
-    case 'z':
+    case 'pane.zoom':
       layout.toggleZoom();
       return true;
-
-    // Alt+s to toggle session picker
-    case 's':
-      onToggleSessionPicker?.();
+    case 'layout.cycle.prev':
+      cycleLayout(layout, currentLayoutMode, 'prev');
       return true;
-
-    // Alt+f to open search
-    case 'f':
-      if (onEnterSearch) {
+    case 'layout.cycle.next':
+      cycleLayout(layout, currentLayoutMode, 'next');
+      return true;
+    case 'layout.mode.vertical':
+      layout.setLayoutMode('vertical');
+      return true;
+    case 'layout.mode.horizontal':
+      layout.setLayoutMode('horizontal');
+      return true;
+    case 'layout.mode.stacked':
+      layout.setLayoutMode('stacked');
+      return true;
+    case 'session.picker.toggle':
+      options.onToggleSessionPicker?.();
+      return true;
+    case 'search.open':
+      if (options.onEnterSearch) {
         keyboard.enterSearchMode();
-        onEnterSearch();
+        options.onEnterSearch();
         return true;
       }
       return false;
-
-    // Alt+g to toggle aggregate view (global view)
-    case 'g':
-      if (onToggleAggregateView) {
+    case 'aggregate.toggle':
+      if (options.onToggleAggregateView) {
         keyboard.enterAggregateMode();
-        onToggleAggregateView();
+        options.onToggleAggregateView();
         return true;
       }
       return false;
-
-    // Alt+m to enter move mode
-    case 'm':
+    case 'mode.move':
       keyboard.enterMoveMode();
       return true;
-
+    case 'hints.toggle':
+      keyboard.toggleHints();
+      return true;
+    case 'app.quit':
+      options.onRequestQuit ? options.onRequestQuit() : options.onQuit?.();
+      return true;
+    case 'app.detach':
+      options.onDetach?.();
+      return true;
+    case 'console.toggle':
+      options.onToggleConsole?.();
+      return true;
+    case 'clipboard.paste':
+      options.onPaste?.();
+      return true;
     default:
       return false;
   }
 }
 
-/**
- * Handle prefix mode key combinations
- */
-export function handlePrefixModeKey(
-  key: string,
+export function handlePrefixModeAction(
+  action: string,
   keyboard: KeyboardContextValue,
   layout: ReturnType<typeof useLayout>,
-  onPaste?: () => void,
-  onNewPane?: () => void,
-  onQuit?: () => void,
-  onDetach?: () => void,
-  onRequestQuit?: () => void,
-  onRequestClosePane?: () => void,
-  onToggleSessionPicker?: () => void,
-  onEnterSearch?: () => void,
-  onToggleConsole?: () => void,
-  onToggleAggregateView?: () => void
+  currentLayoutMode: 'vertical' | 'horizontal' | 'stacked',
+  options: KeyboardHandlerOptions
 ): boolean {
   const exitPrefix = () => keyboard.exitPrefixMode();
 
-  // Navigation (hjkl like vim/i3)
-  const direction = keyToDirection(key);
+  if (action === 'mode.cancel') {
+    exitPrefix();
+    return true;
+  }
+
+  const direction = parseDirection(action, 'pane.focus.');
   if (direction) {
     layout.navigate(direction);
     exitPrefix();
     return true;
   }
 
-  // Workspace switching (1-9)
-  if (/^[1-9]$/.test(key)) {
-    const workspaceId = parseInt(key, 10) as WorkspaceId;
+  const workspaceId = parseWorkspaceSwitch(action);
+  if (workspaceId) {
     layout.switchWorkspace(workspaceId);
     exitPrefix();
     return true;
   }
 
-  switch (key) {
-    // New pane (single key instead of | and -)
-    case 'n':
-    case 'Enter':
-      if (onNewPane) {
-        onNewPane();
-      } else {
-        layout.newPane();
-      }
+  switch (action) {
+    case 'pane.new':
+      options.onNewPane ? options.onNewPane() : layout.newPane();
       exitPrefix();
       return true;
-
-    // Close pane (with confirmation)
-    case 'x':
-      if (onRequestClosePane) {
-        onRequestClosePane();
-      } else {
-        layout.closePane();
-      }
+    case 'pane.close':
+      options.onRequestClosePane ? options.onRequestClosePane() : layout.closePane();
       exitPrefix();
       return true;
-
-    // Layout mode: vertical (panes side by side)
-    case 'v':
-      layout.setLayoutMode('vertical');
-      exitPrefix();
-      return true;
-
-    // Session picker (prefix + s)
-    case 's':
-      onToggleSessionPicker?.();
-      exitPrefix();
-      return true;
-
-    // Layout mode: horizontal (panes stacked top/bottom) - now 'h' instead of 's'
-    case 'H':
-      layout.setLayoutMode('horizontal');
-      exitPrefix();
-      return true;
-
-    // Layout mode: stacked (tabs)
-    case 't':
-      layout.setLayoutMode('stacked');
-      exitPrefix();
-      return true;
-
-    // Paste from clipboard (like tmux prefix + ])
-    case ']':
-    case 'p':
-      onPaste?.();
-      exitPrefix();
-      return true;
-
-    // Toggle zoom on focused pane
-    case 'z':
+    case 'pane.zoom':
       layout.toggleZoom();
       exitPrefix();
       return true;
-
-    // Toggle hints
-    case '?':
-      keyboard.toggleHints();
-      return true;
-
-    // Quit openmux (with confirmation)
-    case 'q':
-      if (onRequestQuit) {
-        onRequestQuit();
-      } else {
-        onQuit?.();
-      }
-      return true;
-
-    // Detach (tmux-style)
-    case 'd':
-      onDetach?.();
+    case 'layout.cycle.prev':
+      cycleLayout(layout, currentLayoutMode, 'prev');
       exitPrefix();
       return true;
-
-    // Toggle debug console
-    case '`':
-      onToggleConsole?.();
+    case 'layout.cycle.next':
+      cycleLayout(layout, currentLayoutMode, 'next');
       exitPrefix();
       return true;
-
-    // Search mode (vim-style)
-    case '/':
-      if (onEnterSearch) {
+    case 'layout.mode.vertical':
+      layout.setLayoutMode('vertical');
+      exitPrefix();
+      return true;
+    case 'layout.mode.horizontal':
+      layout.setLayoutMode('horizontal');
+      exitPrefix();
+      return true;
+    case 'layout.mode.stacked':
+      layout.setLayoutMode('stacked');
+      exitPrefix();
+      return true;
+    case 'session.picker.toggle':
+      options.onToggleSessionPicker?.();
+      exitPrefix();
+      return true;
+    case 'clipboard.paste':
+      options.onPaste?.();
+      exitPrefix();
+      return true;
+    case 'search.open':
+      if (options.onEnterSearch) {
         keyboard.enterSearchMode();
-        onEnterSearch();
-        // Don't call exitPrefix() here - enterSearchMode already handles the mode transition
+        options.onEnterSearch();
         return true;
       }
       exitPrefix();
       return true;
-
-    // Aggregate view (global view)
-    case 'g':
-      if (onToggleAggregateView) {
+    case 'aggregate.toggle':
+      if (options.onToggleAggregateView) {
         keyboard.enterAggregateMode();
-        onToggleAggregateView();
-        // Don't call exitPrefix() here - enterAggregateMode already handles the mode transition
+        options.onToggleAggregateView();
         return true;
       }
       exitPrefix();
       return true;
-
-    // Move mode
-    case 'm':
+    case 'mode.move':
       keyboard.enterMoveMode();
       return true;
-
+    case 'console.toggle':
+      options.onToggleConsole?.();
+      exitPrefix();
+      return true;
+    case 'hints.toggle':
+      keyboard.toggleHints();
+      return true;
+    case 'app.quit':
+      options.onRequestQuit ? options.onRequestQuit() : options.onQuit?.();
+      return true;
+    case 'app.detach':
+      options.onDetach?.();
+      exitPrefix();
+      return true;
     default:
       return false;
   }
+}
+
+export function handleMoveModeAction(
+  action: string,
+  keyboard: KeyboardContextValue,
+  layout: ReturnType<typeof useLayout>
+): boolean {
+  if (action === 'mode.cancel') {
+    keyboard.exitMoveMode();
+    return true;
+  }
+
+  const direction = parseDirection(action, 'pane.move.');
+  if (!direction) {
+    return false;
+  }
+
+  layout.movePane(direction);
+  keyboard.exitMoveMode();
+  return true;
 }

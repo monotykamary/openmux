@@ -5,6 +5,7 @@
 
 import { writeToPty } from '../../effect/bridge';
 import { inputHandler } from '../../terminal/input-handler';
+import { eventToCombo, matchKeybinding, type ResolvedKeybindings } from '../../core/keybindings';
 
 export interface KeyboardEvent {
   key: string;
@@ -23,6 +24,7 @@ export interface AggregateKeyboardDeps {
   getSearchState: () => { query: string } | null;
   getInSearchMode: () => boolean;
   getPrefixActive: () => boolean;
+  getKeybindings: () => ResolvedKeybindings;
 
   // State setters
   setFilterQuery: (query: string) => void;
@@ -71,6 +73,7 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
     getSearchState,
     getInSearchMode,
     getPrefixActive,
+    getKeybindings,
     setFilterQuery,
     setInSearchMode,
     setPrefixActive,
@@ -97,16 +100,22 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
    * Handle search mode keyboard input
    * Returns true if key was handled
    */
-  const handleSearchModeKeys = (event: KeyboardEvent, normalizedKey: string): boolean => {
-    if (normalizedKey === 'escape') {
-      // Cancel search, restore original scroll position
+  const handleSearchModeKeys = (event: KeyboardEvent): boolean => {
+    const keybindings = getKeybindings();
+    const action = matchKeybinding(keybindings.aggregate.search, {
+      key: event.key,
+      ctrl: event.ctrl,
+      alt: event.alt,
+      shift: event.shift,
+    });
+
+    if (action === 'aggregate.search.cancel') {
       exitSearchMode(true);
       setInSearchMode(false);
       return true;
     }
 
-    if (normalizedKey === 'return' || normalizedKey === 'enter') {
-      // Confirm search, stay at current position
+    if (action === 'aggregate.search.confirm') {
       exitSearchMode(false);
       setInSearchMode(false);
       return true;
@@ -118,20 +127,17 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
       return true;
     }
 
-    if (normalizedKey === 'n' && event.ctrl && !event.shift && !event.alt) {
-      // Next match (Ctrl+n)
+    if (action === 'aggregate.search.next') {
       nextMatch();
       return true;
     }
 
-    if ((normalizedKey === 'n' && event.ctrl && event.shift) || (normalizedKey === 'p' && event.ctrl)) {
-      // Previous match (Ctrl+Shift+N or Ctrl+p)
+    if (action === 'aggregate.search.prev') {
       prevMatch();
       return true;
     }
 
-    if (normalizedKey === 'backspace') {
-      // Delete last character from query
+    if (action === 'aggregate.search.delete') {
       setSearchQuery(currentSearchState.query.slice(0, -1));
       return true;
     }
@@ -152,40 +158,33 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
    * Handle preview mode keyboard input
    * Returns true if key was handled
    */
-  const handlePreviewModeKeys = (event: KeyboardEvent, normalizedKey: string): boolean => {
+  const handlePreviewModeKeys = (event: KeyboardEvent): boolean => {
     const { key } = event;
+    const keybindings = getKeybindings();
+    const action = matchKeybinding(keybindings.aggregate.preview, {
+      key: event.key,
+      ctrl: event.ctrl,
+      alt: event.alt,
+      shift: event.shift,
+    });
 
-    // Alt+F to enter search mode
-    if (event.alt && normalizedKey === 'f') {
+    // Search mode
+    if (action === 'aggregate.preview.search') {
       handleEnterSearch();
       return true;
     }
 
-    // Alt+Escape or Prefix+Escape exits preview mode back to list
-    if (event.alt && normalizedKey === 'escape') {
+    if (action === 'aggregate.preview.exit') {
       exitPreviewMode();
       return true;
     }
 
-    if (getPrefixActive() && normalizedKey === 'escape') {
-      setPrefixActive(false);
-      clearPrefixTimeout();
-      exitPreviewMode();
+    if (action === 'aggregate.kill') {
+      const selectedPtyId = getSelectedPtyId();
+      if (selectedPtyId && onRequestKillPty) {
+        onRequestKillPty(selectedPtyId);
+      }
       return true;
-    }
-
-    // Prefix+/ to enter search mode (vim-style)
-    if (getPrefixActive() && key === '/') {
-      setPrefixActive(false);
-      clearPrefixTimeout();
-      handleEnterSearch();
-      return true;
-    }
-
-    // Clear prefix mode on any other key after prefix
-    if (getPrefixActive()) {
-      setPrefixActive(false);
-      clearPrefixTimeout();
     }
 
     // Forward key to PTY using inputHandler for proper encoding
@@ -208,42 +207,54 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
    * Handle list mode keyboard input
    * Returns true if key was handled
    */
-  const handleListModeKeys = (event: KeyboardEvent, normalizedKey: string): boolean => {
+  const handleListModeKeys = (event: KeyboardEvent): boolean => {
     const { key } = event;
+    const keybindings = getKeybindings();
+    const action = matchKeybinding(keybindings.aggregate.list, {
+      key: event.key,
+      ctrl: event.ctrl,
+      alt: event.alt,
+      shift: event.shift,
+    });
 
-    // Alt+Esc closes aggregate view
-    if (event.alt && normalizedKey === 'escape') {
-      closeAggregateView();
-      exitAggregateMode();
-      return true;
-    }
-
-    if (normalizedKey === 'down' || (normalizedKey === 'j' && !event.ctrl)) {
+    if (action === 'aggregate.list.down') {
       navigateDown();
       return true;
     }
 
-    if (normalizedKey === 'up' || (normalizedKey === 'k' && !event.ctrl)) {
+    if (action === 'aggregate.list.up') {
       navigateUp();
       return true;
     }
 
-    if (normalizedKey === 'return' || normalizedKey === 'enter') {
-      // Enter preview mode (interactive terminal)
+    if (action === 'aggregate.list.preview') {
       if (getSelectedPtyId()) {
         enterPreviewMode();
       }
       return true;
     }
 
-    // Tab jumps to the PTY's workspace/pane
-    if (normalizedKey === 'tab') {
+    if (action === 'aggregate.list.jump') {
       handleJumpToPty();
       return true;
     }
 
-    if (normalizedKey === 'backspace') {
+    if (action === 'aggregate.list.delete') {
       setFilterQuery(getFilterQuery().slice(0, -1));
+      return true;
+    }
+
+    if (action === 'aggregate.list.close') {
+      closeAggregateView();
+      exitAggregateMode();
+      return true;
+    }
+
+    if (action === 'aggregate.kill') {
+      const selectedPtyId = getSelectedPtyId();
+      if (selectedPtyId && onRequestKillPty) {
+        onRequestKillPty(selectedPtyId);
+      }
       return true;
     }
 
@@ -263,58 +274,77 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
     if (!getShowAggregateView()) return false;
 
     const { key } = event;
-    const normalizedKey = key.toLowerCase();
+    const keybindings = getKeybindings();
+    const combo = eventToCombo({
+      key: event.key,
+      ctrl: event.ctrl,
+      alt: event.alt,
+      shift: event.shift,
+    });
 
     // Handle search mode first (when active in preview)
     if (getInSearchMode() && getPreviewMode()) {
-      return handleSearchModeKeys(event, normalizedKey);
+      return handleSearchModeKeys(event);
     }
 
-    // Global Alt+X to kill selected PTY (works in both list and preview mode)
-    if (event.alt && normalizedKey === 'x') {
-      const selectedPtyId = getSelectedPtyId();
-      if (selectedPtyId && onRequestKillPty) {
-        onRequestKillPty(selectedPtyId);
-      }
-      return true;
-    }
-
-    // Global prefix key handling (Ctrl+B) - works in both list and preview mode
-    if (event.ctrl && normalizedKey === 'b') {
+    // Global prefix key handling (works in both list and preview mode)
+    if (combo === keybindings.prefixKey) {
       setPrefixActive(true);
       clearPrefixTimeout();
       startPrefixTimeout();
       return true;
     }
 
-    // Global prefix commands (work in both list and preview mode)
+    // Prefix commands (work in both list and preview mode)
     if (getPrefixActive()) {
-      // Prefix+q to quit the app (show confirmation modal)
-      if (normalizedKey === 'q') {
+      const prefixAction = matchKeybinding(keybindings.aggregate.prefix, {
+        key: event.key,
+        ctrl: event.ctrl,
+        alt: event.alt,
+        shift: event.shift,
+      });
+
+      if (prefixAction) {
         setPrefixActive(false);
         clearPrefixTimeout();
-        if (onRequestQuit) {
-          onRequestQuit();
-        }
-        return true;
       }
 
-      // Prefix+d to detach
-      if (normalizedKey === 'd') {
-        setPrefixActive(false);
-        clearPrefixTimeout();
-        onDetach?.();
-        return true;
+      switch (prefixAction) {
+        case 'aggregate.prefix.quit':
+          onRequestQuit?.();
+          return true;
+        case 'aggregate.prefix.detach':
+          onDetach?.();
+          return true;
+        case 'aggregate.prefix.exit':
+          if (getPreviewMode()) {
+            exitPreviewMode();
+          } else {
+            closeAggregateView();
+            exitAggregateMode();
+          }
+          return true;
+        case 'aggregate.prefix.search':
+          if (getPreviewMode()) {
+            handleEnterSearch();
+          }
+          return true;
+        default:
+          if (prefixAction) {
+            return true;
+          }
+          setPrefixActive(false);
+          clearPrefixTimeout();
       }
     }
 
     // In preview mode, most keys go to the PTY
     if (getPreviewMode()) {
-      return handlePreviewModeKeys(event, normalizedKey);
+      return handlePreviewModeKeys(event);
     }
 
     // List mode keyboard handling
-    return handleListModeKeys(event, normalizedKey);
+    return handleListModeKeys(event);
   };
 
   return {

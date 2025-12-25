@@ -40,6 +40,13 @@ export function calculateMasterStackLayout(
   config: LayoutConfig
 ): Workspace {
   const { mainPane, stackPanes, layoutMode, zoomed, focusedPaneId } = workspace;
+  const padding = config.outerPadding;
+  const paddedViewport: Rectangle = {
+    x: viewport.x + padding.left,
+    y: viewport.y + padding.top,
+    width: Math.max(1, viewport.width - padding.left - padding.right),
+    height: Math.max(1, viewport.height - padding.top - padding.bottom),
+  };
 
   // No panes - nothing to calculate
   if (!mainPane) {
@@ -52,7 +59,7 @@ export function calculateMasterStackLayout(
     const focusedStackIndex = stackPanes.findIndex(p => p.id === focusedPaneId);
 
     if (focusedIsMain) {
-      const updatedMain = updatePaneRectangle(mainPane, viewport);
+      const updatedMain = updatePaneRectangle(mainPane, paddedViewport);
       const updatedStack = stackPanes.map(p => updatePaneRectangle(p, undefined));
       // Only create new workspace if something changed
       if (updatedMain === mainPane && updatedStack.every((p, i) => p === stackPanes[i])) {
@@ -62,7 +69,7 @@ export function calculateMasterStackLayout(
     } else if (focusedStackIndex >= 0) {
       const updatedMain = updatePaneRectangle(mainPane, undefined);
       const updatedStack = stackPanes.map((p, i) =>
-        updatePaneRectangle(p, i === focusedStackIndex ? viewport : undefined)
+        updatePaneRectangle(p, i === focusedStackIndex ? paddedViewport : undefined)
       );
       if (updatedMain === mainPane && updatedStack.every((p, i) => p === stackPanes[i])) {
         return workspace;
@@ -73,7 +80,7 @@ export function calculateMasterStackLayout(
 
   // Single pane - takes full viewport
   if (stackPanes.length === 0) {
-    const updatedMain = updatePaneRectangle(mainPane, viewport);
+    const updatedMain = updatePaneRectangle(mainPane, paddedViewport);
     if (updatedMain === mainPane) return workspace;
     return { ...workspace, mainPane: updatedMain };
   }
@@ -87,38 +94,38 @@ export function calculateMasterStackLayout(
 
   if (layoutMode === 'vertical' || layoutMode === 'stacked') {
     // Main on left, stack on right
-    const mainWidth = Math.floor((viewport.width - gap) * mainRatio);
-    const stackWidth = viewport.width - mainWidth - gap;
+    const mainWidth = Math.floor((paddedViewport.width - gap) * mainRatio);
+    const stackWidth = paddedViewport.width - mainWidth - gap;
 
     mainRect = {
-      x: viewport.x,
-      y: viewport.y,
+      x: paddedViewport.x,
+      y: paddedViewport.y,
       width: mainWidth,
-      height: viewport.height,
+      height: paddedViewport.height,
     };
 
     stackArea = {
-      x: viewport.x + mainWidth + gap,
-      y: viewport.y,
+      x: paddedViewport.x + mainWidth + gap,
+      y: paddedViewport.y,
       width: stackWidth,
-      height: viewport.height,
+      height: paddedViewport.height,
     };
   } else {
     // Horizontal: main on top, stack on bottom
-    const mainHeight = Math.floor((viewport.height - gap) * mainRatio);
-    const stackHeight = viewport.height - mainHeight - gap;
+    const mainHeight = Math.floor((paddedViewport.height - gap) * mainRatio);
+    const stackHeight = paddedViewport.height - mainHeight - gap;
 
     mainRect = {
-      x: viewport.x,
-      y: viewport.y,
-      width: viewport.width,
+      x: paddedViewport.x,
+      y: paddedViewport.y,
+      width: paddedViewport.width,
       height: mainHeight,
     };
 
     stackArea = {
-      x: viewport.x,
-      y: viewport.y + mainHeight + gap,
-      width: viewport.width,
+      x: paddedViewport.x,
+      y: paddedViewport.y + mainHeight + gap,
+      width: paddedViewport.width,
       height: stackHeight,
     };
   }

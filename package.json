@@ -28,6 +28,7 @@
     "check:circular": "bunx madge --circular --extensions ts,tsx src/",
     "lint:effect": "effect-language-service diagnostics --format pretty --project ./tsconfig.json",
     "lint": "bun run lint:effect",
+    "config:doc": "bun scripts/generate-config-doc.ts",
     "release": "standard-version",
     "release:minor": "standard-version --release-as minor",
     "release:major": "standard-version --release-as major",
@@ -75,6 +76,7 @@
   "dependencies": {
     "@effect/cli": "^0.72.1",
     "@effect/platform": "^0.93.8",
+    "@iarna/toml": "^3.0.0",
     "@opentui/core": "^0.1.62",
     "@opentui/solid": "^0.1.62",
     "effect": "^3.19.13",
