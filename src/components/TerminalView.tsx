@@ -112,6 +112,12 @@ export function TerminalView(props: TerminalViewProps) {
     recentRowOrder.push(absoluteY);
   };
   const recentPrefetchWindow = 32;
+  // Track last viewport/scrollback combo that rendered without seam gaps.
+  let lastStableViewportOffset = 0;
+  let lastStableScrollbackLength = 0;
+  let lastStableRowCache: (TerminalCell[] | null)[] | null = null;
+  let lastObservedViewportOffset = 0;
+  let lastObservedScrollbackLength = 0;
   // Version counter to trigger re-renders when state changes
   const [version, setVersion] = createSignal(0);
   // Track pending scrollback prefetch to avoid duplicate requests
@@ -294,9 +300,8 @@ export function TerminalView(props: TerminalViewProps) {
     }
 
     // Use scroll state from unified update (stored locally, always in sync with terminal state)
-    const viewportOffset = scrollState.viewportOffset;
-    const scrollbackLength = scrollState.scrollbackLength;
-    const isAtBottom = checkIsAtBottom(viewportOffset);
+    const desiredViewportOffset = scrollState.viewportOffset;
+    const desiredScrollbackLength = scrollState.scrollbackLength;
 
     const rows = Math.min(state.rows, height);
     const cols = Math.min(state.cols, width);
@@ -306,10 +311,14 @@ export function TerminalView(props: TerminalViewProps) {
     const fallbackFg = BLACK;
 
     // Pre-fetch all rows we need for rendering (optimization: fetch once per row, not per cell)
-    const { rowCache, firstMissingOffset, lastMissingOffset } = fetchRowsForRendering(
+    const {
+      rowCache: desiredRowCache,
+      firstMissingOffset,
+      lastMissingOffset,
+    } = fetchRowsForRendering(
       state,
       emulator,
-      { viewportOffset, scrollbackLength, rows }
+      { viewportOffset: desiredViewportOffset, scrollbackLength: desiredScrollbackLength, rows }
     );
 
     // Schedule prefetch for missing scrollback lines with buffer zone
@@ -317,7 +326,7 @@ export function TerminalView(props: TerminalViewProps) {
       ptyId,
       firstMissingOffset,
       lastMissingOffset,
-      scrollbackLength,
+      desiredScrollbackLength,
       rows
     );
     const supportsPrefetch = !!emulator &&
@@ -327,6 +336,60 @@ export function TerminalView(props: TerminalViewProps) {
       // Execute prefetch asynchronously (don't block render)
       queueMicrotask(executePrefetchFn);
     }
+
+    if (lastStableScrollbackLength === 0 && desiredScrollbackLength > 0) {
+      lastStableScrollbackLength = desiredScrollbackLength;
+      lastStableViewportOffset = desiredViewportOffset;
+    }
+
+    let renderViewportOffset = desiredViewportOffset;
+    let renderScrollbackLength = desiredScrollbackLength;
+    let rowCache = desiredRowCache;
+    const scrollbackDelta = desiredScrollbackLength - lastObservedScrollbackLength;
+    const expectedViewportOffset = scrollbackDelta > 0
+      ? lastObservedViewportOffset + scrollbackDelta
+      : lastObservedViewportOffset;
+    const isUserScroll = desiredViewportOffset !== expectedViewportOffset;
+    lastObservedViewportOffset = desiredViewportOffset;
+    lastObservedScrollbackLength = desiredScrollbackLength;
+    let hasMissingScrollback = false;
+    const renderRowCache: (TerminalCell[] | null)[] = new Array(rows);
+    for (let y = 0; y < rows; y++) {
+      const absoluteY = desiredScrollbackLength - desiredViewportOffset + y;
+      let row = desiredRowCache[y];
+      if (desiredViewportOffset > 0 && row === null && recentRows.size > 0) {
+        row = recentRows.get(absoluteY) ?? row;
+      }
+      renderRowCache[y] = row;
+      if (row === null && absoluteY >= 0 && absoluteY < desiredScrollbackLength) {
+        hasMissingScrollback = true;
+      }
+    }
+    const shouldDefer = (isUserScroll || desiredViewportOffset > 0) && hasMissingScrollback;
+
+    if (
+      shouldDefer
+    ) {
+      renderViewportOffset = Math.min(lastStableViewportOffset, desiredScrollbackLength);
+      renderScrollbackLength = Math.min(lastStableScrollbackLength, desiredScrollbackLength);
+      if (lastStableRowCache) {
+        rowCache = lastStableRowCache;
+      } else {
+        const renderFetch = fetchRowsForRendering(
+          state,
+          emulator,
+          { viewportOffset: renderViewportOffset, scrollbackLength: renderScrollbackLength, rows }
+        );
+        rowCache = renderFetch.rowCache;
+      }
+    } else {
+      lastStableViewportOffset = desiredViewportOffset;
+      lastStableScrollbackLength = desiredScrollbackLength;
+      lastStableRowCache = renderRowCache.slice();
+      rowCache = renderRowCache;
+    }
+
+    const isAtBottom = checkIsAtBottom(renderViewportOffset);
 
     // Pre-check if selection/search is active for this pane (avoid 5760 function calls per frame)
     const hasSelection = !!getSelection(ptyId)?.normalizedRange;
@@ -343,8 +406,8 @@ export function TerminalView(props: TerminalViewProps) {
       cursorX: state.cursor.x,
       cursorY: state.cursor.y,
       cursorVisible: state.cursor.visible,
-      scrollbackLength,
-      viewportOffset,
+      scrollbackLength: renderScrollbackLength,
+      viewportOffset: renderViewportOffset,
     };
 
     // Create rendering dependencies
@@ -358,8 +421,8 @@ export function TerminalView(props: TerminalViewProps) {
     // Render all rows
     for (let y = 0; y < rows; y++) {
       let row = rowCache[y];
-      const absoluteY = scrollbackLength - viewportOffset + y;
-      if (viewportOffset > 0 && row === null && recentRows.size > 0) {
+      const absoluteY = renderScrollbackLength - renderViewportOffset + y;
+      if (renderViewportOffset > 0 && row === null && recentRows.size > 0) {
         row = recentRows.get(absoluteY) ?? row;
       }
       if (row) {
@@ -389,8 +452,8 @@ export function TerminalView(props: TerminalViewProps) {
     // Render scrollbar when scrolled back (not at bottom)
     if (!isAtBottom) {
       renderScrollbar(buffer, rowCache, {
-        viewportOffset,
-        scrollbackLength,
+        viewportOffset: renderViewportOffset,
+        scrollbackLength: renderScrollbackLength,
         rows,
         cols,
         width,
