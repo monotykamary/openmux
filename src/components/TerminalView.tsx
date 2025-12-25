@@ -103,9 +103,9 @@ export function TerminalView(props: TerminalViewProps) {
   let contentDirty = true;
   // Cache emulator for sync access to scrollback lines
   let emulator: ITerminalEmulator | null = null;
-  // Cache last rendered rows to mask transient scrollback misses.
-  let lastRowCache: (TerminalCell[] | null)[] | null = null;
-  let lastViewportBase: number | null = null;
+  // Cache recent rows keyed by absolute Y to cover scrollback seam misses.
+  let recentRows = new Map<number, TerminalCell[]>();
+  let recentRowOrder: number[] = [];
   // Version counter to trigger re-renders when state changes
   const [version, setVersion] = createSignal(0);
   // Track pending scrollback prefetch to avoid duplicate requests
@@ -334,20 +334,27 @@ export function TerminalView(props: TerminalViewProps) {
       getSelection,
     };
 
-    const viewportBase = scrollbackLength - viewportOffset;
-    const canReuseLast = lastRowCache && lastViewportBase === viewportBase;
-
     // Render all rows
     for (let y = 0; y < rows; y++) {
       let row = rowCache[y];
-      if (viewportOffset > 0 && row === null && canReuseLast) {
-        row = lastRowCache?.[y] ?? row;
+      const absoluteY = scrollbackLength - viewportOffset + y;
+      if (viewportOffset > 0 && row === null && recentRows.size > 0) {
+        row = recentRows.get(absoluteY) ?? row;
+      }
+      if (row) {
+        recentRows.set(absoluteY, row);
+        recentRowOrder.push(absoluteY);
       }
       renderRow(buffer, row, y, cols, offsetX, offsetY, renderOptions, renderDeps, fallbackFg, fallbackBg);
     }
 
-    lastRowCache = rowCache;
-    lastViewportBase = viewportBase;
+    const recentRowLimit = Math.max(100, rows * 4);
+    while (recentRowOrder.length > recentRowLimit) {
+      const oldest = recentRowOrder.shift();
+      if (oldest !== undefined && !recentRowOrder.includes(oldest)) {
+        recentRows.delete(oldest);
+      }
+    }
 
     // Paint any unused area (when cols/rows are smaller than the pane) to avoid stale/transparent regions
     if (cols < width || rows < height) {
