@@ -99,6 +99,9 @@ export function handleNormalModeAction(
         return true;
       }
       return false;
+    case 'command.palette.toggle':
+      options.onToggleCommandPalette?.();
+      return true;
     case 'mode.move':
       keyboard.enterMoveMode();
       return true;
@@ -205,6 +208,10 @@ export function handlePrefixModeAction(
         options.onToggleAggregateView();
         return true;
       }
+      exitPrefix();
+      return true;
+    case 'command.palette.toggle':
+      options.onToggleCommandPalette?.();
       exitPrefix();
       return true;
     case 'mode.move':

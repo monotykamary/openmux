@@ -11,6 +11,7 @@ import type { KeyMode, WorkspaceId, LayoutMode } from '../core/types';
 
 interface StatusBarProps {
   width: number;
+  showCommandPalette?: boolean;
 }
 
 export function StatusBar(props: StatusBarProps) {
@@ -49,6 +50,9 @@ export function StatusBar(props: StatusBarProps) {
       {/* Right section: Mode and layout mode */}
       <box style={{ flexDirection: 'row', gap: 1 }}>
         <ModeIndicator mode={kbState.mode} />
+        <Show when={props.showCommandPalette}>
+          <text fg="#00AAFF">[COMMAND]</text>
+        </Show>
         <Show when={sessionState.showSessionPicker}>
           <text fg="#00AAFF">[SESSIONS]</text>
         </Show>

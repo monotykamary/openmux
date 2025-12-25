@@ -43,6 +43,9 @@ foregroundColor = "#CCCCCC"
 activeTabColor = "#00AAFF"
 inactiveTabColor = "#666666"
 
+[theme.commandPalette]
+borderColor = "#FFAA00"
+
 [session]
 autoSaveIntervalMs = 30_000
 
@@ -57,10 +60,10 @@ prefixTimeoutMs = 2_000
   "alt+l" = "pane.focus.east"
   "alt+m" = "mode.move"
   "alt+n" = "pane.new"
-  "alt+enter" = "pane.new"
   "alt+s" = "session.picker.toggle"
   "alt+g" = "aggregate.toggle"
   "alt+f" = "search.open"
+  "alt+p" = "command.palette.toggle"
   "alt+[" = "layout.cycle.prev"
   "alt+]" = "layout.cycle.next"
   "alt+z" = "pane.zoom"
@@ -99,6 +102,7 @@ prefixTimeoutMs = 2_000
   s = "session.picker.toggle"
   g = "aggregate.toggle"
   "/" = "search.open"
+  ":" = "command.palette.toggle"
   z = "pane.zoom"
   "]" = "clipboard.paste"
   p = "clipboard.paste"
@@ -122,6 +126,18 @@ prefixTimeoutMs = 2_000
   enter = "search.confirm"
   escape = "search.cancel"
   backspace = "search.delete"
+
+  [keybindings.commandPalette]
+  down = "command.palette.down"
+  j = "command.palette.down"
+  "ctrl+n" = "command.palette.down"
+  up = "command.palette.up"
+  k = "command.palette.up"
+  "ctrl+p" = "command.palette.up"
+  enter = "command.palette.confirm"
+  escape = "command.palette.close"
+  backspace = "command.palette.delete"
+  "alt+p" = "command.palette.close"
 
 [keybindings.aggregate.list]
 down = "aggregate.list.down"

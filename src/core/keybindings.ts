@@ -19,6 +19,7 @@ export interface KeybindingsConfig {
   prefix: KeybindingMap;
   move: KeybindingMap;
   search: KeybindingMap;
+  commandPalette: KeybindingMap;
   aggregate: {
     list: KeybindingMap;
     preview: KeybindingMap;
@@ -44,6 +45,7 @@ export interface ResolvedKeybindings {
   prefix: ResolvedKeybindingMap;
   move: ResolvedKeybindingMap;
   search: ResolvedKeybindingMap;
+  commandPalette: ResolvedKeybindingMap;
   aggregate: {
     list: ResolvedKeybindingMap;
     preview: ResolvedKeybindingMap;
@@ -67,10 +69,10 @@ export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
     'alt+l': 'pane.focus.east',
     'alt+m': 'mode.move',
     'alt+n': 'pane.new',
-    'alt+enter': 'pane.new',
     'alt+s': 'session.picker.toggle',
     'alt+g': 'aggregate.toggle',
     'alt+f': 'search.open',
+    'alt+p': 'command.palette.toggle',
     'alt+[': 'layout.cycle.prev',
     'alt+]': 'layout.cycle.next',
     'alt+z': 'pane.zoom',
@@ -94,6 +96,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
     's': 'session.picker.toggle',
     'g': 'aggregate.toggle',
     '/': 'search.open',
+    ':': 'command.palette.toggle',
     'z': 'pane.zoom',
     ']': 'clipboard.paste',
     'p': 'clipboard.paste',
@@ -120,6 +123,18 @@ export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
     'enter': 'search.confirm',
     'escape': 'search.cancel',
     'backspace': 'search.delete',
+  },
+  commandPalette: {
+    'down': 'command.palette.down',
+    'j': 'command.palette.down',
+    'ctrl+n': 'command.palette.down',
+    'up': 'command.palette.up',
+    'k': 'command.palette.up',
+    'ctrl+p': 'command.palette.up',
+    'enter': 'command.palette.confirm',
+    'escape': 'command.palette.close',
+    'backspace': 'command.palette.delete',
+    'alt+p': 'command.palette.close',
   },
   aggregate: {
     list: {
@@ -383,6 +398,7 @@ export function resolveKeybindings(config: KeybindingsConfig): ResolvedKeybindin
     prefix: resolveKeybindingMap(config.prefix),
     move: resolveKeybindingMap(config.move),
     search: resolveKeybindingMap(config.search),
+    commandPalette: resolveKeybindingMap(config.commandPalette),
     aggregate: {
       list: resolveKeybindingMap(config.aggregate.list),
       preview: resolveKeybindingMap(config.aggregate.preview),

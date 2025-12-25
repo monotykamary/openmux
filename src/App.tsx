@@ -3,6 +3,7 @@
  */
 
 import { createSignal, createEffect, createMemo, onCleanup, onMount, on } from 'solid-js';
+import { createStore } from 'solid-js/store';
 import { useKeyboard, useTerminalDimensions, useRenderer } from '@opentui/solid';
 import {
   ConfigProvider,
@@ -26,8 +27,10 @@ import type { ConfirmationType } from './core/types';
 import { SessionPicker } from './components/SessionPicker';
 import { SearchOverlay } from './components/SearchOverlay';
 import { AggregateView } from './components/AggregateView';
+import { CommandPalette, type CommandPaletteState } from './components/CommandPalette';
 import { SessionBridge } from './components/SessionBridge';
 import { getFocusedPtyId } from './core/workspace-utils';
+import { DEFAULT_COMMAND_PALETTE_COMMANDS, type CommandPaletteCommand } from './core/command-palette';
 import {
   routeKeyboardEventSync,
   markPtyCreated,
@@ -48,6 +51,7 @@ import {
 import { calculateLayoutDimensions } from './components/aggregate';
 import { setFocusedPty, setClipboardPasteHandler } from './terminal/focused-pty-registry';
 import { readFromClipboard } from './effect/bridge';
+import { handleNormalModeAction } from './contexts/keyboard/handlers';
 
 function AppContent() {
   const config = useConfig();
@@ -66,9 +70,51 @@ function AppContent() {
   const search = useSearch();
   const { enterSearchMode, exitSearchMode, setSearchQuery, nextMatch, prevMatch } = search;
   const { state: aggregateState, openAggregateView } = useAggregateView();
-  const { enterConfirmMode, exitConfirmMode, exitSearchMode: keyboardExitSearchMode } = useKeyboardState();
+  const keyboardState = useKeyboardState();
+  const { enterConfirmMode, exitConfirmMode, exitSearchMode: keyboardExitSearchMode } = keyboardState;
   const renderer = useRenderer();
   let detaching = false;
+
+  const normalizeKeyEvent = (event: {
+    name: string;
+    ctrl?: boolean;
+    shift?: boolean;
+    option?: boolean;
+    meta?: boolean;
+    sequence?: string;
+  }) => {
+    const sequence = event.sequence ?? '';
+    const metaIsAlt = !!event.meta && !event.option && sequence.startsWith('\x1b');
+    const option = event.option || metaIsAlt;
+    const meta = metaIsAlt ? false : (option ? false : event.meta);
+    return {
+      ...event,
+      option,
+      meta,
+    };
+  };
+
+  const [commandPaletteState, setCommandPaletteState] = createStore<CommandPaletteState>({
+    show: false,
+    query: '',
+    selectedIndex: 0,
+  });
+
+  const openCommandPalette = () => {
+    setCommandPaletteState({ show: true, query: '', selectedIndex: 0 });
+  };
+
+  const closeCommandPalette = () => {
+    setCommandPaletteState({ show: false, query: '', selectedIndex: 0 });
+  };
+
+  const toggleCommandPalette = () => {
+    if (commandPaletteState.show) {
+      closeCommandPalette();
+    } else {
+      openCommandPalette();
+    }
+  };
 
   // Quit handler - save session, shutdown shim, and cleanup terminal before exiting
   const handleQuit = async () => {
@@ -219,6 +265,32 @@ function AppContent() {
     openAggregateView();
   };
 
+  const executeCommandAction = (action: string) => {
+    handleNormalModeAction(
+      action,
+      keyboardState,
+      layout,
+      layout.activeWorkspace.layoutMode,
+      {
+        onPaste: handlePaste,
+        onNewPane: handleNewPane,
+        onQuit: handleQuit,
+        onDetach: handleDetach,
+        onRequestQuit: confirmationHandlers.handleRequestQuit,
+        onRequestClosePane: confirmationHandlers.handleRequestClosePane,
+        onToggleSessionPicker: handleToggleSessionPicker,
+        onEnterSearch: handleEnterSearch,
+        onToggleConsole: handleToggleConsole,
+        onToggleAggregateView: handleToggleAggregateView,
+        onToggleCommandPalette: toggleCommandPalette,
+      }
+    );
+  };
+
+  const handleCommandPaletteExecute = (command: CommandPaletteCommand) => {
+    executeCommandAction(command.action);
+  };
+
 
   // Handle bracketed paste from host terminal (Cmd+V sends this)
   createEffect(() => {
@@ -240,6 +312,7 @@ function AppContent() {
     onEnterSearch: handleEnterSearch,
     onToggleConsole: handleToggleConsole,
     onToggleAggregateView: handleToggleAggregateView,
+    onToggleCommandPalette: toggleCommandPalette,
   });
   const { handleKeyDown } = keyboardHandler;
 
@@ -393,19 +466,20 @@ function AppContent() {
   // Handle keyboard input
   useKeyboard(
     (event: { name: string; ctrl?: boolean; shift?: boolean; option?: boolean; meta?: boolean; sequence?: string }) => {
+      const normalizedEvent = normalizeKeyEvent(event);
       // Route to overlays via KeyboardRouter (handles confirmation, session picker, aggregate view)
       // Use event.sequence for printable chars (handles shift for uppercase/symbols)
       // Fall back to event.name for special keys
-      const charCode = event.sequence?.charCodeAt(0) ?? 0;
-      const isPrintableChar = event.sequence?.length === 1 && charCode >= 32 && charCode < 127;
-      const keyToPass = isPrintableChar ? event.sequence! : event.name;
+      const charCode = normalizedEvent.sequence?.charCodeAt(0) ?? 0;
+      const isPrintableChar = normalizedEvent.sequence?.length === 1 && charCode >= 32 && charCode < 127;
+      const keyToPass = isPrintableChar ? normalizedEvent.sequence! : normalizedEvent.name;
 
       const routeResult = routeKeyboardEventSync({
         key: keyToPass,
-        ctrl: event.ctrl,
-        alt: event.option,
-        shift: event.shift,
-        sequence: event.sequence,
+        ctrl: normalizedEvent.ctrl,
+        alt: normalizedEvent.option,
+        shift: normalizedEvent.shift,
+        sequence: normalizedEvent.sequence,
       });
 
       // If an overlay handled the key, don't process further
@@ -415,7 +489,7 @@ function AppContent() {
 
       // If in search mode, handle search-specific keys
       if (keyboardHandler.mode === 'search') {
-        handleSearchKeyboard(event, {
+        handleSearchKeyboard(normalizedEvent, {
           exitSearchMode,
           keyboardExitSearchMode,
           setSearchQuery,
@@ -429,16 +503,16 @@ function AppContent() {
 
       // First, check if this is a multiplexer command
       const handled = handleKeyDown({
-        key: event.name,
-        ctrl: event.ctrl,
-        shift: event.shift,
-        alt: event.option, // OpenTUI uses 'option' for Alt key
-        meta: event.meta,
+        key: normalizedEvent.name,
+        ctrl: normalizedEvent.ctrl,
+        shift: normalizedEvent.shift,
+        alt: normalizedEvent.option, // OpenTUI uses 'option' for Alt key
+        meta: normalizedEvent.meta,
       });
 
       // If not handled by multiplexer and in normal mode, forward to PTY
       if (!handled && keyboardHandler.mode === 'normal' && !sessionState.showSessionPicker) {
-        processNormalModeKey(event, {
+        processNormalModeKey(normalizedEvent, {
           clearAllSelections,
           getFocusedCursorKeyMode,
           writeToFocused,
@@ -459,13 +533,23 @@ function AppContent() {
       <PaneContainer />
 
       {/* Status bar at bottom */}
-      <StatusBar width={width()} />
+      <StatusBar width={width()} showCommandPalette={commandPaletteState.show} />
 
       {/* Keyboard hints overlay */}
       <KeyboardHints width={width()} height={height()} />
 
       {/* Session picker overlay */}
       <SessionPicker width={width()} height={height()} />
+
+      {/* Command palette overlay */}
+      <CommandPalette
+        width={width()}
+        height={height()}
+        commands={DEFAULT_COMMAND_PALETTE_COMMANDS}
+        state={commandPaletteState}
+        setState={setCommandPaletteState}
+        onExecute={handleCommandPaletteExecute}
+      />
 
       {/* Search overlay */}
       <SearchOverlay width={width()} height={height()} />

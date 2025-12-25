@@ -30,4 +30,5 @@ export interface KeyboardHandlerOptions {
   onEnterSearch?: () => void;
   onToggleConsole?: () => void;
   onToggleAggregateView?: () => void;
+  onToggleCommandPalette?: () => void;
 }

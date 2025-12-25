@@ -139,6 +139,7 @@ function mergeKeybindings(base: KeybindingsConfig, overrides?: Partial<Keybindin
     prefix: mergeKeybindingMap(base.prefix, overrides.prefix),
     move: mergeKeybindingMap(base.move, overrides.move),
     search: mergeKeybindingMap(base.search, overrides.search),
+    commandPalette: mergeKeybindingMap(base.commandPalette, overrides.commandPalette),
     aggregate: {
       list: mergeKeybindingMap(base.aggregate.list, overrides.aggregate?.list),
       preview: mergeKeybindingMap(base.aggregate.preview, overrides.aggregate?.preview),
@@ -174,6 +175,10 @@ function mergeUserConfig(base: UserConfig, overrides?: Partial<UserConfig>): Use
       statusBar: {
         ...base.theme.statusBar,
         ...overrides.theme?.statusBar,
+      },
+      commandPalette: {
+        ...base.theme.commandPalette,
+        ...overrides.theme?.commandPalette,
       },
     },
     session: {

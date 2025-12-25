@@ -72,6 +72,9 @@ export const DEFAULT_THEME: Theme = {
     activeTabColor: '#00AAFF',
     inactiveTabColor: '#666666',
   },
+  commandPalette: {
+    borderColor: '#FFAA00',
+  },
 };
 
 /** Prefix key (used with Ctrl) */
