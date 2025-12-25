@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.41](https://github.com/monotykamary/openmux/compare/v0.2.40...v0.2.41) (2025-12-25)
+
+
+### Bug Fixes
+
+* **terminal:** defer scrollback renders until complete ([51af1fb](https://github.com/monotykamary/openmux/commit/51af1fba5b603d3e8d7905aa5fd3d0a47c6db55c))
+* **terminal:** gate scrollback prefetch to user scroll ([5df0141](https://github.com/monotykamary/openmux/commit/5df0141f2411cc6f4adb4aa9c295bfca85acf6d4))
+* **terminal:** prefetch recent scrollback lines ([8939c60](https://github.com/monotykamary/openmux/commit/8939c6044f3e87b2123dbc8c6c2a22818793cca7))
+* **terminal:** remove scrollback ring buffer ([0a55422](https://github.com/monotykamary/openmux/commit/0a554229a1448a944fd87df0e67e2b6cb881830a))
+* **terminal:** reuse recent rows for scrollback seam ([c0fee82](https://github.com/monotykamary/openmux/commit/c0fee82d87deda43fbcfbf9dcc190439c207cf2a))
+* **terminal:** stabilize scrollback seam rendering ([c8f2806](https://github.com/monotykamary/openmux/commit/c8f28064d646f010fe8e49b6766a0c6353d6c2d0))
+
+
+### Tests
+
+* **terminal:** cover scrollback render guard ([7668b3e](https://github.com/monotykamary/openmux/commit/7668b3ed2965c66618db2dfc6f1af574962f9d3b))
+
+
+### Documentation
+
+* **terminal:** clarify scrollback guard role ([439ad05](https://github.com/monotykamary/openmux/commit/439ad055080b7da515004f52493d81b459bdb843))
+
 ### [0.2.40](https://github.com/monotykamary/openmux/compare/v0.2.39...v0.2.40) (2025-12-24)
 
 
