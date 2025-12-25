@@ -23,29 +23,26 @@ const createCell = (char: string): TerminalCell => ({
 const createRow = (char: string): TerminalCell[] => [createCell(char)];
 
 describe('scrollback-guard', () => {
-  it('uses recentRows fallback to avoid missing scrollback rows', () => {
+  it('flags missing scrollback rows when cache has gaps', () => {
     const rows = 3;
     const desiredScrollbackLength = 10;
     const desiredViewportOffset = 5;
     const desiredRowCache = [createRow('A'), null, createRow('C')];
-    const recentRows = new Map<number, TerminalCell[]>();
-    recentRows.set(6, createRow('B'));
 
     const result = guardScrollbackRender({
       desiredViewportOffset,
       desiredScrollbackLength,
       rows,
       desiredRowCache,
-      recentRows,
       lastStableViewportOffset: desiredViewportOffset,
       lastStableScrollbackLength: desiredScrollbackLength,
       lastObservedViewportOffset: desiredViewportOffset,
       lastObservedScrollbackLength: desiredScrollbackLength,
     });
 
-    expect(result.hasMissingScrollback).toBe(false);
-    expect(result.shouldDefer).toBe(false);
-    expect(result.renderRowCache[1]?.[0]?.char).toBe('B');
+    expect(result.hasMissingScrollback).toBe(true);
+    expect(result.shouldDefer).toBe(true);
+    expect(result.renderRowCache[1]).toBeNull();
   });
 
   it('defers when scrolled back and scrollback rows are missing', () => {
@@ -59,7 +56,6 @@ describe('scrollback-guard', () => {
       desiredScrollbackLength,
       rows,
       desiredRowCache,
-      recentRows: new Map(),
       lastStableViewportOffset: 3,
       lastStableScrollbackLength: 8,
       lastObservedViewportOffset: 3,
@@ -83,7 +79,6 @@ describe('scrollback-guard', () => {
       desiredScrollbackLength,
       rows,
       desiredRowCache,
-      recentRows: new Map(),
       lastStableViewportOffset: 5,
       lastStableScrollbackLength: 10,
       lastObservedViewportOffset: 5,
@@ -105,7 +100,6 @@ describe('scrollback-guard', () => {
       desiredScrollbackLength,
       rows,
       desiredRowCache,
-      recentRows: new Map(),
       lastStableViewportOffset: 5,
       lastStableScrollbackLength: 10,
       lastObservedViewportOffset: 5,

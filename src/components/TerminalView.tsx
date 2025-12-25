@@ -104,14 +104,7 @@ export function TerminalView(props: TerminalViewProps) {
   let contentDirty = true;
   // Cache emulator for sync access to scrollback lines
   let emulator: ITerminalEmulator | null = null;
-  // Cache recent rows keyed by absolute Y to cover scrollback seam misses.
-  let recentRows = new Map<number, TerminalCell[]>();
-  let recentRowOrder: number[] = [];
   let lastScrollbackLength: number | null = null;
-  const recordRecentRow = (absoluteY: number, row: TerminalCell[]): void => {
-    recentRows.set(absoluteY, row);
-    recentRowOrder.push(absoluteY);
-  };
   const recentPrefetchWindow = 32;
   // Track last viewport/scrollback combo that rendered without seam gaps.
   let lastStableViewportOffset = 0;
@@ -238,10 +231,7 @@ export function TerminalView(props: TerminalViewProps) {
               if (scrollbackDelta > 0 && emulator) {
                 const start = Math.max(0, scrollState.scrollbackLength - recentPrefetchWindow);
                 for (let offset = start; offset < scrollState.scrollbackLength; offset++) {
-                  const line = emulator.getScrollbackLine(offset);
-                  if (line) {
-                    recordRecentRow(offset, line);
-                  }
+                  emulator.getScrollbackLine(offset);
                 }
               }
             }
@@ -348,7 +338,6 @@ export function TerminalView(props: TerminalViewProps) {
       desiredScrollbackLength,
       rows,
       desiredRowCache,
-      recentRows,
       lastStableViewportOffset,
       lastStableScrollbackLength,
       lastObservedViewportOffset,
@@ -414,21 +403,7 @@ export function TerminalView(props: TerminalViewProps) {
     for (let y = 0; y < rows; y++) {
       let row = rowCache[y];
       const absoluteY = renderScrollbackLength - renderViewportOffset + y;
-      if (renderViewportOffset > 0 && row === null && recentRows.size > 0) {
-        row = recentRows.get(absoluteY) ?? row;
-      }
-      if (row) {
-        recordRecentRow(absoluteY, row);
-      }
       renderRow(buffer, row, y, cols, offsetX, offsetY, renderOptions, renderDeps, fallbackFg, fallbackBg);
-    }
-
-    const recentRowLimit = Math.max(100, rows * 4);
-    while (recentRowOrder.length > recentRowLimit) {
-      const oldest = recentRowOrder.shift();
-      if (oldest !== undefined && !recentRowOrder.includes(oldest)) {
-        recentRows.delete(oldest);
-      }
     }
 
     // Paint any unused area (when cols/rows are smaller than the pane) to avoid stale/transparent regions

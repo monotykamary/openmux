@@ -12,7 +12,6 @@ export interface ScrollbackGuardOptions {
   desiredScrollbackLength: number
   rows: number
   desiredRowCache: (TerminalCell[] | null)[]
-  recentRows: Map<number, TerminalCell[]>
   lastStableViewportOffset: number
   lastStableScrollbackLength: number
   lastObservedViewportOffset: number
@@ -36,7 +35,6 @@ export function guardScrollbackRender(
     desiredScrollbackLength,
     rows,
     desiredRowCache,
-    recentRows,
     lastStableViewportOffset,
     lastStableScrollbackLength,
     lastObservedViewportOffset,
@@ -53,10 +51,7 @@ export function guardScrollbackRender(
   const renderRowCache: (TerminalCell[] | null)[] = new Array(rows)
   for (let y = 0; y < rows; y++) {
     const absoluteY = desiredScrollbackLength - desiredViewportOffset + y
-    let row = desiredRowCache[y]
-    if (desiredViewportOffset > 0 && row === null && recentRows.size > 0) {
-      row = recentRows.get(absoluteY) ?? row
-    }
+    const row = desiredRowCache[y]
     renderRowCache[y] = row
     if (row === null && absoluteY >= 0 && absoluteY < desiredScrollbackLength) {
       hasMissingScrollback = true
