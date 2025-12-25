@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.43](https://github.com/monotykamary/openmux/compare/v0.2.42...v0.2.43) (2025-12-25)
+
+
+### Features
+
+* add command palette UI ([41bbb08](https://github.com/monotykamary/openmux/commit/41bbb08db0f14b185d7c4f96db5d840473be2b13))
+
 ### [0.2.42](https://github.com/monotykamary/openmux/compare/v0.2.41...v0.2.42) (2025-12-25)
 
 
