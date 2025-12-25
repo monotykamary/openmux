@@ -226,7 +226,7 @@ export function TerminalView(props: TerminalViewProps) {
             // This prevents race conditions where render uses stale scroll state from cache
             scrollState = update.scrollState;
 
-            if (lastScrollbackLength !== null) {
+            if (lastScrollbackLength !== null && scrollState.viewportOffset > 0) {
               const scrollbackDelta = scrollState.scrollbackLength - lastScrollbackLength;
               if (scrollbackDelta > 0 && emulator) {
                 const start = Math.max(0, scrollState.scrollbackLength - recentPrefetchWindow);
@@ -312,22 +312,6 @@ export function TerminalView(props: TerminalViewProps) {
       { viewportOffset: desiredViewportOffset, scrollbackLength: desiredScrollbackLength, rows }
     );
 
-    // Schedule prefetch for missing scrollback lines with buffer zone
-    const prefetchRequest = calculatePrefetchRequest(
-      ptyId,
-      firstMissingOffset,
-      lastMissingOffset,
-      desiredScrollbackLength,
-      rows
-    );
-    const supportsPrefetch = !!emulator &&
-      typeof (emulator as { prefetchScrollbackLines?: unknown }).prefetchScrollbackLines === 'function';
-    if (prefetchRequest && supportsPrefetch && !prefetchInProgress && executePrefetchFn) {
-      pendingPrefetch = prefetchRequest;
-      // Execute prefetch asynchronously (don't block render)
-      queueMicrotask(executePrefetchFn);
-    }
-
     if (lastStableScrollbackLength === 0 && desiredScrollbackLength > 0) {
       lastStableScrollbackLength = desiredScrollbackLength;
       lastStableViewportOffset = desiredViewportOffset;
@@ -343,6 +327,23 @@ export function TerminalView(props: TerminalViewProps) {
       lastObservedViewportOffset,
       lastObservedScrollbackLength,
     });
+
+    // Schedule prefetch for missing scrollback lines with buffer zone only when user scrolls.
+    const prefetchRequest = calculatePrefetchRequest(
+      ptyId,
+      firstMissingOffset,
+      lastMissingOffset,
+      desiredScrollbackLength,
+      rows
+    );
+    const supportsPrefetch = !!emulator &&
+      typeof (emulator as { prefetchScrollbackLines?: unknown }).prefetchScrollbackLines === 'function';
+    const shouldPrefetch = guard.isUserScroll || desiredViewportOffset > 0;
+    if (prefetchRequest && supportsPrefetch && !prefetchInProgress && executePrefetchFn && shouldPrefetch) {
+      pendingPrefetch = prefetchRequest;
+      // Execute prefetch asynchronously (don't block render)
+      queueMicrotask(executePrefetchFn);
+    }
     lastObservedViewportOffset = desiredViewportOffset;
     lastObservedScrollbackLength = desiredScrollbackLength;
 
