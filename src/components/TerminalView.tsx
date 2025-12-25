@@ -106,6 +106,12 @@ export function TerminalView(props: TerminalViewProps) {
   // Cache recent rows keyed by absolute Y to cover scrollback seam misses.
   let recentRows = new Map<number, TerminalCell[]>();
   let recentRowOrder: number[] = [];
+  let lastScrollbackLength: number | null = null;
+  const recordRecentRow = (absoluteY: number, row: TerminalCell[]): void => {
+    recentRows.set(absoluteY, row);
+    recentRowOrder.push(absoluteY);
+  };
+  const recentPrefetchWindow = 32;
   // Version counter to trigger re-renders when state changes
   const [version, setVersion] = createSignal(0);
   // Track pending scrollback prefetch to avoid duplicate requests
@@ -219,6 +225,21 @@ export function TerminalView(props: TerminalViewProps) {
             // Update scroll state from unified update to ensure it's in sync with terminal state
             // This prevents race conditions where render uses stale scroll state from cache
             scrollState = update.scrollState;
+
+            if (lastScrollbackLength !== null) {
+              const scrollbackDelta = scrollState.scrollbackLength - lastScrollbackLength;
+              if (scrollbackDelta > 0 && emulator) {
+                const start = Math.max(0, scrollState.scrollbackLength - recentPrefetchWindow);
+                for (let offset = start; offset < scrollState.scrollbackLength; offset++) {
+                  const line = emulator.getScrollbackLine(offset);
+                  if (line) {
+                    recordRecentRow(offset, line);
+                  }
+                }
+              }
+            }
+            lastScrollbackLength = scrollState.scrollbackLength;
+
 
 
             // Mark content as dirty (actual terminal data changed)
@@ -342,8 +363,7 @@ export function TerminalView(props: TerminalViewProps) {
         row = recentRows.get(absoluteY) ?? row;
       }
       if (row) {
-        recentRows.set(absoluteY, row);
-        recentRowOrder.push(absoluteY);
+        recordRecentRow(absoluteY, row);
       }
       renderRow(buffer, row, y, cols, offsetX, offsetY, renderOptions, renderDeps, fallbackFg, fallbackBg);
     }
