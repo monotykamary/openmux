@@ -32,6 +32,7 @@ import {
   renderScrollbar,
   fetchRowsForRendering,
   calculatePrefetchRequest,
+  guardScrollbackRender,
 } from './terminal-view';
 
 const visiblePtyCounts = new Map<string, number>();
@@ -342,34 +343,25 @@ export function TerminalView(props: TerminalViewProps) {
       lastStableViewportOffset = desiredViewportOffset;
     }
 
-    let renderViewportOffset = desiredViewportOffset;
-    let renderScrollbackLength = desiredScrollbackLength;
-    let rowCache = desiredRowCache;
-    const scrollbackDelta = desiredScrollbackLength - lastObservedScrollbackLength;
-    const expectedViewportOffset = scrollbackDelta > 0
-      ? lastObservedViewportOffset + scrollbackDelta
-      : lastObservedViewportOffset;
-    const isUserScroll = desiredViewportOffset !== expectedViewportOffset;
+    const guard = guardScrollbackRender({
+      desiredViewportOffset,
+      desiredScrollbackLength,
+      rows,
+      desiredRowCache,
+      recentRows,
+      lastStableViewportOffset,
+      lastStableScrollbackLength,
+      lastObservedViewportOffset,
+      lastObservedScrollbackLength,
+    });
     lastObservedViewportOffset = desiredViewportOffset;
     lastObservedScrollbackLength = desiredScrollbackLength;
-    let hasMissingScrollback = false;
-    const renderRowCache: (TerminalCell[] | null)[] = new Array(rows);
-    for (let y = 0; y < rows; y++) {
-      const absoluteY = desiredScrollbackLength - desiredViewportOffset + y;
-      let row = desiredRowCache[y];
-      if (desiredViewportOffset > 0 && row === null && recentRows.size > 0) {
-        row = recentRows.get(absoluteY) ?? row;
-      }
-      renderRowCache[y] = row;
-      if (row === null && absoluteY >= 0 && absoluteY < desiredScrollbackLength) {
-        hasMissingScrollback = true;
-      }
-    }
-    const shouldDefer = (isUserScroll || desiredViewportOffset > 0) && hasMissingScrollback;
 
-    if (
-      shouldDefer
-    ) {
+    let renderViewportOffset = guard.renderViewportOffset;
+    let renderScrollbackLength = guard.renderScrollbackLength;
+    let rowCache = guard.renderRowCache;
+
+    if (guard.shouldDefer) {
       renderViewportOffset = Math.min(lastStableViewportOffset, desiredScrollbackLength);
       renderScrollbackLength = Math.min(lastStableScrollbackLength, desiredScrollbackLength);
       if (lastStableRowCache) {
@@ -385,8 +377,8 @@ export function TerminalView(props: TerminalViewProps) {
     } else {
       lastStableViewportOffset = desiredViewportOffset;
       lastStableScrollbackLength = desiredScrollbackLength;
-      lastStableRowCache = renderRowCache.slice();
-      rowCache = renderRowCache;
+      lastStableRowCache = guard.renderRowCache.slice();
+      rowCache = guard.renderRowCache;
     }
 
     const isAtBottom = checkIsAtBottom(renderViewportOffset);

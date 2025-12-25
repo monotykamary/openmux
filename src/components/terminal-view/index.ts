@@ -22,3 +22,9 @@ export {
   type RowFetchResult,
   type PrefetchRequest,
 } from './row-fetching'
+
+export {
+  guardScrollbackRender,
+  type ScrollbackGuardOptions,
+  type ScrollbackGuardResult,
+} from './scrollback-guard'
