@@ -15,6 +15,7 @@ export {
   writeToPty,
   resizePty,
   getPtyCwd,
+  getPtyForegroundProcess,
   destroyPty,
   destroyAllPtys,
   getTerminalState,
@@ -101,6 +102,9 @@ export {
   setSessionCwdMap,
   getSessionCwd,
   clearSessionCwdMap,
+  setSessionCommandMap,
+  getSessionCommand,
+  clearSessionCommandMap,
   setActiveSessionIdForShim,
   getActiveSessionIdForShim,
 } from "./app-coordinator-bridge"

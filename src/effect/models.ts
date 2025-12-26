@@ -104,6 +104,7 @@ export class SessionIndex extends Schema.Class<SessionIndex>("SessionIndex")({
 export class TemplatePaneData extends Schema.Class<TemplatePaneData>("TemplatePaneData")({
   role: Schema.Literal("main", "stack"),
   cwd: Schema.optional(Schema.String),
+  command: Schema.optional(Schema.String),
 }) {}
 
 /** Template workspace definition */

@@ -104,10 +104,12 @@ export function buildLayoutFromTemplate(
 ): {
   workspaces: Workspaces
   cwdMap: Map<string, string>
+  commandMap: Map<string, string>
   activeWorkspaceId: WorkspaceId
 } {
   resetPaneIdCounter()
   const cwdMap = new Map<string, string>()
+  const commandMap = new Map<string, string>()
   const workspaces: Workspaces = {}
   const workspaceMap = new Map<number, TemplateWorkspace>()
 
@@ -142,12 +144,18 @@ export function buildLayoutFromTemplate(
       title: "shell",
     } satisfies PaneData
     cwdMap.set(mainPaneId, mainPaneData.cwd ?? paneDefaultsCwd)
+    if (mainPaneData.command) {
+      commandMap.set(mainPaneId, mainPaneData.command)
+    }
 
     const stackPanes: PaneData[] = []
     for (const pane of panes.slice(1)) {
       const paneId = generatePaneId()
       stackPanes.push({ id: paneId, title: "shell" })
       cwdMap.set(paneId, pane.cwd ?? paneDefaultsCwd)
+      if (pane.command) {
+        commandMap.set(paneId, pane.command)
+      }
     }
 
     workspace.stackPanes = stackPanes
@@ -161,6 +169,7 @@ export function buildLayoutFromTemplate(
   return {
     workspaces,
     cwdMap,
+    commandMap,
     activeWorkspaceId: 1,
   }
 }

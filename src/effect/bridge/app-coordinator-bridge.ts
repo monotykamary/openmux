@@ -14,6 +14,8 @@ const createdPtys = new Set<string>()
 
 /** Map of pane ID to CWD for session restoration (fast sync access) */
 const sessionCwdMap = new Map<string, string>()
+/** Map of pane ID to command for template restoration (fast sync access) */
+const sessionCommandMap = new Map<string, string>()
 
 /** Active session ID for shim mapping */
 let activeSessionId: string | null = null
@@ -73,6 +75,35 @@ export function getSessionCwd(paneId: string): string | undefined {
  */
 export function clearSessionCwdMap(): void {
   sessionCwdMap.clear()
+}
+
+// =============================================================================
+// Session Command Map (SYNCHRONOUS for performance)
+// =============================================================================
+
+/**
+ * Set the session command map for panes being restored.
+ */
+export function setSessionCommandMap(commandMap: Map<string, string>): void {
+  sessionCommandMap.clear()
+  for (const [key, value] of commandMap) {
+    sessionCommandMap.set(key, value)
+  }
+}
+
+/**
+ * Get the command for a pane from the session command map.
+ * SYNCHRONOUS for performance - this is called in hot path during pane creation.
+ */
+export function getSessionCommand(paneId: string): string | undefined {
+  return sessionCommandMap.get(paneId)
+}
+
+/**
+ * Clear the session command map.
+ */
+export function clearSessionCommandMap(): void {
+  sessionCommandMap.clear()
 }
 
 // =============================================================================

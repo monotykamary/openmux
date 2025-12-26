@@ -37,6 +37,7 @@ import {
   markPtyCreated,
   isPtyCreated,
   getSessionCwd as getSessionCwdFromCoordinator,
+  getSessionCommand as getSessionCommandFromCoordinator,
   onShimDetached,
   shutdownShim,
 } from './effect/bridge';
@@ -473,9 +474,16 @@ function AppContent() {
             markPtyCreated(pane.id);
 
             // Fire-and-forget PTY creation - don't await to avoid blocking
-            createPTY(pane.id, cols, rows, cwd).catch(err => {
-              console.error(`PTY creation failed for ${pane.id}:`, err);
-            });
+            createPTY(pane.id, cols, rows, cwd)
+              .then((ptyId) => {
+                const command = getSessionCommandFromCoordinator(pane.id);
+                if (command) {
+                  writeToPTY(ptyId, `${command}\n`);
+                }
+              })
+              .catch(err => {
+                console.error(`PTY creation failed for ${pane.id}:`, err);
+              });
 
             return true;
           } catch (err) {

@@ -117,6 +117,8 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 interface SessionProviderProps extends ParentProps {
   /** Function to get CWD for a PTY ID */
   getCwd: (ptyId: string) => Promise<string>;
+  /** Function to get foreground process for a PTY ID */
+  getForegroundProcess: (ptyId: string) => Promise<string | undefined>;
   /** Function to get current workspaces */
   getWorkspaces: () => Workspaces;
   /** Function to get active workspace ID */
@@ -126,6 +128,7 @@ interface SessionProviderProps extends ParentProps {
     workspaces: Workspaces,
     activeWorkspaceId: WorkspaceId,
     cwdMap: Map<string, string>,
+    commandMap: Map<string, string>,
     sessionId: string
   ) => Promise<void>;
   /** Callback to suspend PTYs before switching (saves mapping, doesn't destroy) */
@@ -203,7 +206,13 @@ export function SessionProvider(props: SessionProviderProps) {
 
     await props.resetLayoutForTemplate();
     const layout = buildLayoutFromTemplate(template);
-    await props.onSessionLoad(layout.workspaces, layout.activeWorkspaceId, layout.cwdMap, activeSessionId);
+    await props.onSessionLoad(
+      layout.workspaces,
+      layout.activeWorkspaceId,
+      layout.cwdMap,
+      layout.commandMap,
+      activeSessionId
+    );
   };
 
   const saveTemplate = async (nameInput: string): Promise<string | null> => {
@@ -232,6 +241,18 @@ export function SessionProvider(props: SessionProviderProps) {
     let maxPaneCount = 1;
     let unifiedCwd: string | null = null;
     let cwdIsUniform = true;
+    const shellPath = process.env.SHELL ?? '';
+    const shellName = shellPath ? shellPath.split('/').pop() : null;
+
+    const normalizeCommand = (command: string | undefined) => {
+      if (!command) return undefined;
+      const trimmed = command.trim();
+      if (!trimmed) return undefined;
+      if (trimmed.includes('defunct')) return undefined;
+      if (shellName && trimmed === shellName) return undefined;
+      if (shellPath && trimmed === shellPath) return undefined;
+      return trimmed;
+    };
 
     for (const entry of workspaceEntries) {
       const workspace = entry.workspace;
@@ -241,17 +262,24 @@ export function SessionProvider(props: SessionProviderProps) {
 
       if (workspace.mainPane) {
         let cwd = fallbackCwd;
+        let command: string | undefined;
         if (workspace.mainPane.ptyId) {
           try {
             cwd = await props.getCwd(workspace.mainPane.ptyId);
           } catch {
             cwd = fallbackCwd;
           }
+          try {
+            command = await props.getForegroundProcess(workspace.mainPane.ptyId);
+          } catch {
+            command = undefined;
+          }
         }
         panes.push(
           TemplatePaneData.make({
             role: 'main',
             cwd,
+            command: normalizeCommand(command),
           })
         );
         if (!unifiedCwd) {
@@ -263,17 +291,24 @@ export function SessionProvider(props: SessionProviderProps) {
 
       for (const pane of workspace.stackPanes) {
         let cwd = fallbackCwd;
+        let command: string | undefined;
         if (pane.ptyId) {
           try {
             cwd = await props.getCwd(pane.ptyId);
           } catch {
             cwd = fallbackCwd;
           }
+          try {
+            command = await props.getForegroundProcess(pane.ptyId);
+          } catch {
+            command = undefined;
+          }
         }
         panes.push(
           TemplatePaneData.make({
             role: 'stack',
             cwd,
+            command: normalizeCommand(command),
           })
         );
         if (!unifiedCwd) {
@@ -349,7 +384,13 @@ export function SessionProvider(props: SessionProviderProps) {
         const data = await loadSessionData(activeId);
         if (data && Object.keys(data.workspaces).length > 0) {
           // IMPORTANT: Await onSessionLoad to ensure CWD map is set before initialized
-          await props.onSessionLoad(data.workspaces, data.activeWorkspaceId, data.cwdMap, activeId);
+          await props.onSessionLoad(
+            data.workspaces,
+            data.activeWorkspaceId,
+            data.cwdMap,
+            new Map(),
+            activeId
+          );
         }
       }
     }
@@ -434,7 +475,7 @@ export function SessionProvider(props: SessionProviderProps) {
     dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
 
     // Load empty workspaces for new session
-    await props.onSessionLoad({}, 1, new Map(), metadata.id);
+    await props.onSessionLoad({}, 1, new Map(), new Map(), metadata.id);
 
     return metadata;
   };
@@ -467,7 +508,7 @@ export function SessionProvider(props: SessionProviderProps) {
     if (data) {
       dispatch({ type: 'SET_ACTIVE_SESSION', id, session: data.metadata });
       // IMPORTANT: Await onSessionLoad to ensure CWD map is set before switching completes
-      await props.onSessionLoad(data.workspaces, data.activeWorkspaceId, data.cwdMap, id);
+      await props.onSessionLoad(data.workspaces, data.activeWorkspaceId, data.cwdMap, new Map(), id);
     }
 
     // Mark switching complete

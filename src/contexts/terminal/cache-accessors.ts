@@ -6,7 +6,7 @@
 import type { TerminalState } from '../../core/types';
 import type { ITerminalEmulator } from '../../terminal/emulator-interface';
 import type { PtyCaches } from '../../hooks/usePtySubscription';
-import { getPtyCwd } from '../../effect/bridge';
+import { getPtyCwd, getPtyForegroundProcess } from '../../effect/bridge';
 
 export interface CacheAccessorDeps {
   /** Unified caches for PTY state */
@@ -44,6 +44,13 @@ export function createCacheAccessors(deps: CacheAccessorDeps) {
    */
   const getSessionCwd = async (ptyId: string): Promise<string> => {
     return getPtyCwd(ptyId);
+  };
+
+  /**
+   * Get foreground process name for a specific PTY session
+   */
+  const getSessionForegroundProcess = async (ptyId: string): Promise<string | undefined> => {
+    return getPtyForegroundProcess(ptyId);
   };
 
   /**
@@ -124,6 +131,7 @@ export function createCacheAccessors(deps: CacheAccessorDeps) {
   return {
     getFocusedCwd,
     getSessionCwd,
+    getSessionForegroundProcess,
     getFocusedCursorKeyMode,
     isMouseTrackingEnabled,
     isAlternateScreen,

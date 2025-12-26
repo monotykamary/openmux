@@ -22,12 +22,22 @@ interface TemplateOverlayProps {
 }
 
 type TabMode = 'apply' | 'save';
+type SaveSummaryLine =
+  | { type: 'text'; value: string }
+  | { type: 'pane'; prefix: string; label: string; cwdTail: string; hasProcess: boolean };
 
 function getCombos(bindings: ResolvedKeybindingMap, action: string): string[] {
   return bindings.byAction.get(action) ?? [];
 }
 
 function truncate(text: string, width: number): string {
+  if (width <= 0) return '';
+  if (text.length <= width) return text.padEnd(width);
+  if (width <= 3) return text.slice(0, width);
+  return `${text.slice(0, width - 3)}...`;
+}
+
+function fitLabel(text: string, width: number): string {
   if (width <= 0) return '';
   if (text.length <= width) return text.padEnd(width);
   if (width <= 3) return text.slice(0, width);
@@ -89,6 +99,7 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
 
   const [saveName, setSaveName] = createSignal('New template');
   const [paneCwds, setPaneCwds] = createSignal<Map<string, string>>(new Map());
+  const [paneProcesses, setPaneProcesses] = createSignal<Map<string, string>>(new Map());
   let cwdFetchSeq = 0;
 
   createEffect(() => {
@@ -104,24 +115,45 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
     if (!session.showTemplateOverlay || tab() !== 'save') return;
     const summary = currentSummary();
     const fallbackCwd = process.env.OPENMUX_ORIGINAL_CWD ?? process.cwd();
+    const shellPath = process.env.SHELL ?? '';
+    const shellName = shellPath ? shellPath.split('/').pop() : null;
     const seq = ++cwdFetchSeq;
     const panes = summary.workspaces.flatMap((workspace) => workspace.panes);
 
     const fetchCwds = async () => {
       const next = new Map<string, string>();
+      const nextProcesses = new Map<string, string>();
       for (const pane of panes) {
         let cwd = fallbackCwd;
+        let processName: string | undefined;
         if (pane.ptyId) {
           try {
             cwd = await terminal.getSessionCwd(pane.ptyId);
           } catch {
             cwd = fallbackCwd;
           }
+          try {
+            processName = await terminal.getSessionForegroundProcess(pane.ptyId);
+          } catch {
+            processName = undefined;
+          }
         }
         next.set(pane.id, abbreviatePath(cwd));
+        if (processName) {
+          const trimmed = processName.trim();
+          if (
+            trimmed &&
+            !trimmed.includes('defunct') &&
+            trimmed !== shellPath &&
+            trimmed !== shellName
+          ) {
+            nextProcesses.set(pane.id, trimmed);
+          }
+        }
       }
       if (seq === cwdFetchSeq) {
         setPaneCwds(next);
+        setPaneProcesses(nextProcesses);
       }
     };
 
@@ -363,11 +395,12 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
   const saveSummaryLines = createMemo(() => {
     const summary = currentSummary();
     const cwdMap = paneCwds();
+    const processMap = paneProcesses();
     const fallbackCwd = abbreviatePath(process.env.OPENMUX_ORIGINAL_CWD ?? process.cwd());
-    const lines: string[] = [];
+    const lines: SaveSummaryLine[] = [];
 
     if (summary.workspaceCount === 0) {
-      lines.push('No panes to save');
+      lines.push({ type: 'text', value: 'No panes to save' });
       return lines;
     }
 
@@ -377,15 +410,23 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
       const workspacePrefix = isLastWorkspace ? '└─' : '├─';
       const paneIndent = isLastWorkspace ? '   ' : '│  ';
 
-      lines.push(
-        `${workspacePrefix} workspace [${workspace.id}] (${workspace.layoutMode.toUpperCase()})`
-      );
+      lines.push({
+        type: 'text',
+        value: `${workspacePrefix} workspace [${workspace.id}] (${workspace.layoutMode.toUpperCase()})`,
+      });
 
       workspace.panes.forEach((pane, paneIndex) => {
         const cwd = cwdMap.get(pane.id) ?? fallbackCwd;
+        const processName = processMap.get(pane.id);
         const isLastPane = paneIndex === paneCount - 1;
         const panePrefix = isLastPane ? '└─' : '├─';
-        lines.push(`${paneIndent}${panePrefix} pane ${paneIndex + 1} [${pathTail(cwd)}]`);
+        lines.push({
+          type: 'pane',
+          prefix: `${paneIndent}${panePrefix} `,
+          label: processName ?? `pane ${paneIndex + 1}`,
+          cwdTail: pathTail(cwd),
+          hasProcess: Boolean(processName),
+        });
       });
     });
 
@@ -420,6 +461,54 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
   };
   const overlayX = () => Math.floor((props.width - overlayWidth()) / 2);
   const overlayY = () => Math.floor((props.height - overlayHeight()) / 2);
+
+  const paneLabelWidth = createMemo(() => {
+    const summary = currentSummary();
+    const processMap = paneProcesses();
+    let maxLen = 0;
+    summary.workspaces.forEach((workspace) => {
+      workspace.panes.forEach((pane, paneIndex) => {
+        const label = processMap.get(pane.id) ?? `pane ${paneIndex + 1}`;
+        maxLen = Math.max(maxLen, label.length);
+      });
+    });
+    return Math.max(1, maxLen);
+  });
+
+  const renderSaveLine = (line: SaveSummaryLine) => {
+    const maxWidth = Math.max(1, overlayWidth() - 4);
+    if (line.type === 'text') {
+      return (
+        <box style={{ flexDirection: 'row', height: 1 }}>
+          <text fg="#888888">
+            {truncate(`${saveIndent}${line.value}`, maxWidth)}
+          </text>
+        </box>
+      );
+    }
+
+    const prefix = `${saveIndent}${line.prefix}`;
+    const suffix = ` [${line.cwdTail}]`;
+    const available = maxWidth - prefix.length - suffix.length;
+    if (available <= 0) {
+      const fallback = `${prefix}${line.label}${suffix}`;
+      return (
+        <box style={{ flexDirection: 'row', height: 1 }}>
+          <text fg="#888888">{truncate(fallback, maxWidth)}</text>
+        </box>
+      );
+    }
+
+    const labelWidth = Math.min(paneLabelWidth(), available);
+    const labelText = fitLabel(line.label, labelWidth);
+    return (
+      <box style={{ flexDirection: 'row', height: 1 }}>
+        <text fg="#888888">{prefix}</text>
+        <text fg={line.hasProcess ? '#CCCCCC' : '#888888'}>{labelText}</text>
+        <text fg="#888888">{suffix}</text>
+      </box>
+    );
+  };
 
   const getTemplateStats = (template: TemplateSession) => {
     if (template.workspaces.length > 0) {
@@ -538,11 +627,7 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
                 </box>
                 <For each={visibleSaveSummaryLines()}>
                   {(line) => (
-                    <box style={{ height: 1 }}>
-                      <text fg="#888888">
-                        {truncate(`${saveIndent}${line}`, overlayWidth() - 4)}
-                      </text>
-                    </box>
+                    renderSaveLine(line)
                   )}
                 </For>
                 <Show when={saveSummaryTruncated()}>

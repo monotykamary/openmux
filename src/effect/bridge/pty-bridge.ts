@@ -76,6 +76,22 @@ export async function getPtyCwd(ptyId: string): Promise<string> {
 }
 
 /**
+ * Get the foreground process name for a PTY session.
+ */
+export async function getPtyForegroundProcess(ptyId: string): Promise<string | undefined> {
+  try {
+    return await runEffect(
+      Effect.gen(function* () {
+        const pty = yield* Pty
+        return yield* pty.getForegroundProcess(PtyId.make(ptyId))
+      })
+    )
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Destroy a PTY session.
  * This is fire-and-forget - deferred to next macrotask to avoid blocking animations.
  * Using setTimeout(0) instead of queueMicrotask because microtasks run before

@@ -13,6 +13,8 @@ import {
   clearPtyTracking,
   setSessionCwdMap,
   clearSessionCwdMap,
+  setSessionCommandMap,
+  clearSessionCommandMap,
 } from '../effect/bridge';
 
 interface SessionBridgeProps extends ParentProps {}
@@ -25,6 +27,7 @@ export function SessionBridge(props: SessionBridgeProps) {
     resumeSession,
     cleanupSessionPtys,
     getSessionCwd,
+    getSessionForegroundProcess,
     destroyAllPTYs,
   } = useTerminal();
 
@@ -33,6 +36,10 @@ export function SessionBridge(props: SessionBridgeProps) {
   // Callbacks for SessionProvider
   const getCwd = async (ptyId: string) => {
     return getSessionCwd(ptyId);
+  };
+
+  const getForegroundProcess = async (ptyId: string) => {
+    return getSessionForegroundProcess(ptyId);
   };
 
   const getWorkspaces = () => {
@@ -47,6 +54,7 @@ export function SessionBridge(props: SessionBridgeProps) {
     workspaces: Workspaces,
     activeWorkspaceId: WorkspaceId,
     cwdMap: Map<string, string>,
+    commandMap: Map<string, string>,
     sessionId: string
   ) => {
     // Try to resume PTYs for this session (if we've visited it before)
@@ -77,6 +85,7 @@ export function SessionBridge(props: SessionBridgeProps) {
     // IMPORTANT: Store cwdMap BEFORE loading session
     // This ensures CWDs are available when PTY creation effect runs
     setSessionCwdMap(cwdMap);
+    setSessionCommandMap(commandMap);
 
     // Load workspaces into layout (this triggers reactive effects)
     loadSession({ workspaces, activeWorkspaceId });
@@ -88,6 +97,7 @@ export function SessionBridge(props: SessionBridgeProps) {
     // Clear PTY tracking and CWD map to prevent stale state
     clearPtyTracking();
     clearSessionCwdMap();
+    clearSessionCommandMap();
   };
 
   const onDeleteSession = (sessionId: string) => {
@@ -118,12 +128,14 @@ export function SessionBridge(props: SessionBridgeProps) {
     destroyAllPTYs();
     clearPtyTracking();
     clearSessionCwdMap();
+    clearSessionCommandMap();
     await new Promise((resolve) => setTimeout(resolve, 0));
   };
 
   return (
     <SessionProvider
       getCwd={getCwd}
+      getForegroundProcess={getForegroundProcess}
       getWorkspaces={getWorkspaces}
       getActiveWorkspaceId={getActiveWorkspaceId}
       onSessionLoad={onSessionLoad}
