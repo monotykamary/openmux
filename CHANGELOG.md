@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.45](https://github.com/monotykamary/openmux/compare/v0.2.44...v0.2.45) (2025-12-26)
+
+
+### Features
+
+* **terminal:** use ghostty key encoder ([5c03480](https://github.com/monotykamary/openmux/commit/5c03480f5d3a15c48b919d9a2bd52f5c047daeb2))
+
 ### [0.2.44](https://github.com/monotykamary/openmux/compare/v0.2.43...v0.2.44) (2025-12-25)
 
 ### [0.2.43](https://github.com/monotykamary/openmux/compare/v0.2.42...v0.2.43) (2025-12-25)
