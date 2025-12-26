@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.50](https://github.com/monotykamary/openmux/compare/v0.2.49...v0.2.50) (2025-12-26)
+
+
+### Features
+
+* **templates:** persist commands and show process names ([dcbd169](https://github.com/monotykamary/openmux/commit/dcbd169d8642be9852803aad9b6b69a4120fef90))
+
 ### [0.2.49](https://github.com/monotykamary/openmux/compare/v0.2.48...v0.2.49) (2025-12-26)
 
 
