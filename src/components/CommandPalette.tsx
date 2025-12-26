@@ -6,10 +6,17 @@ import { Show, For, createMemo, createEffect } from 'solid-js';
 import { type SetStoreFunction } from 'solid-js/store';
 import { useConfig } from '../contexts/ConfigContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { formatComboSet, matchKeybinding, type ResolvedKeybindingMap } from '../core/keybindings';
+import {
+  formatComboSet,
+  formatKeyCombo,
+  matchKeybinding,
+  type ResolvedKeybindingMap,
+  type ResolvedKeybindings,
+} from '../core/keybindings';
 import type { CommandPaletteCommand } from '../core/command-palette';
 import { useOverlayKeyboardHandler } from '../contexts/keyboard/use-overlay-keyboard-handler';
 import type { KeyboardEvent } from '../effect/bridge';
+import { RGBA } from '@opentui/core';
 
 export interface CommandPaletteState {
   show: boolean;
@@ -28,6 +35,21 @@ interface CommandPaletteProps {
 
 function getCombos(bindings: ResolvedKeybindingMap, action: string): string[] {
   return bindings.byAction.get(action) ?? [];
+}
+
+function getCommandKeybinding(bindings: ResolvedKeybindings, action: string): string {
+  const normalCombos = getCombos(bindings.normal, action);
+  if (normalCombos.length > 0) {
+    return formatKeyCombo(normalCombos[0]);
+  }
+
+  const prefixCombos = getCombos(bindings.prefix, action);
+  if (prefixCombos.length > 0) {
+    const prefixKey = formatKeyCombo(bindings.prefixKey);
+    return `${prefixKey} ${formatKeyCombo(prefixCombos[0])}`;
+  }
+
+  return '';
 }
 
 function filterCommands(commands: CommandPaletteCommand[], query: string): CommandPaletteCommand[] {
@@ -176,6 +198,27 @@ export function CommandPalette(props: CommandPaletteProps) {
     return filteredCommands().slice(start, start + listHeight());
   });
 
+  const commandBindings = createMemo(() => {
+    const bindings = config.keybindings();
+    const entries = filteredCommands().map((command) => [
+      command.id,
+      getCommandKeybinding(bindings, command.action),
+    ] as const);
+    return new Map(entries);
+  });
+
+  const keybindingColumnWidth = createMemo(() => {
+    const commands = visibleCommands();
+    if (commands.length === 0) return 0;
+    const maxBinding = Math.max(
+      ...commands.map((command) => commandBindings().get(command.id)?.length ?? 0),
+      0
+    );
+    const minTitleWidth = 18;
+    const available = Math.max(0, innerWidth() - minTitleWidth - 1);
+    return Math.min(maxBinding, available);
+  });
+
   const matchDisplay = () => {
     if (!hasQuery()) return '';
     if (resultCount() === 0) return '0 matches';
@@ -234,6 +277,8 @@ export function CommandPalette(props: CommandPaletteProps) {
                     command={command}
                     isSelected={listStartIndex() + index() === props.state.selectedIndex}
                     maxWidth={innerWidth()}
+                    keybinding={commandBindings().get(command.id) ?? ''}
+                    keybindingWidth={keybindingColumnWidth()}
                   />
                 </box>
               )}
@@ -249,6 +294,8 @@ interface CommandRowProps {
   command: CommandPaletteCommand;
   isSelected: boolean;
   maxWidth: number;
+  keybinding: string;
+  keybindingWidth: number;
 }
 
 function fitLine(text: string, width: number): string {
@@ -260,15 +307,40 @@ function fitLine(text: string, width: number): string {
   return text.padEnd(width);
 }
 
+function fitRight(text: string, width: number): string {
+  if (width <= 0) return '';
+  if (text.length > width) {
+    if (width <= 3) return text.slice(0, width);
+    return text.slice(0, width - 3) + '...';
+  }
+  return text.padStart(width);
+}
+
 function CommandRow(props: CommandRowProps) {
   const details = () => props.command.description ? ` - ${props.command.description}` : '';
-  const line = () => fitLine(`  ${props.command.title}${details()}`, props.maxWidth);
+  const keybindingWidth = () => props.keybindingWidth;
+  const keybindingText = () => fitRight(props.keybinding, keybindingWidth());
+  const titleWidth = () => Math.max(0, props.maxWidth - (keybindingWidth() ? keybindingWidth() + 1 : 0));
+  const left = () => fitLine(`  ${props.command.title}${details()}`, titleWidth());
+  const line = () => keybindingWidth() ? `${left()} ${keybindingText()}` : left();
   const fg = () => props.isSelected ? '#FFFFFF' : '#CCCCCC';
+  const bindingFg = () => (
+    props.isSelected
+      ? RGBA.fromInts(187, 187, 187, 128)
+      : RGBA.fromInts(119, 119, 119, 128)
+  );
   const bg = () => props.isSelected ? '#334455' : undefined;
 
   return (
-    <text fg={fg()} bg={bg()}>
-      {line()}
-    </text>
+    <box style={{ flexDirection: 'row' }}>
+      <text fg={fg()} bg={bg()}>
+        {left()}
+      </text>
+      <Show when={keybindingWidth()}>
+        <text fg={bindingFg()} bg={bg()}>
+          {` ${keybindingText()}`}
+        </text>
+      </Show>
+    </box>
   );
 }
