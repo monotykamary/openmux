@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.51](https://github.com/monotykamary/openmux/compare/v0.2.50...v0.2.51) (2025-12-26)
+
+
+### Bug Fixes
+
+* align template workspace ids with Effect types ([e65b11d](https://github.com/monotykamary/openmux/commit/e65b11d653a48a87939711dde65c7f7aed85231b))
+
 ### [0.2.50](https://github.com/monotykamary/openmux/compare/v0.2.49...v0.2.50) (2025-12-26)
 
 
