@@ -17,7 +17,8 @@ import { useTerminal } from '../contexts/TerminalContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useSelection } from '../contexts/SelectionContext';
 import { useSearch } from '../contexts/SearchContext';
-import { getHostBackgroundColor } from '../effect/bridge';
+import type { ITerminalEmulator } from '../terminal/emulator-interface';
+import { getEmulator, getHostBackgroundColor } from '../effect/bridge';
 import { useOverlayKeyboardHandler } from '../contexts/keyboard/use-overlay-keyboard-handler';
 import {
   PtyCard,
@@ -74,6 +75,31 @@ export function AggregateView(props: AggregateViewProps) {
   // Track if we're in search mode within aggregate view
   const [inSearchMode, setInSearchMode] = createSignal(false);
 
+  // Cache emulators for selected PTYs so input works across sessions.
+  const aggregateEmulators = new Map<string, ITerminalEmulator>();
+  const pendingEmulators = new Set<string>();
+  let emulatorEpoch = 0;
+
+  const resetAggregateEmulators = () => {
+    emulatorEpoch += 1;
+    aggregateEmulators.clear();
+    pendingEmulators.clear();
+  };
+
+  const preloadEmulator = (ptyId: string) => {
+    if (aggregateEmulators.has(ptyId) || pendingEmulators.has(ptyId)) return;
+    const currentEpoch = emulatorEpoch;
+    pendingEmulators.add(ptyId);
+    getEmulator(ptyId)
+      .then((emulator) => {
+        if (!emulator || currentEpoch !== emulatorEpoch) return;
+        aggregateEmulators.set(ptyId, emulator);
+      })
+      .finally(() => {
+        pendingEmulators.delete(ptyId);
+      });
+  };
+
   // Layout dimensions (memoized)
   const layout = createMemo(() =>
     calculateLayoutDimensions({ width: props.width, height: props.height })
@@ -83,6 +109,17 @@ export function AggregateView(props: AggregateViewProps) {
   onCleanup(() => {
     if (prefixTimeout) {
       clearTimeout(prefixTimeout);
+    }
+  });
+
+  createEffect(() => {
+    if (!state.showAggregateView) {
+      resetAggregateEmulators();
+      return;
+    }
+
+    if (state.selectedPtyId) {
+      preloadEmulator(state.selectedPtyId);
     }
   });
 
@@ -168,6 +205,19 @@ export function AggregateView(props: AggregateViewProps) {
     }, config.keybindings().prefixTimeoutMs);
   };
 
+  const getAggregateEmulatorSync = (ptyId: string) =>
+    aggregateEmulators.get(ptyId) ?? getEmulatorSync(ptyId);
+
+  const getAggregateTerminalStateSync = (ptyId: string) => {
+    const emulator = getAggregateEmulatorSync(ptyId);
+    return emulator?.getTerminalState() ?? getTerminalStateSync(ptyId);
+  };
+
+  const isAggregateMouseTrackingEnabled = (ptyId: string) => {
+    const emulator = getAggregateEmulatorSync(ptyId);
+    return emulator?.isMouseTrackingEnabled() ?? isMouseTrackingEnabled(ptyId);
+  };
+
   // Create keyboard handler using factory
   const keyboardHandler = createAggregateKeyboardHandler({
     getPreviewMode: () => state.previewMode,
@@ -177,7 +227,7 @@ export function AggregateView(props: AggregateViewProps) {
     getInSearchMode: inSearchMode,
     getPrefixActive: prefixActive,
     getKeybindings: () => config.keybindings(),
-    getEmulatorSync,
+    getEmulatorSync: getAggregateEmulatorSync,
     setFilterQuery,
     toggleShowInactive,
     setInSearchMode,
@@ -208,7 +258,7 @@ export function AggregateView(props: AggregateViewProps) {
     getListPaneWidth: () => layout().listPaneWidth,
     getPreviewInnerWidth: () => layout().previewInnerWidth,
     getPreviewInnerHeight: () => layout().previewInnerHeight,
-    isMouseTrackingEnabled,
+    isMouseTrackingEnabled: isAggregateMouseTrackingEnabled,
     getScrollState,
     scrollTerminal,
     startSelection,
@@ -216,8 +266,8 @@ export function AggregateView(props: AggregateViewProps) {
     completeSelection,
     clearSelection,
     getSelection,
-    getEmulatorSync,
-    getTerminalStateSync,
+    getEmulatorSync: getAggregateEmulatorSync,
+    getTerminalStateSync: getAggregateTerminalStateSync,
   });
 
   // Cleanup mouse handler state (auto-scroll intervals, pending selection) on unmount
