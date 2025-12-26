@@ -143,11 +143,9 @@ export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
       'escape': 'template.close',
       'tab': 'template.tab.save',
       'down': 'template.list.down',
-      'j': 'template.list.down',
       'up': 'template.list.up',
-      'k': 'template.list.up',
       'enter': 'template.apply',
-      'x': 'template.delete',
+      'ctrl+x': 'template.delete',
       'ctrl+d': 'template.delete',
     },
     save: {
