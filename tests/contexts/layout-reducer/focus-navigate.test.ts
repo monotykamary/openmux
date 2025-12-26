@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { PaneData } from '../../../src/core/types';
-import { layoutReducer } from '../../../src/core/operations/layout-actions';
+import { layoutReducer, generatePaneId } from '../../../src/core/operations/layout-actions';
 import {
   createInitialState,
   createWorkspaceWithPanes,
@@ -211,6 +211,30 @@ describe('Layout Reducer', () => {
 
         newState = layoutReducer(newState, { type: 'NAVIGATE', direction: 'south' });
         expect(newState.workspaces[1]!.focusedPaneId).toBe('pane-2');
+        expect(newState.workspaces[1]!.activeStackIndex).toBe(0);
+      });
+
+      it('should navigate within split tree before cycling tabs', () => {
+        const mainPane: PaneData = { id: generatePaneId() };
+        const stackPanes: PaneData[] = [
+          { id: generatePaneId() },
+          { id: generatePaneId() },
+        ];
+        let workspace = createWorkspaceWithPanes(1, mainPane, stackPanes, {
+          focusedPaneId: stackPanes[0]!.id,
+          activeStackIndex: 0,
+          layoutMode: 'stacked',
+        });
+        let state = createInitialState({
+          workspaces: { 1: workspace },
+        });
+
+        state = layoutReducer(state, { type: 'SPLIT_PANE', direction: 'horizontal' });
+        const splitWorkspace = state.workspaces[1]!;
+        expect(splitWorkspace.focusedPaneId).toBe('pane-4');
+
+        const newState = layoutReducer(state, { type: 'NAVIGATE', direction: 'north' });
+        expect(newState.workspaces[1]!.focusedPaneId).toBe(stackPanes[0]!.id);
         expect(newState.workspaces[1]!.activeStackIndex).toBe(0);
       });
     });

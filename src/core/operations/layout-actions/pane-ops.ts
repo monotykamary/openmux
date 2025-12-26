@@ -6,7 +6,7 @@
 import type { Direction, LayoutMode, Workspace } from '../../types';
 import type { LayoutState } from './types';
 import { getActiveWorkspace, updateWorkspace, recalculateLayout } from './helpers';
-import { containsPane, updatePaneInNode } from '../../layout-tree';
+import { containsPane, swapPaneInDirection, updatePaneInNode } from '../../layout-tree';
 
 /**
  * Handle SET_LAYOUT_MODE action
@@ -117,6 +117,32 @@ export function handleMovePane(state: LayoutState, direction: Direction): Layout
   const isMain = containsPane(workspace.mainPane, focusedId);
   const stackIndex = workspace.stackPanes.findIndex(p => containsPane(p, focusedId));
   const stackCount = workspace.stackPanes.length;
+  const focusedRoot = stackIndex >= 0 ? workspace.stackPanes[stackIndex]! : workspace.mainPane;
+
+  if (focusedRoot) {
+    const result = swapPaneInDirection(focusedRoot, focusedId, direction);
+    if (result.swapped) {
+      let updated: Workspace;
+      if (stackIndex >= 0) {
+        const newStack = workspace.stackPanes.map((pane, index) =>
+          index === stackIndex ? result.node : pane
+        );
+        updated = {
+          ...workspace,
+          stackPanes: newStack,
+          activeStackIndex: stackIndex >= 0 ? stackIndex : workspace.activeStackIndex,
+        };
+      } else {
+        updated = {
+          ...workspace,
+          mainPane: result.node,
+        };
+      }
+
+      updated = recalculateLayout(updated, state.viewport, state.config);
+      return { ...state, workspaces: updateWorkspace(state, updated), layoutVersion: state.layoutVersion + 1 };
+    }
+  }
 
   if ((direction === 'north' || direction === 'south') && stackIndex === -1) {
     return state;

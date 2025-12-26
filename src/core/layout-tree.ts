@@ -2,7 +2,7 @@
  * Layout tree helpers for split panes.
  */
 
-import type { LayoutNode, PaneData, SplitDirection, SplitNode } from './types';
+import type { Direction, LayoutNode, PaneData, SplitDirection, SplitNode } from './types';
 
 export function isSplitNode(node: LayoutNode): node is SplitNode {
   return (node as SplitNode).type === 'split';
@@ -115,4 +115,76 @@ export function findSiblingPane(node: LayoutNode, paneId: string): PaneData | nu
   };
 
   return search(node);
+}
+
+function getSiblingForDirection(
+  split: SplitNode,
+  side: 'first' | 'second',
+  direction: Direction
+): LayoutNode | null {
+  if (split.direction === 'vertical') {
+    if (direction === 'west' && side === 'second') return split.first;
+    if (direction === 'east' && side === 'first') return split.second;
+    return null;
+  }
+
+  if (direction === 'north' && side === 'second') return split.first;
+  if (direction === 'south' && side === 'first') return split.second;
+  return null;
+}
+
+export function findSiblingInDirection(
+  node: LayoutNode,
+  paneId: string,
+  direction: Direction
+): LayoutNode | null {
+  if (!isSplitNode(node)) return null;
+
+  if (containsPane(node.first, paneId)) {
+    const nested = findSiblingInDirection(node.first, paneId, direction);
+    if (nested) return nested;
+    return getSiblingForDirection(node, 'first', direction);
+  }
+
+  if (containsPane(node.second, paneId)) {
+    const nested = findSiblingInDirection(node.second, paneId, direction);
+    if (nested) return nested;
+    return getSiblingForDirection(node, 'second', direction);
+  }
+
+  return null;
+}
+
+export function swapPaneInDirection(
+  node: LayoutNode,
+  paneId: string,
+  direction: Direction
+): { node: LayoutNode; swapped: boolean } {
+  if (!isSplitNode(node)) return { node, swapped: false };
+
+  if (containsPane(node.first, paneId)) {
+    const result = swapPaneInDirection(node.first, paneId, direction);
+    if (result.swapped) {
+      const nextNode = result.node === node.first ? node : { ...node, first: result.node };
+      return { node: nextNode, swapped: true };
+    }
+    if (getSiblingForDirection(node, 'first', direction)) {
+      return { node: { ...node, first: node.second, second: node.first }, swapped: true };
+    }
+    return { node, swapped: false };
+  }
+
+  if (containsPane(node.second, paneId)) {
+    const result = swapPaneInDirection(node.second, paneId, direction);
+    if (result.swapped) {
+      const nextNode = result.node === node.second ? node : { ...node, second: result.node };
+      return { node: nextNode, swapped: true };
+    }
+    if (getSiblingForDirection(node, 'second', direction)) {
+      return { node: { ...node, first: node.second, second: node.first }, swapped: true };
+    }
+    return { node, swapped: false };
+  }
+
+  return { node, swapped: false };
 }
