@@ -220,7 +220,13 @@ export class Terminal implements IPty {
         }
         return;
       } else if (n < 0) {
-        // Error
+        // Error - treat as exit to avoid hanging panes
+        const exitCode = lib.symbols.bun_pty_get_exit_code(this.handle);
+        lib.symbols.bun_pty_close(this.handle);
+        if (!this._exitFired) {
+          this._exitFired = true;
+          this._onExit.fire({ exitCode });
+        }
         return;
       } else {
         // No data in ring buffer - sleep briefly before polling again

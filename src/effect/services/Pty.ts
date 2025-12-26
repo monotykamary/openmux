@@ -2,7 +2,7 @@
  * PTY service for managing terminal pseudo-terminal sessions.
  * Wraps zig-pty with native libghostty-vt parsing.
  */
-import { Context, Effect, Layer, Ref, HashMap, Option } from "effect"
+import { Context, Effect, Layer, Ref, HashMap, Option, Runtime } from "effect"
 import type { TerminalState, UnifiedTerminalUpdate } from "../../core/types"
 import type { ITerminalEmulator } from "../../terminal/emulator-interface"
 import { getHostColors, getDefaultColors } from "../../terminal/terminal-colors"
@@ -175,6 +175,19 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           return session.value
         })
 
+      // Create operations using factory
+      const operations = createOperations({
+        sessionsRef,
+        getSessionOrFail,
+        lifecycleRegistry,
+      })
+
+      const runtime = yield* Effect.runtime()
+      const runFork = Runtime.runFork(runtime)
+      const handleExit = (ptyId: PtyId, _exitCode: number) => {
+        runFork(operations.destroy(ptyId))
+      }
+
       // Create session factory
       const create = Effect.fn("Pty.create")(function* (options: {
         cols: Cols
@@ -189,6 +202,7 @@ export class Pty extends Context.Tag("@openmux/Pty")<
             defaultShell: config.defaultShell,
             onLifecycleEvent: (event) => lifecycleRegistry.notify(event),
             onTitleChange: (ptyId, title) => globalTitleRegistry.notifySync({ ptyId, title }),
+            onExit: handleExit,
           },
           options
         )
@@ -200,13 +214,6 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         yield* lifecycleRegistry.notify({ type: 'created', ptyId: id })
 
         return id
-      })
-
-      // Create operations using factory
-      const operations = createOperations({
-        sessionsRef,
-        getSessionOrFail,
-        lifecycleRegistry,
       })
 
       // Create subscriptions using factory

@@ -143,15 +143,42 @@ test "read returns child exited after process ends" {
     // Drain any remaining output
     var buf: [1024]u8 = undefined;
     var total_read: usize = 0;
-    while (true) {
+    var saw_exit = false;
+    var attempts: usize = 0;
+    while (attempts < 50) : (attempts += 1) {
         const n = exports.bun_pty_read(handle, &buf, buf.len);
-        if (n == constants.CHILD_EXITED) break;
-        if (n <= 0) break;
-        total_read += @intCast(n);
-        if (total_read > 10000) break; // Safety limit
+        if (n == constants.CHILD_EXITED) {
+            saw_exit = true;
+            break;
+        }
+        if (n > 0) {
+            total_read += @intCast(n);
+            if (total_read > 10000) break; // Safety limit
+        }
+        std.Thread.sleep(20 * std.time.ns_per_ms);
     }
 
-    // Eventually should get CHILD_EXITED
-    const final = exports.bun_pty_read(handle, &buf, buf.len);
-    try std.testing.expect(final == constants.CHILD_EXITED or final == 0);
+    try std.testing.expect(saw_exit);
+}
+
+test "read returns child exited even with no output" {
+    const handle = spawn_module.spawnPty("true", "", "", 80, 24);
+    try std.testing.expect(handle > 0);
+    defer exports.bun_pty_close(handle);
+
+    std.Thread.sleep(200 * std.time.ns_per_ms);
+
+    var buf: [256]u8 = undefined;
+    var saw_exit = false;
+    var attempts: usize = 0;
+    while (attempts < 50) : (attempts += 1) {
+        const n = exports.bun_pty_read(handle, &buf, buf.len);
+        if (n == constants.CHILD_EXITED) {
+            saw_exit = true;
+            break;
+        }
+        std.Thread.sleep(20 * std.time.ns_per_ms);
+    }
+
+    try std.testing.expect(saw_exit);
 }

@@ -23,6 +23,7 @@ export interface SessionFactoryDeps {
   defaultShell: string
   onLifecycleEvent: (event: { type: 'created' | 'destroyed'; ptyId: PtyId }) => Effect.Effect<void>
   onTitleChange: (ptyId: PtyId, title: string) => void
+  onExit?: (ptyId: PtyId, exitCode: number) => void
 }
 
 export interface CreateSessionOptions {
@@ -93,6 +94,7 @@ export function createSession(
       rows,
       cwd,
       shell,
+      closing: false,
       subscribers: new Set(),
       scrollSubscribers: new Set(),
       unifiedSubscribers: new Set(),
@@ -152,9 +154,13 @@ export function createSession(
 
     // Wire up exit handler
     pty.onExit(({ exitCode }) => {
+      if (session.closing) {
+        return
+      }
       for (const callback of session.exitCallbacks) {
         callback(exitCode)
       }
+      deps.onExit?.(id, exitCode)
     })
 
     return { id, session }

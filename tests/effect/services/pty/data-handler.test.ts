@@ -32,6 +32,7 @@ function createSession() {
     rows: 24,
     cwd: "",
     shell: "",
+    closing: false,
     subscribers: new Set(),
     scrollSubscribers: new Set(),
     unifiedSubscribers: new Set(),

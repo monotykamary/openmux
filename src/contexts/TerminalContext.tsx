@@ -30,6 +30,7 @@ import {
   setPanePosition,
   readFromClipboard,
   subscribeToAllTitleChanges,
+  subscribeToPtyLifecycle,
   getSessionPtyMapping,
 } from '../effect/bridge';
 import {
@@ -137,6 +138,7 @@ export function TerminalProvider(props: TerminalProviderProps) {
 
   // Track global title subscription
   let titleSubscriptionUnsub: (() => void) | null = null;
+  let lifecycleSubscriptionUnsub: (() => void) | null = null;
 
   // Helper to get focused PTY ID (uses centralized utility)
   const getFocusedPtyId = (): string | undefined => {
@@ -196,6 +198,13 @@ export function TerminalProvider(props: TerminalProviderProps) {
         }).then((unsub) => {
           titleSubscriptionUnsub = unsub;
         });
+        subscribeToPtyLifecycle((event) => {
+          if (event.type === 'destroyed') {
+            ptyLifecycleHandlers.handlePtyDestroyed(event.ptyId);
+          }
+        }).then((unsub) => {
+          lifecycleSubscriptionUnsub = unsub;
+        });
       })
       .catch((err) => {
         console.error('Failed to initialize terminal:', err);
@@ -208,6 +217,10 @@ export function TerminalProvider(props: TerminalProviderProps) {
     if (titleSubscriptionUnsub) {
       titleSubscriptionUnsub();
       titleSubscriptionUnsub = null;
+    }
+    if (lifecycleSubscriptionUnsub) {
+      lifecycleSubscriptionUnsub();
+      lifecycleSubscriptionUnsub = null;
     }
     // Unsubscribe all PTY subscriptions
     for (const unsub of unsubscribeFns.values()) {

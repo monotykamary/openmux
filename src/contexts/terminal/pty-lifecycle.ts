@@ -11,6 +11,7 @@ import {
 import { getActiveSessionIdForShim, registerPtyPane } from '../../effect/bridge';
 import {
   subscribeToPtyWithCaches,
+  subscribeToPtyExit,
   clearPtyCaches,
   clearAllPtyCaches,
   type PtyCaches,
@@ -56,14 +57,21 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
     shouldCacheScrollState,
   } = deps;
 
-  /**
-   * Handle PTY exit (when shell exits via Ctrl+D, `exit`, etc.)
-   * Cleans up subscriptions, caches, and mappings, then closes the pane
-   */
-  const handlePtyExit = (ptyId: string, _paneId: string): void => {
-    const mappedPaneId = ptyToPaneMap.get(ptyId);
-    if (mappedPaneId) {
-      closePaneById(mappedPaneId);
+  const resolvePaneId = (ptyId: string, fallbackPaneId?: string): string | undefined => {
+    return ptyToPaneMap.get(ptyId) ?? fallbackPaneId ?? ptyToSessionMap.get(ptyId)?.paneId;
+  };
+
+  const cleanupPty = (
+    ptyId: string,
+    options?: { paneId?: string; closePane?: boolean; destroy?: boolean }
+  ): void => {
+    const shouldClosePane = options?.closePane ?? true;
+    const shouldDestroy = options?.destroy ?? true;
+    const sessionInfo = ptyToSessionMap.get(ptyId);
+    const targetPaneId = resolvePaneId(ptyId, options?.paneId);
+
+    if (shouldClosePane && targetPaneId) {
+      closePaneById(targetPaneId);
     }
 
     // Clean up PTY subscription and caches
@@ -76,7 +84,6 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
     ptyToPaneMap.delete(ptyId);
 
     // O(1) removal from session mappings using reverse index
-    const sessionInfo = ptyToSessionMap.get(ptyId);
     if (sessionInfo) {
       const mapping = sessionPtyMap.get(sessionInfo.sessionId);
       if (mapping) {
@@ -85,8 +92,24 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
       ptyToSessionMap.delete(ptyId);
     }
 
-    // Destroy the PTY from the service (removes from HashMap, emits lifecycle event)
-    destroyPty(ptyId);
+    if (shouldDestroy) {
+      destroyPty(ptyId);
+    }
+  };
+
+  /**
+   * Handle PTY exit (when shell exits via Ctrl+D, `exit`, etc.)
+   * Cleans up subscriptions, caches, and mappings, then closes the pane
+   */
+  const handlePtyExit = (ptyId: string, paneId: string): void => {
+    cleanupPty(ptyId, { paneId, closePane: true, destroy: true });
+  };
+
+  /**
+   * Handle PTY destroyed lifecycle event (already destroyed in service)
+   */
+  const handlePtyDestroyed = (ptyId: string): void => {
+    cleanupPty(ptyId, { closePane: true, destroy: false });
   };
 
   /**
@@ -117,17 +140,30 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
     // TerminalView has its own subscription, so we can defer the context subscription
     setPanePty(paneId, ptyId);
 
+    const exitUnsub = await subscribeToPtyExit(ptyId, paneId, handlePtyExit);
+    unsubscribeFns.set(ptyId, exitUnsub);
+
     // Defer subscription setup to next frame to avoid blocking the render
     // This spreads out the work and prevents stutter
     setTimeout(async () => {
+      if (!ptyToPaneMap.has(ptyId)) {
+        return;
+      }
       const unsub = await subscribeToPtyWithCaches(
         ptyId,
         paneId,
         ptyCaches,
         handlePtyExit,
-        { cacheScrollState: shouldCacheScrollState }
+        { cacheScrollState: shouldCacheScrollState, skipExit: true }
       );
-      unsubscribeFns.set(ptyId, unsub);
+      if (!ptyToPaneMap.has(ptyId)) {
+        unsub();
+        return;
+      }
+      unsubscribeFns.set(ptyId, () => {
+        exitUnsub();
+        unsub();
+      });
     }, 0);
 
     return ptyId;
@@ -152,6 +188,9 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
     // Track the mapping
     ptyToPaneMap.set(ptyId, paneId);
 
+    const exitUnsub = await subscribeToPtyExit(ptyId, paneId, handlePtyExit);
+    unsubscribeFns.set(ptyId, exitUnsub);
+
     const sessionId = getActiveSessionIdForShim();
     if (sessionId) {
       const mapping = sessionPtyMap.get(sessionId) ?? new Map<string, string>();
@@ -163,14 +202,24 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
 
     // Defer subscription setup to next frame to avoid blocking the render
     setTimeout(async () => {
+      if (!ptyToPaneMap.has(ptyId)) {
+        return;
+      }
       const unsub = await subscribeToPtyWithCaches(
         ptyId,
         paneId,
         ptyCaches,
         handlePtyExit,
-        { cacheScrollState: shouldCacheScrollState }
+        { cacheScrollState: shouldCacheScrollState, skipExit: true }
       );
-      unsubscribeFns.set(ptyId, unsub);
+      if (!ptyToPaneMap.has(ptyId)) {
+        unsub();
+        return;
+      }
+      unsubscribeFns.set(ptyId, () => {
+        exitUnsub();
+        unsub();
+      });
     }, 0);
 
     return paneId;
@@ -181,36 +230,10 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
    * @param options.skipPaneClose - Skip closing the pane (use when pane is already closed)
    */
   const handleDestroyPTY = (ptyId: string, options?: { skipPaneClose?: boolean }): void => {
-    // Close associated pane if this PTY is in the current session
-    // Skip if caller already closed the pane (avoids redundant layout update)
-    const paneId = ptyToPaneMap.get(ptyId);
-    if (paneId && !options?.skipPaneClose) {
-      closePaneById(paneId);
-    }
-
-    // Unsubscribe from updates
-    const unsub = unsubscribeFns.get(ptyId);
-    if (unsub) {
-      unsub();
-      unsubscribeFns.delete(ptyId);
-    }
-
-    // Clear caches
-    clearPtyCaches(ptyId, ptyCaches);
-    ptyToPaneMap.delete(ptyId);
-
-    // O(1) removal from session mappings using reverse index
-    const sessionInfo = ptyToSessionMap.get(ptyId);
-    if (sessionInfo) {
-      const mapping = sessionPtyMap.get(sessionInfo.sessionId);
-      if (mapping) {
-        mapping.delete(sessionInfo.paneId);
-      }
-      ptyToSessionMap.delete(ptyId);
-    }
-
-    // Destroy the PTY (fire and forget)
-    destroyPty(ptyId);
+    cleanupPty(ptyId, {
+      closePane: !options?.skipPaneClose,
+      destroy: true,
+    });
   };
 
   /**
@@ -233,6 +256,7 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
 
   return {
     handlePtyExit,
+    handlePtyDestroyed,
     createPTY,
     createPaneWithPTY,
     handleDestroyPTY,

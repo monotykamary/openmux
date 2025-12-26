@@ -23,8 +23,13 @@ export function handleClosePane(state: LayoutState): LayoutState {
  * Closes a specific pane by ID
  */
 export function handleClosePaneById(state: LayoutState, paneId: string): LayoutState {
-  const workspace = getActiveWorkspace(state);
-  return closePaneById(state, workspace, paneId, paneId === workspace.focusedPaneId);
+  for (const workspace of Object.values(state.workspaces)) {
+    if (!workspace) continue;
+    if (workspace.mainPane?.id === paneId || workspace.stackPanes.some((pane) => pane.id === paneId)) {
+      return closePaneById(state, workspace, paneId, paneId === workspace.focusedPaneId);
+    }
+  }
+  return state;
 }
 
 /**

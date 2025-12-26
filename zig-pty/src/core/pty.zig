@@ -123,11 +123,17 @@ pub const Pty = struct {
             // Signal producer that space is available
             self.ring.not_full.signal();
             return @intCast(n);
-        } else if (self.exited.load(.acquire) and self.ring.available() == 0) {
-            return constants.CHILD_EXITED;
-        } else {
-            return 0;
         }
+
+        if (self.ring.available() == 0) {
+            // Ensure we observe child exit even if the reader thread is stalled.
+            self.checkChild();
+            if (self.exited.load(.acquire)) {
+                return constants.CHILD_EXITED;
+            }
+        }
+
+        return 0;
     }
 
     pub fn writeData(self: *Pty, data: [*]const u8, len: usize) c_int {

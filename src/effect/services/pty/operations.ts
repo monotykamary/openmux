@@ -79,6 +79,10 @@ export function createOperations(deps: OperationsDeps) {
 
     if (Option.isSome(sessionOpt)) {
       const session = sessionOpt.value
+      if (session.closing) {
+        return
+      }
+      session.closing = true
 
       // Clear subscribers
       for (const callback of session.subscribers) {

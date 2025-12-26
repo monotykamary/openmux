@@ -28,12 +28,11 @@ export async function subscribeToPtyWithCaches(
   paneId: string,
   caches: PtyCaches,
   onExit: (ptyId: string, paneId: string) => void,
-  options?: { cacheScrollState?: boolean }
+  options?: { cacheScrollState?: boolean; skipExit?: boolean }
 ): Promise<() => void> {
-  // Register exit callback
-  const unsubExit = await onPtyExit(ptyId, () => {
-    onExit(ptyId, paneId);
-  });
+  const unsubExit = options?.skipExit
+    ? () => {}
+    : await subscribeToPtyExit(ptyId, paneId, onExit);
 
   // Cache the emulator for synchronous access (selection text extraction)
   const emulator = await getEmulator(ptyId);
@@ -54,6 +53,19 @@ export async function subscribeToPtyWithCaches(
     unsubExit();
     unsubState();
   };
+}
+
+/**
+ * Subscribe to PTY exit events only.
+ */
+export async function subscribeToPtyExit(
+  ptyId: string,
+  paneId: string,
+  onExit: (ptyId: string, paneId: string) => void
+): Promise<() => void> {
+  return onPtyExit(ptyId, () => {
+    onExit(ptyId, paneId);
+  });
 }
 
 /**

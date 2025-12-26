@@ -22,6 +22,7 @@ export interface InternalPtySession {
   rows: number
   cwd: string
   shell: string
+  closing: boolean
   subscribers: Set<(state: TerminalState) => void>
   scrollSubscribers: Set<() => void>
   /** Unified subscribers receive both terminal and scroll updates in one callback */

@@ -267,6 +267,24 @@ describe('Layout Reducer', () => {
       expect(newWorkspace.mainPane!.id).toBe('pane-2');
       expect(newWorkspace.stackPanes).toHaveLength(0);
     });
+
+    it('should close pane in a non-active workspace', () => {
+      const workspace1 = createWorkspaceWithPanes(1, { id: 'pane-1' });
+      const workspace2 = createWorkspaceWithPanes(2, { id: 'pane-2' }, [{ id: 'pane-3' }], {
+        focusedPaneId: 'pane-3',
+        activeStackIndex: 0,
+      });
+      const state = createInitialState({
+        workspaces: { 1: workspace1, 2: workspace2 },
+        activeWorkspaceId: 1,
+      });
+
+      const newState = layoutReducer(state, { type: 'CLOSE_PANE_BY_ID', paneId: 'pane-3' });
+      const updatedWorkspace2 = newState.workspaces[2]!;
+
+      expect(updatedWorkspace2.stackPanes).toHaveLength(0);
+      expect(updatedWorkspace2.focusedPaneId).toBe('pane-2');
+    });
   });
 
   describe('SET_PANE_PTY action', () => {
