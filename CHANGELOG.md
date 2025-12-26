@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.48](https://github.com/monotykamary/openmux/compare/v0.2.47...v0.2.48) (2025-12-26)
+
+
+### Features
+
+* **templates:** add global templates and unified hints ([346f1c8](https://github.com/monotykamary/openmux/commit/346f1c8d3b76c1635512ff66dcdfdf83dca292b1))
+
+
+### Bug Fixes
+
+* **ui:** remove selection arrows and update keybindings ([cd124b0](https://github.com/monotykamary/openmux/commit/cd124b02f4e1617ed19b013713c6b64380b3b3c0))
+
 ### [0.2.47](https://github.com/monotykamary/openmux/compare/v0.2.46...v0.2.47) (2025-12-26)
 
 
