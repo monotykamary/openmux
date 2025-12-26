@@ -61,6 +61,7 @@ prefixTimeoutMs = 2_000
   "alt+m" = "mode.move"
   "alt+n" = "pane.new"
   "alt+s" = "session.picker.toggle"
+  "alt+t" = "template.overlay.toggle"
   "alt+g" = "aggregate.toggle"
   "alt+f" = "search.open"
   "alt+p" = "command.palette.toggle"
@@ -99,6 +100,7 @@ prefixTimeoutMs = 2_000
   v = "layout.mode.vertical"
   "shift+h" = "layout.mode.horizontal"
   t = "layout.mode.stacked"
+  "shift+t" = "template.overlay.toggle"
   s = "session.picker.toggle"
   g = "aggregate.toggle"
   "/" = "search.open"
@@ -121,7 +123,6 @@ prefixTimeoutMs = 2_000
 
   [keybindings.search]
   "ctrl+n" = "search.next"
-  "ctrl+shift+n" = "search.prev"
   "ctrl+p" = "search.prev"
   enter = "search.confirm"
   escape = "search.cancel"
@@ -129,15 +130,25 @@ prefixTimeoutMs = 2_000
 
   [keybindings.commandPalette]
   down = "command.palette.down"
-  j = "command.palette.down"
-  "ctrl+n" = "command.palette.down"
   up = "command.palette.up"
-  k = "command.palette.up"
-  "ctrl+p" = "command.palette.up"
   enter = "command.palette.confirm"
   escape = "command.palette.close"
   backspace = "command.palette.delete"
-  "alt+p" = "command.palette.close"
+
+[keybindings.templateOverlay.apply]
+escape = "template.close"
+tab = "template.tab.save"
+down = "template.list.down"
+up = "template.list.up"
+enter = "template.apply"
+"ctrl+x" = "template.delete"
+"ctrl+d" = "template.delete"
+
+[keybindings.templateOverlay.save]
+escape = "template.close"
+tab = "template.tab.apply"
+enter = "template.save"
+backspace = "template.save.delete"
 
 [keybindings.aggregate.list]
 down = "aggregate.list.down"
@@ -147,6 +158,7 @@ k = "aggregate.list.up"
 enter = "aggregate.list.preview"
 tab = "aggregate.list.jump"
 "alt+escape" = "aggregate.list.close"
+"alt+a" = "aggregate.list.toggle.scope"
 "alt+x" = "aggregate.kill"
 backspace = "aggregate.list.delete"
 
@@ -159,7 +171,6 @@ backspace = "aggregate.list.delete"
 enter = "aggregate.search.confirm"
 escape = "aggregate.search.cancel"
 "ctrl+n" = "aggregate.search.next"
-"ctrl+shift+n" = "aggregate.search.prev"
 "ctrl+p" = "aggregate.search.prev"
 backspace = "aggregate.search.delete"
 
