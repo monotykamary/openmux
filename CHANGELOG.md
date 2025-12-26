@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.52](https://github.com/monotykamary/openmux/compare/v0.2.51...v0.2.52) (2025-12-26)
+
+
+### Features
+
+* **aggregate:** toggle PTY search scope ([1e3882a](https://github.com/monotykamary/openmux/commit/1e3882ae000b820bad3b22c77a27049ebc3e703e))
+
+
+### Refactoring
+
+* **app:** modularize overlays and keyboard handling ([5c3f819](https://github.com/monotykamary/openmux/commit/5c3f819c0f2cb9ceac209a0f8b89403c39f0bb10))
+* **app:** normalize keyboard events and clean lint ([93acfe0](https://github.com/monotykamary/openmux/commit/93acfe0daa3a8efb20bb20b5bf6a969c4a1e7cd6))
+
 ### [0.2.51](https://github.com/monotykamary/openmux/compare/v0.2.50...v0.2.51) (2025-12-26)
 
 
