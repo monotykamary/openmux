@@ -261,9 +261,8 @@ function fitLine(text: string, width: number): string {
 }
 
 function CommandRow(props: CommandRowProps) {
-  const marker = () => (props.isSelected ? '>' : ' ');
   const details = () => props.command.description ? ` - ${props.command.description}` : '';
-  const line = () => fitLine(`${marker()} ${props.command.title}${details()}`, props.maxWidth);
+  const line = () => fitLine(`  ${props.command.title}${details()}`, props.maxWidth);
   const fg = () => props.isSelected ? '#FFFFFF' : '#CCCCCC';
   const bg = () => props.isSelected ? '#334455' : undefined;
 

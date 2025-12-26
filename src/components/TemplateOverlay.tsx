@@ -441,7 +441,6 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
 
   const renderTemplateRow = (template: TemplateSession, index: number) => {
     const selected = index === selectedIndex();
-    const selectMarker = selected ? '>' : ' ';
     const maxWidth = Math.max(1, overlayWidth() - 4);
     const stats = getTemplateStats(template);
     const ws = `${stats.workspaceCount}ws`.padEnd(4);
@@ -450,9 +449,14 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
     const time = truncate(formatRelativeTime(template.createdAt), timeWidth);
     const nameWidth = Math.max(1, Math.min(24, maxWidth - (12 + timeWidth)));
     const name = truncate(template.name, nameWidth);
-    const line = `${selectMarker} ${name} ${ws} ${panes} ${time}`;
+    const line = `  ${name} ${ws} ${panes} ${time}`;
     const color = selected ? '#FFFFFF' : '#CCCCCC';
-    return <text fg={color}>{truncate(line, maxWidth)}</text>;
+    const bg = selected ? '#334455' : undefined;
+    return (
+      <text fg={color} bg={bg}>
+        {truncate(line, maxWidth)}
+      </text>
+    );
   };
 
   const renderTab = (label: string, active: boolean) => (

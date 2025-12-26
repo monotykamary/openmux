@@ -283,10 +283,17 @@ interface SessionRowProps {
   maxWidth: number;
 }
 
+function fitLine(text: string, width: number): string {
+  if (width <= 0) return '';
+  if (text.length > width) {
+    return text.slice(0, width);
+  }
+  return text.padEnd(width);
+}
+
 function SessionRow(props: SessionRowProps) {
   // Build the row content
   const activeMarker = () => props.isActive ? '*' : ' ';
-  const selectMarker = () => props.isSelected ? '>' : ' ';
 
   // Name (possibly being renamed)
   const displayName = () => props.isRenaming ? props.renameValue : props.session.name;
@@ -308,11 +315,14 @@ function SessionRow(props: SessionRowProps) {
 
   // Colors - use brighter color for selection
   const nameColor = () => props.isSelected ? '#FFFFFF' : (props.isActive ? '#00AAFF' : '#CCCCCC');
+  const bgColor = () => props.isSelected ? '#334455' : undefined;
 
   // Build the line as a single string with proper formatting
-  const line = () => `${selectMarker()}${activeMarker()} ${truncatedName()} ${workspaceInfo()} ${paneInfo()} ${timeStr()}`;
+  const line = () => fitLine(` ${activeMarker()} ${truncatedName()} ${workspaceInfo()} ${paneInfo()} ${timeStr()}`, props.maxWidth);
 
   return (
-    <text fg={nameColor()}>{line()}</text>
+    <text fg={nameColor()} bg={bgColor()}>
+      {line()}
+    </text>
   );
 }

@@ -126,7 +126,6 @@ export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
   },
   search: {
     'ctrl+n': 'search.next',
-    'ctrl+shift+n': 'search.prev',
     'ctrl+p': 'search.prev',
     'enter': 'search.confirm',
     'escape': 'search.cancel',
@@ -134,15 +133,10 @@ export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
   },
   commandPalette: {
     'down': 'command.palette.down',
-    'j': 'command.palette.down',
-    'ctrl+n': 'command.palette.down',
     'up': 'command.palette.up',
-    'k': 'command.palette.up',
-    'ctrl+p': 'command.palette.up',
     'enter': 'command.palette.confirm',
     'escape': 'command.palette.close',
     'backspace': 'command.palette.delete',
-    'alt+p': 'command.palette.close',
   },
   templateOverlay: {
     apply: {
@@ -184,7 +178,6 @@ export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
       'enter': 'aggregate.search.confirm',
       'escape': 'aggregate.search.cancel',
       'ctrl+n': 'aggregate.search.next',
-      'ctrl+shift+n': 'aggregate.search.prev',
       'ctrl+p': 'aggregate.search.prev',
       'backspace': 'aggregate.search.delete',
     },
