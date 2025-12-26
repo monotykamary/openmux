@@ -2,13 +2,13 @@
  * SessionPicker - modal overlay for session selection and management
  */
 
-import { Show, For, createEffect, onCleanup } from 'solid-js';
+import { Show, For } from 'solid-js';
 import { useSession, type SessionSummary } from '../contexts/SessionContext';
 import type { SessionMetadata } from '../core/types';
 import { useTheme } from '../contexts/ThemeContext';
 import { useConfig } from '../contexts/ConfigContext';
-import { registerKeyboardHandler } from '../effect/bridge';
 import { formatComboSet, matchKeybinding, type ResolvedKeybindingMap } from '../core/keybindings';
+import { useOverlayKeyboardHandler } from '../contexts/keyboard/use-overlay-keyboard-handler';
 
 interface SessionPickerProps {
   width: number;
@@ -65,9 +65,6 @@ export function SessionPicker(props: SessionPickerProps) {
     eventType?: "press" | "repeat" | "release";
     repeated?: boolean;
   }) => {
-    if (!state.showSessionPicker) return false;
-    if (event.eventType === "release") return true;
-
     const { key } = event;
     const bindings = config.keybindings().sessionPicker;
     const action = matchKeybinding(state.isRenaming ? bindings.rename : bindings.list, {
@@ -188,10 +185,10 @@ export function SessionPicker(props: SessionPickerProps) {
     return `${nav}:nav ${select}:select ${create}:new ${rename}:rename ${remove}:del ${close}:close`;
   };
 
-  // Register keyboard handler with KeyboardRouter
-  createEffect(() => {
-    const unsubscribe = registerKeyboardHandler('sessionPicker', handleKeyDown);
-    onCleanup(() => unsubscribe());
+  useOverlayKeyboardHandler({
+    overlay: 'sessionPicker',
+    isActive: () => state.showSessionPicker,
+    handler: handleKeyDown,
   });
 
   // Calculate overlay dimensions

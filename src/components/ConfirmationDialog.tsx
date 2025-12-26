@@ -2,11 +2,11 @@
  * ConfirmationDialog - modal overlay for confirming destructive actions
  */
 
-import { Show, createSignal, createEffect, onCleanup } from 'solid-js';
+import { Show, createSignal, createEffect } from 'solid-js';
 import type { ConfirmationType } from '../core/types';
-import { registerKeyboardHandler } from '../effect/bridge';
 import { useConfig } from '../contexts/ConfigContext';
 import { matchKeybinding } from '../core/keybindings';
+import { useOverlayKeyboardHandler } from '../contexts/keyboard/use-overlay-keyboard-handler';
 
 export type { ConfirmationType };
 
@@ -54,9 +54,6 @@ export function ConfirmationDialog(props: ConfirmationDialogProps) {
     shift?: boolean;
     eventType?: "press" | "repeat" | "release";
   }) => {
-    if (!props.visible) return false;
-    if (event.eventType === "release") return true;
-
     const { key } = event;
     const action = matchKeybinding(appConfig.keybindings().confirmation, {
       key,
@@ -87,10 +84,10 @@ export function ConfirmationDialog(props: ConfirmationDialogProps) {
     }
   };
 
-  // Register keyboard handler with KeyboardRouter
-  createEffect(() => {
-    const unsubscribe = registerKeyboardHandler('confirmationDialog', handleKeyDown);
-    onCleanup(() => unsubscribe());
+  useOverlayKeyboardHandler({
+    overlay: 'confirmationDialog',
+    isActive: () => props.visible,
+    handler: handleKeyDown,
   });
 
   const dialogConfig = () => MESSAGES[props.type];

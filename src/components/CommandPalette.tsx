@@ -2,13 +2,13 @@
  * CommandPalette - modal overlay for command search and execution
  */
 
-import { Show, For, createMemo, createEffect, onCleanup } from 'solid-js';
+import { Show, For, createMemo, createEffect } from 'solid-js';
 import { type SetStoreFunction } from 'solid-js/store';
 import { useConfig } from '../contexts/ConfigContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { registerKeyboardHandler } from '../effect/bridge';
 import { matchKeybinding } from '../core/keybindings';
 import type { CommandPaletteCommand } from '../core/command-palette';
+import { useOverlayKeyboardHandler } from '../contexts/keyboard/use-overlay-keyboard-handler';
 
 export interface CommandPaletteState {
   show: boolean;
@@ -86,9 +86,6 @@ export function CommandPalette(props: CommandPaletteProps) {
     eventType?: "press" | "repeat" | "release";
     repeated?: boolean;
   }) => {
-    if (!props.state.show) return false;
-    if (event.eventType === "release") return true;
-
     const bindings = config.keybindings().commandPalette;
     const action = matchKeybinding(bindings, {
       key: event.key,
@@ -128,9 +125,10 @@ export function CommandPalette(props: CommandPaletteProps) {
     return true;
   };
 
-  createEffect(() => {
-    const unsubscribe = registerKeyboardHandler('commandPalette', handleKeyDown);
-    onCleanup(() => unsubscribe());
+  useOverlayKeyboardHandler({
+    overlay: 'commandPalette',
+    isActive: () => props.state.show,
+    handler: handleKeyDown,
   });
 
   createEffect(() => {

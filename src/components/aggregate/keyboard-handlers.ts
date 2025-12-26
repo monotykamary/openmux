@@ -21,7 +21,6 @@ export interface KeyboardEvent {
 
 export interface AggregateKeyboardDeps {
   // State getters
-  getShowAggregateView: () => boolean;
   getPreviewMode: () => boolean;
   getSelectedPtyId: () => string | null;
   getFilterQuery: () => string;
@@ -71,7 +70,6 @@ export interface AggregateKeyboardDeps {
  */
 export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
   const {
-    getShowAggregateView,
     getPreviewMode,
     getSelectedPtyId,
     getFilterQuery,
@@ -296,8 +294,6 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
    * Main keyboard handler for AggregateView
    */
   const handleKeyDown = (event: KeyboardEvent): boolean => {
-    if (!getShowAggregateView()) return false;
-
     const keybindings = getKeybindings();
     const combo = eventToCombo({
       key: event.key,

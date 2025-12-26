@@ -17,7 +17,8 @@ import { useTerminal } from '../contexts/TerminalContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useSelection } from '../contexts/SelectionContext';
 import { useSearch } from '../contexts/SearchContext';
-import { getHostBackgroundColor, registerKeyboardHandler } from '../effect/bridge';
+import { getHostBackgroundColor } from '../effect/bridge';
+import { useOverlayKeyboardHandler } from '../contexts/keyboard/use-overlay-keyboard-handler';
 import {
   PtyCard,
   InteractivePreview,
@@ -168,7 +169,6 @@ export function AggregateView(props: AggregateViewProps) {
 
   // Create keyboard handler using factory
   const keyboardHandler = createAggregateKeyboardHandler({
-    getShowAggregateView: () => state.showAggregateView,
     getPreviewMode: () => state.previewMode,
     getSelectedPtyId: () => state.selectedPtyId,
     getFilterQuery: () => state.filterQuery,
@@ -223,10 +223,11 @@ export function AggregateView(props: AggregateViewProps) {
     mouseHandlers.cleanup();
   });
 
-  // Register keyboard handler with KeyboardRouter
-  createEffect(() => {
-    const unsubscribe = registerKeyboardHandler('aggregateView', keyboardHandler.handleKeyDown);
-    onCleanup(() => unsubscribe());
+  useOverlayKeyboardHandler({
+    overlay: 'aggregateView',
+    isActive: () => state.showAggregateView,
+    handler: keyboardHandler.handleKeyDown,
+    ignoreRelease: false,
   });
 
   // Get host terminal background color to match user's theme
