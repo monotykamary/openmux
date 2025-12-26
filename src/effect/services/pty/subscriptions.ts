@@ -3,8 +3,8 @@
  */
 import { Effect } from "effect"
 import type { TerminalState, UnifiedTerminalUpdate } from "../../../core/types"
-import { PtyNotFoundError } from "../../errors"
-import { PtyId } from "../../types"
+import type { PtyNotFoundError } from "../../errors"
+import type { PtyId } from "../../types"
 import type { InternalPtySession } from "./types"
 import { getCurrentScrollState } from "./notification"
 import { getGitBranch } from "./helpers"

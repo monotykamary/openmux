@@ -9,7 +9,8 @@ import { TerminalQueryPassthrough } from "../../../terminal/terminal-query-passt
 import { createSyncModeParser } from "../../../terminal/sync-mode-parser"
 import { getCapabilityEnvironment } from "../../../terminal/capabilities"
 import { PtySpawnError } from "../../errors"
-import { PtyId, Cols, Rows, makePtyId } from "../../types"
+import type { PtyId, Cols, Rows} from "../../types";
+import { makePtyId } from "../../types"
 import type { InternalPtySession } from "./types"
 import type { TerminalColors } from "../../../terminal/terminal-colors"
 import { notifySubscribers } from "./notification"

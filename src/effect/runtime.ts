@@ -2,7 +2,7 @@
  * Effect runtime for the application.
  * Provides a managed runtime with all services composed.
  */
-import { Effect, Layer, ManagedRuntime, Runtime } from "effect"
+import { Effect, Layer, ManagedRuntime } from "effect"
 import { AppConfig, ThemeConfig } from "./Config"
 import { Clipboard, FileSystem, Pty, SessionStorage, SessionManager, TemplateStorage } from "./services"
 import { isShimProcess } from "../shim/mode"

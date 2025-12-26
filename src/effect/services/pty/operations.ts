@@ -3,8 +3,9 @@
  */
 import { Effect, Ref, HashMap, Option } from "effect"
 import type { TerminalState } from "../../../core/types"
-import { PtyNotFoundError } from "../../errors"
-import { PtyId, Cols, Rows } from "../../types"
+import type { PtyNotFoundError } from "../../errors"
+import type { PtyId} from "../../types";
+import { Cols, Rows } from "../../types"
 import { PtySession } from "../../models"
 import type { InternalPtySession } from "./types"
 import { notifySubscribers, notifyScrollSubscribers } from "./notification"

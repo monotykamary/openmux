@@ -5,7 +5,7 @@
 import { ghostty } from "./ffi";
 import type { Pointer } from "bun:ffi";
 import type { GhosttyCell, GhosttyTerminalConfig } from "./types";
-import { DirtyState } from "./types";
+import type { DirtyState } from "./types";
 
 const CELL_SIZE = 16;
 const CONFIG_SIZE = 4 * 4 + 16 * 4;

@@ -3,7 +3,6 @@
  * Handles ESC[ sequences
  */
 
-import type { TerminalQuery } from '../types';
 import type { ParseResult, QueryParser } from './base';
 import { FixedPatternParser } from './base';
 import {

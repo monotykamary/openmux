@@ -10,7 +10,6 @@ import type { TerminalState, TerminalCell, TerminalScrollState, UnifiedTerminalU
 import { isAtBottom as checkIsAtBottom } from '../core/scroll-utils';
 import type { ITerminalEmulator } from '../terminal/emulator-interface';
 import {
-  getTerminalState,
   subscribeUnifiedToPty,
   getEmulator,
   setPtyUpdateEnabled as setPtyUpdateEnabledBridge,
@@ -97,11 +96,6 @@ export function TerminalView(props: TerminalViewProps) {
   // Store scroll state locally from unified updates to avoid race conditions
   // This ensures scroll state and terminal state are always in sync
   let scrollState: TerminalScrollState = { viewportOffset: 0, scrollbackLength: 0, isAtBottom: true };
-  // Track last render time to throttle expensive renders during rapid layout changes
-  let lastRenderTime = 0;
-  let pendingRender = false;
-  // Track if content changed (vs just position change)
-  let contentDirty = true;
   // Cache emulator for sync access to scrollback lines
   let emulator: ITerminalEmulator | null = null;
   let lastScrollbackLength: number | null = null;
@@ -155,7 +149,7 @@ export function TerminalView(props: TerminalViewProps) {
         const executePrefetch = async () => {
           if (!pendingPrefetch || prefetchInProgress || !mounted) return;
 
-          const { ptyId: prefetchPtyId, start, count } = pendingPrefetch;
+          const { start, count } = pendingPrefetch;
           pendingPrefetch = null;
           prefetchInProgress = true;
 
@@ -238,9 +232,6 @@ export function TerminalView(props: TerminalViewProps) {
             lastScrollbackLength = scrollState.scrollbackLength;
 
 
-
-            // Mark content as dirty (actual terminal data changed)
-            contentDirty = true;
 
             // Request batched render
             requestRenderFrame();
@@ -403,7 +394,6 @@ export function TerminalView(props: TerminalViewProps) {
     // Render all rows
     for (let y = 0; y < rows; y++) {
       let row = rowCache[y];
-      const absoluteY = renderScrollbackLength - renderViewportOffset + y;
       renderRow(buffer, row, y, cols, offsetX, offsetY, renderOptions, renderDeps, fallbackFg, fallbackBg);
     }
 

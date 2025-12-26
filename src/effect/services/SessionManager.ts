@@ -4,14 +4,15 @@
  */
 import { Context, Effect, Layer, Ref } from "effect"
 import { SessionStorage } from "./SessionStorage"
-import { SessionStorageError, SessionNotFoundError } from "../errors"
+import type { SessionStorageError} from "../errors";
+import { SessionNotFoundError } from "../errors"
 import {
   SerializedSession,
   SessionMetadata,
-  SessionIndex,
 } from "../models"
+import type {
+  SessionId} from "../types";
 import {
-  SessionId,
   WorkspaceId,
   makeSessionId,
 } from "../types"

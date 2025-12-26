@@ -1,7 +1,7 @@
 /**
  * Scrollback Cache - LRU cache for scrollback lines
  */
-import type { TerminalCell, TerminalScrollState, DirtyTerminalUpdate } from '../../core/types'
+import type { TerminalCell, DirtyTerminalUpdate } from '../../core/types'
 import type { TerminalModes } from '../emulator-interface'
 
 /**

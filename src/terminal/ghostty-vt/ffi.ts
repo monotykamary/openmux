@@ -11,7 +11,6 @@ function resolveLibPath(): string {
   if (envPath && existsSync(envPath)) return envPath;
 
   const platform = process.platform;
-  const arch = process.arch;
 
   const ext = platform === "darwin" ? "dylib" : platform === "win32" ? "dll" : "so";
   const filenames =

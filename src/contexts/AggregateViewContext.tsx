@@ -8,7 +8,6 @@ import {
   useContext,
   createEffect,
   onCleanup,
-  batch,
   type ParentProps,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';

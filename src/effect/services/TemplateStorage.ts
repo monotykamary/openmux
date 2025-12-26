@@ -2,7 +2,7 @@
  * TemplateStorage service for layout template persistence.
  */
 import { Context, Effect, Layer } from "effect"
-import { SessionStorageError } from "../errors"
+import type { SessionStorageError } from "../errors"
 import { AppConfig } from "../Config"
 import { FileSystem } from "./FileSystem"
 import { TemplateSession } from "../models"

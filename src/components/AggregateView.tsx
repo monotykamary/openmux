@@ -89,7 +89,7 @@ export function AggregateView(props: AggregateViewProps) {
   // Handle pending navigation after session switch
   createEffect(() => {
     // Track session ID to detect changes
-    const _sessionId = sessionState.activeSessionId;
+    sessionState.activeSessionId;
 
     if (!pendingPaneNavigation) return;
     const pendingPaneId = pendingPaneNavigation;

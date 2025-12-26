@@ -85,7 +85,7 @@ export function createSessionHandlers(deps: SessionHandlerDeps) {
 
         // Restore pty→pane mapping
         ptyToPaneMap.set(ptyId, paneId);
-      } catch (err) {
+      } catch {
         // PTY may have exited while suspended - remove from mapping
         savedMapping.delete(paneId);
       }

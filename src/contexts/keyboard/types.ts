@@ -2,7 +2,7 @@
  * Types for keyboard context
  */
 
-import type { KeyMode, KeyboardState, ConfirmationType } from '../../core/types';
+import type { KeyboardState, ConfirmationType } from '../../core/types';
 
 export interface KeyboardContextValue {
   state: KeyboardState;

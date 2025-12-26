@@ -32,7 +32,6 @@ import {
   shutdownShim,
 } from './effect/bridge';
 import { disposeRuntime } from './effect/runtime';
-import type { PasteEvent } from '@opentui/core';
 import {
   createConfirmationHandlers,
   createPaneResizeHandlers,
@@ -336,7 +335,7 @@ function AppContent() {
   createEffect(() => {
     if (!terminal.isInitialized) return;
     // Track structural changes (pane add/remove, layout mode) and viewport resize
-    const _version = layout.layoutVersion;
+    layout.layoutVersion;
     const _width = width();
     const _height = height();
     if (_width <= 0 || _height <= 0) return;

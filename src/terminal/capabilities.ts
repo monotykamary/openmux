@@ -17,9 +17,6 @@ const DA1_QUERY = `${ESC}[c`; // Primary Device Attributes
 const DA2_QUERY = `${ESC}[>c`; // Secondary Device Attributes
 const XTVERSION_QUERY = `${ESC}[>0q`; // Terminal version query
 
-// Kitty graphics query (check if host supports it)
-const KITTY_GRAPHICS_QUERY = `${ESC}_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA${ESC}\\`;
-
 export interface TerminalCapabilities {
   /** Host terminal name (e.g., "ghostty", "kitty", "iterm2") */
   terminalName: string | null;

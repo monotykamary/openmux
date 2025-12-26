@@ -13,7 +13,6 @@ import {
 } from 'solid-js';
 
 import { detectHostCapabilities } from '../terminal';
-import { getHostColors } from '../terminal/terminal-colors';
 import type { TerminalState, TerminalScrollState } from '../core/types';
 import {
   createScrollHandlers,
@@ -271,7 +270,7 @@ export function TerminalProvider(props: TerminalProviderProps) {
         // Restore pty→pane mapping
         ptyToPaneMap.set(ptyId, paneId);
         ptyToSessionMap.set(ptyId, { sessionId, paneId });
-      } catch (_err) {
+      } catch {
         // PTY may have exited while suspended - remove from mapping
         savedMapping.delete(paneId);
       }

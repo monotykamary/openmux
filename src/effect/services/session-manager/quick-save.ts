@@ -4,7 +4,7 @@
  */
 
 import { Effect } from "effect"
-import {
+import type {
   SerializedSession,
   SessionMetadata,
 } from "../../models"

@@ -55,7 +55,8 @@ function closePaneById(
   }
 
   // Workspace is now empty - remove it
-  const { [workspace.id]: _removed, ...remainingWorkspaces } = state.workspaces;
+  const remainingWorkspaces = { ...state.workspaces };
+  delete remainingWorkspaces[workspace.id];
   return { ...state, workspaces: remainingWorkspaces, layoutVersion: state.layoutVersion + 1 };
 }
 

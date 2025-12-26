@@ -3,9 +3,8 @@
  */
 
 import { Show, For, Index, createMemo } from 'solid-js';
-import type { PaneData, LayoutMode } from '../core/types';
+import type { PaneData } from '../core/types';
 import { useLayout } from '../contexts/LayoutContext';
-import { useTheme } from '../contexts/ThemeContext';
 import { useTerminal } from '../contexts/TerminalContext';
 import { useSession } from '../contexts/SessionContext';
 import { useAggregateView } from '../contexts/AggregateViewContext';
@@ -16,7 +15,6 @@ import { Pane } from './Pane';
 export function PaneContainer() {
   const layout = useLayout();
   const { focusPane } = layout;
-  const theme = useTheme();
   const { writeToPTY, isMouseTrackingEnabled } = useTerminal();
   const session = useSession();
   const { state: aggregateState } = useAggregateView();

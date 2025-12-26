@@ -12,7 +12,8 @@ import {
 } from 'solid-js';
 import { createStore, unwrap, reconcile, produce } from 'solid-js/store';
 import type { Workspace, WorkspaceId, PaneData, Direction, LayoutMode } from '../core/types';
-import { LayoutConfig, DEFAULT_CONFIG } from '../core/config';
+import type { LayoutConfig} from '../core/config';
+import { DEFAULT_CONFIG } from '../core/config';
 import {
   getAllWorkspacePanes,
   getWorkspacePaneCount,

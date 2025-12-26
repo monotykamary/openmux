@@ -5,13 +5,12 @@
 
 import { Effect } from "effect"
 import type { SessionStorage } from "../SessionStorage"
-import { SessionNotFoundError } from "../../errors"
 import {
   SerializedSession,
   SessionMetadata,
   SessionIndex,
 } from "../../models"
-import { SessionId } from "../../types"
+import type { SessionId } from "../../types"
 import { getAutoName } from "./serialization"
 
 export interface MetadataDeps {

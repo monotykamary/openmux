@@ -4,11 +4,12 @@
 
 import { Effect } from "effect"
 import type { WorkspaceState } from "./types"
+import type {
+  SessionMetadata} from "../../models";
 import {
   SerializedSession,
   SerializedWorkspace,
-  SerializedPaneData,
-  SessionMetadata,
+  SerializedPaneData
 } from "../../models"
 import { WorkspaceId } from "../../types"
 

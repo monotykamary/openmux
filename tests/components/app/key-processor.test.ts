@@ -24,7 +24,7 @@ describe("processNormalModeKey", () => {
     encodeMock.mockReturnValue("encoded");
 
     processNormalModeKey(
-      { name: "a", sequence: "a", eventType: "press" },
+      { key: "a", sequence: "a", eventType: "press" },
       { clearAllSelections, getFocusedEmulator, writeToFocused }
     );
 
@@ -41,7 +41,7 @@ describe("processNormalModeKey", () => {
     encodeMock.mockReturnValue("encoded");
 
     processNormalModeKey(
-      { name: "a", sequence: "a", eventType: "release" },
+      { key: "a", sequence: "a", eventType: "release" },
       { clearAllSelections, getFocusedEmulator, writeToFocused }
     );
 

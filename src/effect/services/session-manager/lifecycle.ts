@@ -5,13 +5,13 @@
 
 import { Effect, Ref } from "effect"
 import type { SessionStorage } from "../SessionStorage"
-import { SessionStorageError } from "../../errors"
 import {
   SerializedSession,
   SessionMetadata,
   SessionIndex,
 } from "../../models"
-import { SessionId, WorkspaceId, makeSessionId } from "../../types"
+import type { SessionId} from "../../types";
+import { WorkspaceId, makeSessionId } from "../../types"
 import { getAutoName } from "./serialization"
 
 export interface LifecycleDeps {

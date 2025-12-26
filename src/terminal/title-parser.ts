@@ -12,7 +12,6 @@
 
 const ESC = '\x1b';
 const BEL = '\x07';
-const ST = '\x1b\\'; // String Terminator
 
 export interface TitleParserOptions {
   onTitleChange: (title: string) => void;

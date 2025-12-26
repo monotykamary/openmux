@@ -32,7 +32,7 @@ import {
   saveTemplate as saveTemplateDefinition,
   deleteTemplate,
 } from '../effect/bridge';
-import { TemplateSession } from '../effect/models';
+import type { TemplateSession } from '../effect/models';
 import {
   type SessionState,
   type SessionAction,

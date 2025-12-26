@@ -2,7 +2,7 @@
  * StatusBar - bottom status bar showing sessions, workspaces and mode
  */
 
-import { Show, For, createMemo } from 'solid-js';
+import { Show, createMemo } from 'solid-js';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLayout } from '../contexts/LayoutContext';
 import { useKeyboardState } from '../contexts/KeyboardContext';

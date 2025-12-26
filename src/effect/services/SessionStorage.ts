@@ -4,17 +4,19 @@
 import { Context, Effect, Layer } from "effect"
 import { FileSystem } from "./FileSystem"
 import { AppConfig } from "../Config"
+import type {
+  SessionStorageError} from "../errors";
 import {
-  SessionStorageError,
   SessionNotFoundError,
   SessionCorruptedError,
 } from "../errors"
+import type {
+  SessionMetadata} from "../models";
 import {
   SerializedSession,
-  SessionMetadata,
   SessionIndex,
 } from "../models"
-import { SessionId } from "../types"
+import type { SessionId } from "../types"
 
 // =============================================================================
 // SessionStorage Service

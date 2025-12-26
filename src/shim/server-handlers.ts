@@ -1,4 +1,4 @@
-import net from 'net';
+import type net from 'net';
 import { dirname } from 'path';
 
 import { Effect } from 'effect';

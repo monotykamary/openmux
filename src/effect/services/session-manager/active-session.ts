@@ -11,7 +11,7 @@ import {
   SessionMetadata,
   SessionIndex,
 } from "../../models"
-import { SessionId } from "../../types"
+import type { SessionId } from "../../types"
 
 export interface ActiveSessionDeps {
   storage: SessionStorage["Type"]

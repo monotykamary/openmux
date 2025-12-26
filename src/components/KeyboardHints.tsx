@@ -7,11 +7,6 @@ import { useKeyboardState } from '../contexts/KeyboardContext';
 import { useConfig } from '../contexts/ConfigContext';
 import { formatComboSet, formatKeyCombo, type ResolvedKeybindingMap } from '../core/keybindings';
 
-interface KeyHint {
-  key: string;
-  description: string;
-}
-
 function getCombos(bindings: ResolvedKeybindingMap, action: string): string[] {
   return bindings.byAction.get(action) ?? [];
 }
