@@ -93,6 +93,11 @@ export interface ITerminalEmulator {
   getCursorKeyMode(): 'normal' | 'application';
 
   /**
+   * Get active Kitty keyboard protocol flags for input encoding.
+   */
+  getKittyKeyboardFlags(): number;
+
+  /**
    * Check if mouse tracking is enabled by the terminal application
    */
   isMouseTrackingEnabled(): boolean;

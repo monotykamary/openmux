@@ -161,4 +161,54 @@ export const ghostty = dlopen(libPath, {
     args: [FFIType.pointer, FFIType.pointer, FFIType.i32],
     returns: FFIType.i32,
   },
+  ghostty_terminal_get_kitty_keyboard_flags: {
+    args: [FFIType.pointer],
+    returns: FFIType.u8,
+  },
+  ghostty_key_event_new: {
+    args: [FFIType.pointer, FFIType.pointer],
+    returns: FFIType.i32,
+  },
+  ghostty_key_event_free: { args: [FFIType.pointer], returns: FFIType.void },
+  ghostty_key_event_set_action: {
+    args: [FFIType.pointer, FFIType.i32],
+    returns: FFIType.void,
+  },
+  ghostty_key_event_set_key: {
+    args: [FFIType.pointer, FFIType.i32],
+    returns: FFIType.void,
+  },
+  ghostty_key_event_set_mods: {
+    args: [FFIType.pointer, FFIType.u16],
+    returns: FFIType.void,
+  },
+  ghostty_key_event_set_consumed_mods: {
+    args: [FFIType.pointer, FFIType.u16],
+    returns: FFIType.void,
+  },
+  ghostty_key_event_set_composing: {
+    args: [FFIType.pointer, FFIType.bool],
+    returns: FFIType.void,
+  },
+  ghostty_key_event_set_utf8: {
+    args: [FFIType.pointer, FFIType.pointer, FFIType.u64],
+    returns: FFIType.void,
+  },
+  ghostty_key_event_set_unshifted_codepoint: {
+    args: [FFIType.pointer, FFIType.u32],
+    returns: FFIType.void,
+  },
+  ghostty_key_encoder_new: {
+    args: [FFIType.pointer, FFIType.pointer],
+    returns: FFIType.i32,
+  },
+  ghostty_key_encoder_free: { args: [FFIType.pointer], returns: FFIType.void },
+  ghostty_key_encoder_setopt: {
+    args: [FFIType.pointer, FFIType.i32, FFIType.pointer],
+    returns: FFIType.void,
+  },
+  ghostty_key_encoder_encode: {
+    args: [FFIType.pointer, FFIType.pointer, FFIType.pointer, FFIType.u64, FFIType.pointer],
+    returns: FFIType.i32,
+  },
 });

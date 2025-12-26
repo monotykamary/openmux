@@ -72,6 +72,7 @@ export class TerminalQueryPassthrough {
     cellHeight: number;
   }) | null = null;
   private kittyKeyboardFlags: number = 0;
+  private kittyKeyboardFlagsGetter: (() => number) | null = null;
   private terminalVersion: string = '0.1.0';
   private cursorColor: number = 0xFFFFFF;
 
@@ -112,6 +113,14 @@ export class TerminalQueryPassthrough {
    */
   setKittyKeyboardFlags(flags: number): void {
     this.kittyKeyboardFlags = flags;
+  }
+
+  /**
+   * Set a getter for Kitty keyboard protocol flags.
+   * This allows dynamic querying of the current flags.
+   */
+  setKittyKeyboardFlagsGetter(getter: () => number): void {
+    this.kittyKeyboardFlagsGetter = getter;
   }
 
   /**
@@ -246,7 +255,10 @@ export class TerminalQueryPassthrough {
       this.ptyWriter(response);
     } else if (query.type === 'kitty-keyboard') {
       // Kitty keyboard protocol query
-      const response = generateKittyKeyboardResponse(this.kittyKeyboardFlags);
+      const flags = this.kittyKeyboardFlagsGetter
+        ? this.kittyKeyboardFlagsGetter()
+        : this.kittyKeyboardFlags;
+      const response = generateKittyKeyboardResponse(flags);
       this.ptyWriter(response);
     } else if (query.type === 'osc-bg') {
       // Get background color

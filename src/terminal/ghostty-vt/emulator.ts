@@ -232,6 +232,10 @@ export class GhosttyVTEmulator implements ITerminalEmulator {
     return this.modes.cursorKeyMode;
   }
 
+  getKittyKeyboardFlags(): number {
+    return this.terminal.getKittyKeyboardFlags();
+  }
+
   isMouseTrackingEnabled(): boolean {
     return this.modes.mouseTracking;
   }

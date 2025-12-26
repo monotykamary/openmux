@@ -56,6 +56,11 @@ export function setupQueryPassthrough(options: QuerySetupOptions): void {
     }
   })
 
+  // Set Kitty keyboard flags getter (for ESC[?u queries)
+  queryPassthrough.setKittyKeyboardFlagsGetter(() => {
+    return emulator.getKittyKeyboardFlags()
+  })
+
   // Set terminal version for XTVERSION responses
   queryPassthrough.setTerminalVersion(terminalVersion)
 

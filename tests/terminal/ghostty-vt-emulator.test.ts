@@ -55,6 +55,10 @@ const { MockTerminal, terminalState } = vi.hoisted(() => {
       return false
     }
 
+    getKittyKeyboardFlags(): number {
+      return 0
+    }
+
     isAlternateScreen(): boolean {
       return false
     }

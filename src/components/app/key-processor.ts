@@ -2,11 +2,12 @@
  * Key Processor - processes keyboard input in normal mode
  * Converts keyboard events to terminal escape sequences
  */
-import { inputHandler } from '../../terminal'
+import type { ITerminalEmulator } from '../../terminal/emulator-interface'
+import { encodeKeyForEmulator } from '../../terminal/key-encoder'
 
 export interface KeyProcessorDeps {
   clearAllSelections: () => void
-  getFocusedCursorKeyMode: () => 'normal' | 'application'
+  getFocusedEmulator: () => ITerminalEmulator | null
   writeToFocused: (data: string) => void
 }
 
@@ -17,6 +18,7 @@ export interface KeyEvent {
   option?: boolean
   meta?: boolean
   sequence?: string
+  baseCode?: number
 }
 
 /**
@@ -29,25 +31,19 @@ export function processNormalModeKey(
   // Clear any active selection when user types
   deps.clearAllSelections()
 
-  // Get the focused pane's cursor key mode (DECCKM)
-  // This affects how arrow keys are encoded (application vs normal mode)
-  const cursorKeyMode = deps.getFocusedCursorKeyMode()
-  inputHandler.setCursorMode(cursorKeyMode)
-
-  // Convert keyboard event to terminal escape sequence
-  // Use event.sequence for single printable chars (handles shift for uppercase/symbols)
-  // Fall back to event.name for special keys (arrows, function keys, etc.)
-  // Don't use sequence for control chars (< 32) or DEL (127) as we need name for Shift+Tab etc.
-  const keyCharCode = event.sequence?.charCodeAt(0) ?? 0
-  const isPrintable = event.sequence?.length === 1 && keyCharCode >= 32 && keyCharCode < 127
-  const keyToEncode = isPrintable ? event.sequence! : event.name
-  const sequence = inputHandler.encodeKey({
-    key: keyToEncode,
-    ctrl: event.ctrl,
-    shift: event.shift,
-    alt: event.option,
-    meta: event.meta,
-  })
+  const emulator = deps.getFocusedEmulator()
+  const sequence = encodeKeyForEmulator(
+    {
+      key: event.name,
+      ctrl: event.ctrl,
+      shift: event.shift,
+      alt: event.option,
+      meta: event.meta,
+      sequence: event.sequence,
+      baseCode: event.baseCode,
+    },
+    emulator
+  )
 
   if (sequence) {
     deps.writeToFocused(sequence)

@@ -194,6 +194,10 @@ export class GhosttyVtTerminal {
     return ghostty.symbols.ghostty_terminal_has_response(this.handle);
   }
 
+  getKittyKeyboardFlags(): number {
+    return ghostty.symbols.ghostty_terminal_get_kitty_keyboard_flags(this.handle);
+  }
+
   readResponse(): string | null {
     if (!this.hasResponse()) return null;
     const buffer = Buffer.alloc(256);

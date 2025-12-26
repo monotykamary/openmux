@@ -4,7 +4,8 @@
  */
 
 import { writeToPty } from '../../effect/bridge';
-import { inputHandler } from '../../terminal/input-handler';
+import type { ITerminalEmulator } from '../../terminal/emulator-interface';
+import { encodeKeyForEmulator } from '../../terminal/key-encoder';
 import { eventToCombo, matchKeybinding, type ResolvedKeybindings } from '../../core/keybindings';
 
 export interface KeyboardEvent {
@@ -13,6 +14,7 @@ export interface KeyboardEvent {
   alt?: boolean;
   shift?: boolean;
   sequence?: string;
+  baseCode?: number;
 }
 
 export interface AggregateKeyboardDeps {
@@ -25,6 +27,7 @@ export interface AggregateKeyboardDeps {
   getInSearchMode: () => boolean;
   getPrefixActive: () => boolean;
   getKeybindings: () => ResolvedKeybindings;
+  getEmulatorSync: (ptyId: string) => ITerminalEmulator | null;
 
   // State setters
   setFilterQuery: (query: string) => void;
@@ -72,8 +75,9 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
     getFilterQuery,
     getSearchState,
     getInSearchMode,
-    getPrefixActive,
-    getKeybindings,
+  getPrefixActive,
+  getKeybindings,
+  getEmulatorSync,
     setFilterQuery,
     setInSearchMode,
     setPrefixActive,
@@ -187,15 +191,21 @@ export function createAggregateKeyboardHandler(deps: AggregateKeyboardDeps) {
       return true;
     }
 
-    // Forward key to PTY using inputHandler for proper encoding
+    // Forward key to PTY using Ghostty encoder for modifier-aware encoding
     const selectedPtyId = getSelectedPtyId();
     if (selectedPtyId) {
-      const inputStr = inputHandler.encodeKey({
-        key,
-        ctrl: event.ctrl,
-        alt: event.alt,
-        shift: event.shift,
-      });
+      const emulator = getEmulatorSync(selectedPtyId);
+      const inputStr = encodeKeyForEmulator(
+        {
+          key,
+          ctrl: event.ctrl,
+          alt: event.alt,
+          shift: event.shift,
+          sequence: event.sequence,
+          baseCode: event.baseCode,
+        },
+        emulator
+      );
       if (inputStr) {
         writeToPty(selectedPtyId, inputStr);
       }

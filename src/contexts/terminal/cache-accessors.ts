@@ -81,6 +81,15 @@ export function createCacheAccessors(deps: CacheAccessorDeps) {
   };
 
   /**
+   * Get the focused emulator synchronously.
+   */
+  const getFocusedEmulator = (): ITerminalEmulator | null => {
+    const focusedPtyId = getFocusedPtyId();
+    if (!focusedPtyId) return null;
+    return ptyCaches.emulators.get(focusedPtyId) ?? null;
+  };
+
+  /**
    * Get cached terminal state synchronously (for selection text extraction)
    */
   const getTerminalStateSync = (ptyId: string): TerminalState | null => {
@@ -119,6 +128,7 @@ export function createCacheAccessors(deps: CacheAccessorDeps) {
     isMouseTrackingEnabled,
     isAlternateScreen,
     getEmulatorSync,
+    getFocusedEmulator,
     getTerminalStateSync,
     findSessionForPty,
   };

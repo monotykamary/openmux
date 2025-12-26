@@ -117,6 +117,10 @@ export class RemoteEmulator implements ITerminalEmulator {
     return this.deps.getPtyState(this.ptyId)?.terminalState?.cursorKeyMode ?? 'normal';
   }
 
+  getKittyKeyboardFlags(): number {
+    return 0;
+  }
+
   isMouseTrackingEnabled(): boolean {
     return this.deps.getPtyState(this.ptyId)?.terminalState?.mouseTracking ?? false;
   }

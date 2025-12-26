@@ -176,6 +176,7 @@ export function AggregateView(props: AggregateViewProps) {
     getInSearchMode: inSearchMode,
     getPrefixActive: prefixActive,
     getKeybindings: () => config.keybindings(),
+    getEmulatorSync,
     setFilterQuery,
     setInSearchMode,
     setPrefixActive,

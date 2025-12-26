@@ -87,6 +87,8 @@ interface TerminalContextValue {
   scrollToBottom: (ptyId: string) => void;
   /** Get cached emulator synchronously (for selection text extraction) */
   getEmulatorSync: (ptyId: string) => ITerminalEmulator | null;
+  /** Get focused emulator synchronously */
+  getFocusedEmulator: () => ITerminalEmulator | null;
   /** Get cached terminal state synchronously (for selection text extraction) */
   getTerminalStateSync: (ptyId: string) => TerminalState | null;
   /** Check if ghostty-vt is initialized */
@@ -372,6 +374,7 @@ export function TerminalProvider(props: TerminalProviderProps) {
     setScrollOffset: scrollHandlers.handleSetScrollOffset,
     scrollToBottom: scrollHandlers.handleScrollToBottom,
     getEmulatorSync: cacheAccessors.getEmulatorSync,
+    getFocusedEmulator: cacheAccessors.getFocusedEmulator,
     getTerminalStateSync: cacheAccessors.getTerminalStateSync,
     get isInitialized() { return isInitialized(); },
     findSessionForPty: cacheAccessors.findSessionForPty,

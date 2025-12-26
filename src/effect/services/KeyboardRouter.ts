@@ -16,6 +16,7 @@ export interface KeyEvent {
   alt?: boolean
   shift?: boolean
   sequence?: string
+  baseCode?: number
 }
 
 /**

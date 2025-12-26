@@ -32,7 +32,7 @@ new file mode 100644
 index 000000000..298ad36c1
 --- /dev/null
 +++ b/include/ghostty/vt/terminal.h
-@@ -0,0 +1,249 @@
+@@ -0,0 +1,252 @@
 +/**
 + * @file terminal.h
 + *
@@ -215,6 +215,9 @@ index 000000000..298ad36c1
 + */
 +bool ghostty_terminal_get_mode(GhosttyTerminal term, int mode, bool is_ansi);
 +
++/** Get current Kitty keyboard protocol flags (bitmask) */
++uint8_t ghostty_terminal_get_kitty_keyboard_flags(GhosttyTerminal term);
++
 +/* ============================================================================
 + * Scrollback API
 + * ========================================================================= */
@@ -286,7 +289,7 @@ diff --git a/src/lib_vt.zig b/src/lib_vt.zig
 index 03a883e20..f07bbd759 100644
 --- a/src/lib_vt.zig
 +++ b/src/lib_vt.zig
-@@ -140,6 +140,41 @@ comptime {
+@@ -140,6 +140,42 @@ comptime {
          @export(&c.sgr_unknown_partial, .{ .name = "ghostty_sgr_unknown_partial" });
          @export(&c.sgr_attribute_tag, .{ .name = "ghostty_sgr_attribute_tag" });
          @export(&c.sgr_attribute_value, .{ .name = "ghostty_sgr_attribute_value" });
@@ -315,6 +318,7 @@ index 03a883e20..f07bbd759 100644
 +        @export(&c.terminal_is_alternate_screen, .{ .name = "ghostty_terminal_is_alternate_screen" });
 +        @export(&c.terminal_has_mouse_tracking, .{ .name = "ghostty_terminal_has_mouse_tracking" });
 +        @export(&c.terminal_get_mode, .{ .name = "ghostty_terminal_get_mode" });
++        @export(&c.terminal_get_kitty_keyboard_flags, .{ .name = "ghostty_terminal_get_kitty_keyboard_flags" });
 +
 +        // Scrollback API
 +        @export(&c.terminal_get_scrollback_length, .{ .name = "ghostty_terminal_get_scrollback_length" });
@@ -340,7 +344,7 @@ index bc92597f5..18503933f 100644
  
  // The full C API, unexported.
  pub const osc_new = osc.new;
-@@ -52,6 +53,42 @@ pub const key_encoder_encode = key_encode.encode;
+@@ -52,6 +53,43 @@ pub const key_encoder_encode = key_encode.encode;
  
  pub const paste_is_safe = paste.is_safe;
  
@@ -369,6 +373,7 @@ index bc92597f5..18503933f 100644
 +pub const terminal_is_alternate_screen = terminal.isAlternateScreen;
 +pub const terminal_has_mouse_tracking = terminal.hasMouseTracking;
 +pub const terminal_get_mode = terminal.getMode;
++pub const terminal_get_kitty_keyboard_flags = terminal.getKittyKeyboardFlags;
 +
 +// Scrollback API
 +pub const terminal_get_scrollback_length = terminal.getScrollbackLength;
@@ -396,7 +401,7 @@ new file mode 100644
 index 000000000..d57b4e405
 --- /dev/null
 +++ b/src/terminal/c/terminal.zig
-@@ -0,0 +1,1025 @@
+@@ -0,0 +1,1031 @@
 +//! C API wrapper for Terminal
 +//!
 +//! This provides a minimal, high-performance interface to Ghostty's Terminal
@@ -1173,6 +1178,12 @@ index 000000000..d57b4e405
 +    const wrapper: *const TerminalWrapper = @ptrCast(@alignCast(ptr orelse return false));
 +    const mode = modespkg.modeFromInt(@intCast(mode_num), is_ansi) orelse return false;
 +    return wrapper.terminal.modes.get(mode);
++}
++
++/// Get current Kitty keyboard flags (bitmask)
++pub fn getKittyKeyboardFlags(ptr: ?*anyopaque) callconv(.c) u8 {
++    const wrapper: *const TerminalWrapper = @ptrCast(@alignCast(ptr orelse return 0));
++    return @intCast(wrapper.terminal.screens.active.kitty_keyboard.current().int());
 +}
 +
 +// ============================================================================

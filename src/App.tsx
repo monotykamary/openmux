@@ -62,7 +62,7 @@ function AppContent() {
   const { setViewport, newPane, closePane } = layout;
   // Don't destructure isInitialized - it's a reactive getter that loses reactivity when destructured
   const terminal = useTerminal();
-  const { createPTY, destroyPTY, resizePTY, setPanePosition, writeToFocused, writeToPTY, pasteToFocused, getFocusedCwd, getFocusedCursorKeyMode, destroyAllPTYs, getSessionCwd, getEmulatorSync } = terminal;
+  const { createPTY, destroyPTY, resizePTY, setPanePosition, writeToFocused, writeToPTY, pasteToFocused, getFocusedCwd, getFocusedEmulator, destroyAllPTYs, getSessionCwd, getEmulatorSync } = terminal;
   const { togglePicker, state: sessionState, saveSession } = useSession();
   // Keep selection/search contexts to access reactive getters
   const selection = useSelection();
@@ -82,6 +82,7 @@ function AppContent() {
     option?: boolean;
     meta?: boolean;
     sequence?: string;
+    baseCode?: number;
   }) => {
     const sequence = event.sequence ?? '';
     const metaIsAlt = !!event.meta && !event.option && sequence.startsWith('\x1b');
@@ -465,7 +466,7 @@ function AppContent() {
 
   // Handle keyboard input
   useKeyboard(
-    (event: { name: string; ctrl?: boolean; shift?: boolean; option?: boolean; meta?: boolean; sequence?: string }) => {
+    (event: { name: string; ctrl?: boolean; shift?: boolean; option?: boolean; meta?: boolean; sequence?: string; baseCode?: number }) => {
       const normalizedEvent = normalizeKeyEvent(event);
       // Route to overlays via KeyboardRouter (handles confirmation, session picker, aggregate view)
       // Use event.sequence for printable chars (handles shift for uppercase/symbols)
@@ -480,6 +481,7 @@ function AppContent() {
         alt: normalizedEvent.option,
         shift: normalizedEvent.shift,
         sequence: normalizedEvent.sequence,
+        baseCode: normalizedEvent.baseCode,
       });
 
       // If an overlay handled the key, don't process further
@@ -514,7 +516,7 @@ function AppContent() {
       if (!handled && keyboardHandler.mode === 'normal' && !sessionState.showSessionPicker) {
         processNormalModeKey(normalizedEvent, {
           clearAllSelections,
-          getFocusedCursorKeyMode,
+          getFocusedEmulator,
           writeToFocused,
         });
       }
