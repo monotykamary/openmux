@@ -257,19 +257,12 @@ export interface StatusBarTheme {
 }
 
 /**
- * Theme for command palette
- */
-export interface CommandPaletteTheme {
-  borderColor: string;
-}
-
-/**
  * Complete theme configuration
  */
 export interface Theme {
   pane: PaneTheme;
   statusBar: StatusBarTheme;
-  commandPalette: CommandPaletteTheme;
+  searchAccentColor: string;
 }
 
 /**

@@ -5,6 +5,7 @@
 import { Show, createSignal, createEffect } from 'solid-js';
 import type { ConfirmationType } from '../core/types';
 import { useConfig } from '../contexts/ConfigContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { matchKeybinding } from '../core/keybindings';
 import { useOverlayKeyboardHandler } from '../contexts/keyboard/use-overlay-keyboard-handler';
 import type { KeyboardEvent } from '../effect/bridge';
@@ -37,6 +38,8 @@ const MESSAGES: Record<ConfirmationType, { title: string; message: string }> = {
 
 export function ConfirmationDialog(props: ConfirmationDialogProps) {
   const appConfig = useConfig();
+  const theme = useTheme();
+  const accentColor = () => theme.pane.urgentBorderColor;
   // Track which button is focused: 0 = Confirm, 1 = Cancel (default)
   const [focusedButton, setFocusedButton] = createSignal(1);
 
@@ -117,7 +120,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps) {
           height: overlayHeight,
           border: true,
           borderStyle: 'rounded',
-          borderColor: '#FF6600',
+          borderColor: accentColor(),
           padding: 1,
           zIndex: 200,
         }}

@@ -7,6 +7,7 @@
 
 import { Show, type Accessor } from 'solid-js';
 import { useSearch } from '../contexts/SearchContext';
+import { useTheme } from '../contexts/ThemeContext';
 import type { SearchState } from '../contexts/search/types';
 
 interface SearchOverlayProps {
@@ -15,8 +16,10 @@ interface SearchOverlayProps {
 }
 
 export function SearchOverlay(props: SearchOverlayProps) {
+  const theme = useTheme();
   // Keep search context to access searchState reactively (it's a getter)
   const search = useSearch();
+  const accentColor = () => theme.searchAccentColor;
 
   // Calculate overlay dimensions
   const overlayWidth = () => Math.min(props.width - 4, 60);
@@ -50,7 +53,7 @@ export function SearchOverlay(props: SearchOverlayProps) {
             height: overlayHeight,
             border: true,
             borderStyle: 'rounded',
-            borderColor: '#FFAA00',
+            borderColor: accentColor(),
             padding: 0,
             paddingLeft: 1,
             paddingRight: 1,
@@ -61,9 +64,9 @@ export function SearchOverlay(props: SearchOverlayProps) {
           titleAlignment="center"
         >
           <box style={{ flexDirection: 'row', height: 1 }}>
-            <text fg="#FFAA00">/ </text>
+            <text fg={accentColor()}>/ </text>
             <text fg="#FFFFFF">{state().query || ' '}</text>
-            <text fg="#FFAA00">_</text>
+            <text fg={accentColor()}>_</text>
             <text fg="#444444">  </text>
             <text fg={state().matches.length > 0 ? '#88FF88' : '#888888'}>{matchDisplay()}</text>
             <text fg="#444444">  </text>

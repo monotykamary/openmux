@@ -39,6 +39,7 @@ function formatRelativeTime(timestamp: number): string {
 export function SessionPicker(props: SessionPickerProps) {
   const theme = useTheme();
   const config = useConfig();
+  const accentColor = () => theme.pane.focusedBorderColor;
   // Keep session context to access filteredSessions reactively (it's a getter)
   const session = useSession();
   const {
@@ -204,7 +205,7 @@ export function SessionPicker(props: SessionPickerProps) {
           height: overlayHeight(),
           border: true,
           borderStyle: 'rounded',
-          borderColor: '#00AAFF',
+          borderColor: accentColor(),
           padding: 1,
           zIndex: 100,
         }}

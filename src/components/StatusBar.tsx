@@ -19,6 +19,8 @@ export function StatusBar(props: StatusBarProps) {
   const layout = useLayout();
   const { state: kbState } = useKeyboardState();
   const sessionState = useSessionState();
+  const commandColor = () => theme.searchAccentColor;
+  const sessionColor = () => theme.pane.focusedBorderColor;
 
   // Truncate session name if too long
   const displaySessionName = () => {
@@ -51,10 +53,10 @@ export function StatusBar(props: StatusBarProps) {
       <box style={{ flexDirection: 'row', gap: 1 }}>
         <ModeIndicator mode={kbState.mode} />
         <Show when={props.showCommandPalette}>
-          <text fg="#00AAFF">[COMMAND]</text>
+          <text fg={commandColor()}>[COMMAND]</text>
         </Show>
         <Show when={sessionState.showSessionPicker}>
-          <text fg="#00AAFF">[SESSIONS]</text>
+          <text fg={sessionColor()}>[SESSIONS]</text>
         </Show>
         <Show when={layout.activeWorkspace.zoomed}>
           <text fg="#666666">[ZOOMED]</text>
@@ -70,6 +72,7 @@ interface ModeIndicatorProps {
 }
 
 function ModeIndicator(props: ModeIndicatorProps) {
+  const theme = useTheme();
   const modeLabels: Record<KeyMode, string> = {
     normal: '',
     prefix: '[PREFIX]',
@@ -78,10 +81,20 @@ function ModeIndicator(props: ModeIndicatorProps) {
     confirm: '[CONFIRM]',
     move: '[MOVE]',
   };
+  const modeColor = () => {
+    switch (props.mode) {
+      case 'search':
+        return theme.searchAccentColor;
+      case 'confirm':
+        return theme.pane.urgentBorderColor;
+      default:
+        return '#666666';
+    }
+  };
 
   return (
     <Show when={props.mode !== 'normal'}>
-      <text fg="#666666">
+      <text fg={modeColor()}>
         {modeLabels[props.mode]}
       </text>
     </Show>

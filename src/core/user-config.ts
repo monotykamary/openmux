@@ -176,10 +176,7 @@ function mergeUserConfig(base: UserConfig, overrides?: Partial<UserConfig>): Use
         ...base.theme.statusBar,
         ...overrides.theme?.statusBar,
       },
-      commandPalette: {
-        ...base.theme.commandPalette,
-        ...overrides.theme?.commandPalette,
-      },
+      searchAccentColor: overrides.theme?.searchAccentColor ?? base.theme.searchAccentColor,
     },
     session: {
       autoSaveIntervalMs: overrides.session?.autoSaveIntervalMs ?? base.session.autoSaveIntervalMs,

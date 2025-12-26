@@ -16,7 +16,7 @@ export function ThemeProvider(props: ThemeProviderProps) {
   const mergedTheme: Theme = {
     pane: { ...DEFAULT_THEME.pane, ...props.theme?.pane },
     statusBar: { ...DEFAULT_THEME.statusBar, ...props.theme?.statusBar },
-    commandPalette: { ...DEFAULT_THEME.commandPalette, ...props.theme?.commandPalette },
+    searchAccentColor: props.theme?.searchAccentColor ?? DEFAULT_THEME.searchAccentColor,
   };
 
   return (

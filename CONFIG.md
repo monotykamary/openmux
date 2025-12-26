@@ -27,24 +27,24 @@ minPaneHeight = 5
   bottom = 0
   left = 0
 
-[theme.pane]
-borderColor = "#444444"
-focusedBorderColor = "#00AAFF"
-urgentBorderColor = "#FF5500"
-borderStyle = "rounded"
-innerGap = 1
-outerGap = 1
-titleColor = "#888888"
-focusedTitleColor = "#FFFFFF"
+[theme]
+searchAccentColor = "#FFAA00"
 
-[theme.statusBar]
-backgroundColor = "#1a1a1a"
-foregroundColor = "#CCCCCC"
-activeTabColor = "#00AAFF"
-inactiveTabColor = "#666666"
+  [theme.pane]
+  borderColor = "#444444"
+  focusedBorderColor = "#00AAFF"
+  urgentBorderColor = "#FF5500"
+  borderStyle = "rounded"
+  innerGap = 1
+  outerGap = 1
+  titleColor = "#888888"
+  focusedTitleColor = "#FFFFFF"
 
-[theme.commandPalette]
-borderColor = "#FFAA00"
+  [theme.statusBar]
+  backgroundColor = "#1a1a1a"
+  foregroundColor = "#CCCCCC"
+  activeTabColor = "#00AAFF"
+  inactiveTabColor = "#666666"
 
 [session]
 autoSaveIntervalMs = 30_000

@@ -50,7 +50,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 
   const hasQuery = () => props.state.query.trim().length > 0;
   const filteredCommands = createMemo(() => filterCommands(props.commands, props.state.query));
-  const accentColor = () => theme.commandPalette.borderColor;
+  const accentColor = () => theme.searchAccentColor;
   const resultCount = () => filteredCommands().length;
   const showResults = () => resultCount() > 0;
 
