@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.61](https://github.com/monotykamary/openmux/compare/v0.2.60...v0.2.61) (2025-12-27)
+
+
+### Bug Fixes
+
+* **shim:** reconcile stale PTY mappings ([d54a9c0](https://github.com/monotykamary/openmux/commit/d54a9c049b0d285e7354273b1e23d2164614fe89))
+
 ### [0.2.60](https://github.com/monotykamary/openmux/compare/v0.2.59...v0.2.60) (2025-12-27)
 
 ### [0.2.59](https://github.com/monotykamary/openmux/compare/v0.2.58...v0.2.59) (2025-12-27)
