@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.64](https://github.com/monotykamary/openmux/compare/v0.2.63...v0.2.64) (2025-12-27)
+
+
+### Features
+
+* **templates:** capture full command lines ([03190a9](https://github.com/monotykamary/openmux/commit/03190a962e4b3a31084dfb66b950c19c2493094d))
+
 ### [0.2.63](https://github.com/monotykamary/openmux/compare/v0.2.62...v0.2.63) (2025-12-27)
 
 
