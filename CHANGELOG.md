@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.59](https://github.com/monotykamary/openmux/compare/v0.2.58...v0.2.59) (2025-12-27)
+
+
+### Features
+
+* **keybindings:** add Ctrl+j/k for command palette navigation ([975f17e](https://github.com/monotykamary/openmux/commit/975f17ebd2474072a17f9857ac3f40ef8e3c2b3f))
+
 ### [0.2.58](https://github.com/monotykamary/openmux/compare/v0.2.57...v0.2.58) (2025-12-27)
 
 
