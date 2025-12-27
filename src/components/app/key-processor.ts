@@ -10,6 +10,7 @@ export interface KeyProcessorDeps {
   clearAllSelections: () => void
   getFocusedEmulator: () => ITerminalEmulator | null
   writeToFocused: (data: string) => void
+  closePane: () => void
 }
 
 /**
@@ -19,6 +20,19 @@ export function processNormalModeKey(
   event: KeyboardEvent,
   deps: KeyProcessorDeps
 ): void {
+  // Detect Ctrl+D and close pane immediately
+  if (
+    event.ctrl &&
+    !event.alt &&
+    !event.shift &&
+    !event.meta &&
+    event.key.toLowerCase() === 'd' &&
+    event.eventType !== 'release'
+  ) {
+    deps.closePane()
+    return
+  }
+
   // Clear any active selection when user types
   if (event.eventType !== "release") {
     deps.clearAllSelections()

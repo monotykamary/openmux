@@ -103,14 +103,19 @@ bun dev        # Run with watch mode
 ### Normal Mode (Alt shortcuts - no prefix needed)
 
 - `Alt+h/j/k/l` - Navigate panes
+- `Alt+m` - Enter move mode
 - `Alt+n` - New pane
 - `Alt+1-9` - Switch to workspace 1-9
 - `Alt+[` / `Alt+]` - Cycle layout mode (vertical → horizontal → stacked)
 - `Alt+x` - Close pane
 - `Alt+z` - Toggle zoom (fullscreen focused pane)
 - `Alt+s` - Open session picker
-- `Alt+a` - Open aggregate view (browse all PTYs)
+- `Alt+t` - Open template overlay
+- `Alt+g` - Open aggregate view (browse all PTYs)
+- `Alt+f` - Search scrollback
+- `Alt+p` - Open command palette
 - `Ctrl+b` - Enter prefix mode
+- `Ctrl+d` - Close pane (when typed in terminal)
 
 ### Mouse
 
@@ -124,24 +129,30 @@ bun dev        # Run with watch mode
 
 - `n` or `Enter` - New pane
 - `h/j/k/l` - Navigate panes
+- `m` - Enter move mode
+- `\` - Split vertical (create new pane)
+- `-` - Split horizontal (create new pane)
 - `1-9` - Switch to workspace 1-9
 - `v` - Set layout mode: vertical
 - `H` - Set layout mode: horizontal
 - `t` - Set layout mode: stacked (tabbed)
+- `T` - Open template overlay
 - `x` - Close current pane
 - `z` - Toggle zoom
 - `s` - Open session picker
-- `a` - Open aggregate view
-- `]` - Paste from clipboard
+- `g` - Open aggregate view
+- `/` - Search scrollback
+- `:` - Open command palette
+- `]` or `p` - Paste from clipboard
+- `` ` `` - Toggle console
+- `q` - Quit
 - `d` - Detach (leave session running)
-- `r` - Enter resize mode
 - `Esc` - Exit prefix mode
 
-### Resize Mode
+### Move Mode (Alt+m or Ctrl+b m)
 
-- `h/l` - Shrink/grow width
-- `j/k` - Grow/shrink height
-- `Enter/Esc` - Exit resize mode
+- `h/j/k/l` - Move pane in direction (west/south/north/east)
+- `Esc` - Exit move mode
 
 ## Concepts
 

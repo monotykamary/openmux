@@ -35,7 +35,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
     'm': 'mode.move',
     'n': 'pane.new',
     'enter': 'pane.new',
-    '|': 'pane.split.vertical',
+    '\\': 'pane.split.vertical',
     '-': 'pane.split.horizontal',
     'x': 'pane.close',
     'v': 'layout.mode.vertical',
@@ -74,6 +74,8 @@ export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
   commandPalette: {
     'down': 'command.palette.down',
     'up': 'command.palette.up',
+    'ctrl+j': 'command.palette.down',
+    'ctrl+k': 'command.palette.up',
     'enter': 'command.palette.confirm',
     'escape': 'command.palette.close',
     'backspace': 'command.palette.delete',
