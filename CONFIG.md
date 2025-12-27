@@ -132,6 +132,8 @@ prefixTimeoutMs = 2_000
   [keybindings.commandPalette]
   down = "command.palette.down"
   up = "command.palette.up"
+  "ctrl+j" = "command.palette.down"
+  "ctrl+k" = "command.palette.up"
   enter = "command.palette.confirm"
   escape = "command.palette.close"
   backspace = "command.palette.delete"

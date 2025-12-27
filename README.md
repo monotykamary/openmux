@@ -103,14 +103,17 @@ bun dev        # Run with watch mode
 ### Normal Mode (Alt shortcuts - no prefix needed)
 
 - `Alt+h/j/k/l` - Navigate panes
+- `Alt+m` - Enter move mode
 - `Alt+n` - New pane
-- `Alt+1-9` - Switch to workspace 1-9
-- `Alt+[` / `Alt+]` - Cycle layout mode (vertical → horizontal → stacked)
-- `Alt+x` - Close pane
-- `Alt+z` - Toggle zoom (fullscreen focused pane)
 - `Alt+s` - Open session picker
-- `Alt+a` - Open aggregate view (browse all PTYs)
-- `Ctrl+b` - Enter prefix mode
+- `Alt+t` - Open template overlay
+- `Alt+g` - Open aggregate view (browse all PTYs)
+- `Alt+f` - Open search
+- `Alt+p` - Open command palette
+- `Alt+[` / `Alt+]` - Cycle layout mode (vertical → horizontal → stacked)
+- `Alt+z` - Toggle zoom (fullscreen focused pane)
+- `Alt+x` - Close pane
+- `Alt+1-9` - Switch to workspace 1-9
 
 ### Mouse
 
@@ -122,26 +125,115 @@ bun dev        # Run with watch mode
 
 ### Prefix Mode (Ctrl+b, 2s timeout)
 
+- `1-9` - Switch to workspace 1-9
 - `n` or `Enter` - New pane
 - `h/j/k/l` - Navigate panes
-- `1-9` - Switch to workspace 1-9
+- `m` - Enter move mode
+- `\` - Split pane vertically
+- `-` - Split pane horizontally
 - `v` - Set layout mode: vertical
 - `H` - Set layout mode: horizontal
 - `t` - Set layout mode: stacked (tabbed)
-- `x` - Close current pane
+- `T` - Open template overlay
+- `x` - Close pane
 - `z` - Toggle zoom
 - `s` - Open session picker
-- `a` - Open aggregate view
-- `]` - Paste from clipboard
-- `d` - Detach (leave session running)
-- `r` - Enter resize mode
+- `g` - Open aggregate view (browse all PTYs)
+- `/` - Open search
+- `:` - Open command palette
+- `]` or `p` - Paste from clipboard
+- `` ` `` - Toggle console overlay
+- `q` - Quit openmux
+- `d` - Detach (leave session running in background)
 - `Esc` - Exit prefix mode
 
-### Resize Mode
+### Move Mode
 
-- `h/l` - Shrink/grow width
-- `j/k` - Grow/shrink height
-- `Enter/Esc` - Exit resize mode
+- `h/j/k/l` - Move focused pane west/south/north/east
+- `Esc` - Exit move mode
+
+### Search Mode
+
+- `Ctrl+n` - Next match
+- `Ctrl+p` - Previous match
+- `Enter` - Confirm selection and jump
+- `Esc` - Cancel search
+- `Backspace` - Delete last character
+
+### Command Palette
+
+- `↑` / `↓` or `Ctrl+k` / `Ctrl+j` - Navigate commands
+- `Enter` - Execute selected command
+- `Esc` - Close command palette
+- `Backspace` - Delete last character
+
+### Template Overlay
+
+**Apply Tab:**
+- `↑` / `↓` - Navigate templates
+- `Enter` - Apply selected template
+- `Tab` - Switch to save tab
+- `Ctrl+x` / `Ctrl+d` - Delete template
+- `Esc` - Close overlay
+
+**Save Tab:**
+- `Enter` - Save current layout as template
+- `Tab` - Switch to apply tab
+- `Backspace` - Delete last character
+- `Esc` - Close overlay
+
+### Aggregate View
+
+**List:**
+- `j/k` / `↑` / `↓` - Navigate PTYs
+- `Enter` - Preview selected PTY
+- `Tab` - Jump to selected PTY and close view
+- `Alt+a` - Toggle scope (all workspaces vs current)
+- `Alt+x` - Kill selected PTY
+- `Backspace` - Delete last filter character
+- `Alt+Esc` - Close aggregate view
+
+**Preview:**
+- `Alt+Esc` - Return to list
+- `Alt+f` - Open search in preview
+- `Alt+x` - Kill current PTY
+- Full keyboard/mouse support for terminal interaction
+
+**Search (in preview):**
+- `Ctrl+n` - Next match
+- `Ctrl+p` - Previous match
+- `Enter` - Jump to match
+- `Esc` - Exit search
+- `Backspace` - Delete last character
+
+**Prefix (in preview):**
+- `q` - Quit openmux
+- `d` - Detach
+- `Esc` - Return to list
+- `/` - Open search
+
+### Session Picker
+
+**List Tab:**
+- `↑` / `↓` - Navigate sessions
+- `Enter` - Select or create session
+- `Ctrl+n` - Create new session
+- `Ctrl+r` - Rename session
+- `Ctrl+x` / `Ctrl+d` - Delete session
+- `Backspace` - Delete last filter character
+- `Esc` - Close picker
+
+**Rename Tab:**
+- `Enter` - Confirm new name
+- `Esc` - Cancel rename
+- `Backspace` - Delete last character
+
+### Confirmation Dialog
+
+- `h` / `←` or `l` / `→` - Focus confirm/cancel
+- `Tab` - Toggle between confirm/cancel
+- `Enter` - Confirm
+- `Esc` - Cancel
 
 ## Concepts
 
@@ -168,7 +260,7 @@ Each workspace has a layout mode that determines how panes are arranged:
 
 ### Sessions
 
-Sessions persist your workspace layouts and pane working directories. Sessions are auto-saved to `~/.config/openmux/sessions/` and can be switched via the session picker (`Alt+s` or `Ctrl+b s`).
+Sessions persist your workspace layouts and pane working directories. Sessions are auto-saved to `~/.config/openmux/sessions/` and can be switched via the session picker (`Alt+s` or `Ctrl+b` then `s`).
 
 ### Configuration
 
@@ -193,7 +285,7 @@ Use `Ctrl+b d` to detach and leave the background shim running. Reattach by laun
 
 ### Aggregate View
 
-A fullscreen overlay (`Alt+a` or `Ctrl+b a`) that lets you browse all PTYs across all workspaces in one place. Features:
+A fullscreen overlay (`Alt+g` or `Ctrl+b` then `g`) that lets you browse all PTYs across all workspaces in one place. Features:
 
 - **Card-style PTY list** showing directory, process name, and git branch
 - **Interactive terminal preview** with full input support (keyboard + mouse)
