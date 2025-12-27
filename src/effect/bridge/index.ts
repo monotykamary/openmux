@@ -76,6 +76,7 @@ export { getHostBackgroundColor, getHostForegroundColor } from "./color-bridge"
 export {
   registerPtyPane,
   getSessionPtyMapping,
+  type SessionPtyMapping,
   onShimDetached,
   shutdownShim,
   waitForShimClient,

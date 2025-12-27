@@ -242,8 +242,32 @@ export function createRequestHandler(params: {
 
         case 'getSessionMapping': {
           const sessionId = requestParams.sessionId as string;
+          const sessionPanes = params.state.sessionPanes.get(sessionId);
+          const stalePaneIds: string[] = [];
+
+          if (sessionPanes && sessionPanes.size > 0) {
+            try {
+              const activePtys = await params.withPty((pty) => pty.listAll()) as Array<string>;
+              const activeSet = new Set(activePtys.map((id) => String(id)));
+              const stalePtyIds: string[] = [];
+
+              for (const [paneId, ptyId] of sessionPanes.entries()) {
+                if (!activeSet.has(ptyId)) {
+                  stalePaneIds.push(paneId);
+                  stalePtyIds.push(ptyId);
+                }
+              }
+
+              for (const ptyId of stalePtyIds) {
+                params.removeMappingForPty(ptyId);
+              }
+            } catch {
+              // Ignore prune errors - return existing mapping as-is.
+            }
+          }
+
           const entries = Array.from(params.state.sessionPanes.get(sessionId)?.entries() ?? []).map(([paneId, ptyId]) => ({ paneId, ptyId }));
-          params.sendResponse(socket, requestId, { entries });
+          params.sendResponse(socket, requestId, { entries, stalePaneIds });
           return;
         }
 

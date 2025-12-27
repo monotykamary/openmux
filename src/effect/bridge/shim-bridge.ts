@@ -11,7 +11,12 @@ export async function registerPtyPane(
   await ShimClient.registerPaneMapping(sessionId, paneId, ptyId);
 }
 
-export async function getSessionPtyMapping(sessionId: string): Promise<Map<string, string> | undefined> {
+export type SessionPtyMapping = {
+  mapping: Map<string, string>;
+  stalePaneIds: string[];
+};
+
+export async function getSessionPtyMapping(sessionId: string): Promise<SessionPtyMapping | undefined> {
   if (!isShimClient()) return undefined;
   return ShimClient.getSessionMapping(sessionId);
 }

@@ -53,8 +53,11 @@ interface TerminalContextValue {
   destroyAllPTYs: () => void;
   /** Suspend a session (save PTY mapping, unsubscribe without destroying) */
   suspendSession: (sessionId: string) => void;
-  /** Resume a session (resubscribe to saved PTYs, returns paneId→ptyId map) */
-  resumeSession: (sessionId: string) => Promise<Map<string, string> | undefined>;
+  /** Resume a session (resubscribe to saved PTYs, returns paneId→ptyId map + missing panes) */
+  resumeSession: (sessionId: string) => Promise<{
+    mapping: Map<string, string>;
+    missingPaneIds: string[];
+  } | undefined>;
   /** Cleanup PTYs for a deleted session */
   cleanupSessionPtys: (sessionId: string) => void;
   /** Write input to the focused pane's PTY */
@@ -254,15 +257,14 @@ export function TerminalProvider(props: TerminalProviderProps) {
   };
 
   // Resume a session: resubscribe to saved PTYs
-  const handleResumeSession = async (sessionId: string): Promise<Map<string, string> | undefined> => {
+  const handleResumeSession = async (
+    sessionId: string
+  ): Promise<{ mapping: Map<string, string>; missingPaneIds: string[] } | undefined> => {
     const shimMapping = await getSessionPtyMapping(sessionId);
-    const savedMapping = shimMapping ?? sessionPtyMap.get(sessionId);
-    if (!savedMapping || savedMapping.size === 0) {
+    const missingPaneIds = new Set(shimMapping?.stalePaneIds ?? []);
+    const savedMapping = shimMapping?.mapping ?? sessionPtyMap.get(sessionId);
+    if (!savedMapping || (savedMapping.size === 0 && missingPaneIds.size === 0)) {
       return undefined;
-    }
-
-    if (shimMapping) {
-      sessionPtyMap.set(sessionId, new Map(shimMapping));
     }
 
     // Resubscribe to each PTY
@@ -286,10 +288,15 @@ export function TerminalProvider(props: TerminalProviderProps) {
       } catch {
         // PTY may have exited while suspended - remove from mapping
         savedMapping.delete(paneId);
+        missingPaneIds.add(paneId);
       }
     }
 
-    return savedMapping;
+    if (shimMapping) {
+      sessionPtyMap.set(sessionId, new Map(savedMapping));
+    }
+
+    return { mapping: savedMapping, missingPaneIds: Array.from(missingPaneIds) };
   };
 
   // Cleanup PTYs for a deleted session
@@ -312,9 +319,9 @@ export function TerminalProvider(props: TerminalProviderProps) {
       return;
     }
 
-    getSessionPtyMapping(sessionId).then((mapping) => {
-      if (!mapping) return;
-      for (const ptyId of mapping.values()) {
+    getSessionPtyMapping(sessionId).then((mappingInfo) => {
+      if (!mappingInfo) return;
+      for (const ptyId of mappingInfo.mapping.values()) {
         const unsub = unsubscribeFns.get(ptyId);
         if (unsub) {
           unsub();

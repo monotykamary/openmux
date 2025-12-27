@@ -270,7 +270,9 @@ describe('shim server', () => {
     const socketPath = join(socketDir, 'shim.sock');
 
     const fakePty = {
-      listAll: () => [],
+      listAll: () => ['pty-1'],
+      subscribeUnified: () => () => {},
+      onExit: () => () => {},
       subscribeToLifecycle: () => () => {},
       subscribeToAllTitleChanges: () => () => {},
     };
@@ -310,6 +312,84 @@ describe('shim server', () => {
     expect(mappingResponse.header.ok).toBe(true);
     const entries = (mappingResponse.header.result as { entries: Array<{ paneId: string; ptyId: string }> }).entries;
     expect(entries).toEqual([{ paneId: 'pane-1', ptyId: 'pty-1' }]);
+
+    client.destroy();
+    server.close();
+    await fs.rm(socketDir, { recursive: true, force: true });
+  });
+
+  test('prunes stale pane mappings when PTYs are missing', async () => {
+    const socketDir = await fs.mkdtemp(join(tmpdir(), 'openmux-shim-'));
+    const socketPath = join(socketDir, 'shim.sock');
+
+    const fakePty = {
+      listAll: () => ['pty-1'],
+      subscribeUnified: () => () => {},
+      onExit: () => () => {},
+      subscribeToLifecycle: () => () => {},
+      subscribeToAllTitleChanges: () => () => {},
+    };
+
+    const server = await startShimServer({
+      socketPath,
+      withPty: async (fn) => fn(fakePty),
+      setHostColors: () => {},
+    });
+
+    const client = await connectClient(socketPath);
+    const reader = createFrameQueue(client);
+    await sendRequest(client, {
+      type: 'request',
+      requestId: 1,
+      method: 'hello',
+      params: { clientId: 'client-stale' },
+    });
+    await reader.nextFrame();
+
+    await sendRequest(client, {
+      type: 'request',
+      requestId: 2,
+      method: 'registerPane',
+      params: { sessionId: 'session-2', paneId: 'pane-1', ptyId: 'pty-1' },
+    });
+    await reader.nextFrame();
+
+    await sendRequest(client, {
+      type: 'request',
+      requestId: 3,
+      method: 'registerPane',
+      params: { sessionId: 'session-2', paneId: 'pane-2', ptyId: 'pty-2' },
+    });
+    await reader.nextFrame();
+
+    await sendRequest(client, {
+      type: 'request',
+      requestId: 4,
+      method: 'getSessionMapping',
+      params: { sessionId: 'session-2' },
+    });
+    const mappingResponse = await reader.nextFrame();
+    expect(mappingResponse.header.ok).toBe(true);
+    const result = mappingResponse.header.result as {
+      entries: Array<{ paneId: string; ptyId: string }>;
+      stalePaneIds: string[];
+    };
+    expect(result.entries).toEqual([{ paneId: 'pane-1', ptyId: 'pty-1' }]);
+    expect(result.stalePaneIds).toEqual(['pane-2']);
+
+    await sendRequest(client, {
+      type: 'request',
+      requestId: 5,
+      method: 'getSessionMapping',
+      params: { sessionId: 'session-2' },
+    });
+    const secondResponse = await reader.nextFrame();
+    const secondResult = secondResponse.header.result as {
+      entries: Array<{ paneId: string; ptyId: string }>;
+      stalePaneIds: string[];
+    };
+    expect(secondResult.entries).toEqual([{ paneId: 'pane-1', ptyId: 'pty-1' }]);
+    expect(secondResult.stalePaneIds).toEqual([]);
 
     client.destroy();
     server.close();

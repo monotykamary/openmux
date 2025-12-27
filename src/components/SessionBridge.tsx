@@ -10,6 +10,7 @@ import { SessionProvider } from '../contexts/SessionContext';
 import type { WorkspaceId } from '../core/types';
 import type { Workspaces } from '../core/operations/layout-actions';
 import { collectPanes } from '../core/layout-tree';
+import { pruneMissingPanes } from './session-bridge-utils';
 import {
   clearPtyTracking,
   setSessionCwdMap,
@@ -59,11 +60,31 @@ export function SessionBridge(props: SessionBridgeProps) {
     sessionId: string
   ) => {
     // Try to resume PTYs for this session (if we've visited it before)
-    const restoredPtys = await resumeSession(sessionId);
+    const resumeResult = await resumeSession(sessionId);
+    const restoredPtys = resumeResult?.mapping;
+    const missingPaneIds = resumeResult?.missingPaneIds ?? [];
+    let workspacesToLoad = workspaces;
+    let activeWorkspaceIdToLoad = activeWorkspaceId;
+
+    if (missingPaneIds.length > 0) {
+      const pruned = pruneMissingPanes({
+        workspaces: workspacesToLoad,
+        activeWorkspaceId: activeWorkspaceIdToLoad,
+        paneIds: missingPaneIds,
+        viewport: layout.state.viewport,
+        config: layout.state.config,
+      });
+      workspacesToLoad = pruned.workspaces;
+      activeWorkspaceIdToLoad = pruned.activeWorkspaceId;
+      for (const paneId of new Set(missingPaneIds)) {
+        cwdMap.delete(paneId);
+        commandMap.delete(paneId);
+      }
+    }
 
     // If we have restored PTYs, assign them to the panes
     if (restoredPtys && restoredPtys.size > 0) {
-      for (const workspace of Object.values(workspaces)) {
+      for (const workspace of Object.values(workspacesToLoad)) {
         if (!workspace) continue;
         const nodes = [];
         if (workspace.mainPane) nodes.push(workspace.mainPane);
@@ -88,7 +109,7 @@ export function SessionBridge(props: SessionBridgeProps) {
     setSessionCommandMap(commandMap);
 
     // Load workspaces into layout (this triggers reactive effects)
-    loadSession({ workspaces, activeWorkspaceId });
+    loadSession({ workspaces: workspacesToLoad, activeWorkspaceId: activeWorkspaceIdToLoad });
   };
 
   const onBeforeSwitch = async (currentSessionId: string) => {

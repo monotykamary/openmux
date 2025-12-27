@@ -155,10 +155,20 @@ export async function registerPaneMapping(sessionId: string, paneId: string, pty
   await sendRequest('registerPane', { sessionId, paneId, ptyId });
 }
 
-export async function getSessionMapping(sessionId: string): Promise<Map<string, string>> {
+export async function getSessionMapping(sessionId: string): Promise<{
+  mapping: Map<string, string>;
+  stalePaneIds: string[];
+}> {
   const response = await sendRequest('getSessionMapping', { sessionId });
-  const entries = (response.header.result as { entries: Array<{ paneId: string; ptyId: string }> }).entries ?? [];
-  return new Map(entries.map((entry) => [entry.paneId, entry.ptyId]));
+  const result = response.header.result as {
+    entries?: Array<{ paneId: string; ptyId: string }>;
+    stalePaneIds?: string[];
+  } | undefined;
+  const entries = result?.entries ?? [];
+  return {
+    mapping: new Map(entries.map((entry) => [entry.paneId, entry.ptyId])),
+    stalePaneIds: result?.stalePaneIds ?? [],
+  };
 }
 
 function createRemoteEmulator(ptyId: string): RemoteEmulator {
