@@ -418,6 +418,7 @@ function AppContent() {
           clearAllSelections,
           getFocusedEmulator,
           writeToFocused,
+          closePane,
         });
       }
     },
