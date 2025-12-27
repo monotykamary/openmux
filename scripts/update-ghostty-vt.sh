@@ -85,6 +85,9 @@ if [[ "$MODE" == "update" ]]; then
   fi
 
   target_commit="$(git -C "$GHOSTTY_DIR" rev-parse "$target_ref")"
+
+  git -C "$GHOSTTY_DIR" reset --hard HEAD
+  git -C "$GHOSTTY_DIR" clean -fd
   git -C "$GHOSTTY_DIR" checkout --detach "$target_commit"
   echo "Pinned ghostty to $target_commit"
 fi
