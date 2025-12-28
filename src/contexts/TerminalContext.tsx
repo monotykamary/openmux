@@ -112,6 +112,7 @@ export function TerminalProvider(props: TerminalProviderProps) {
   const layout = useLayout();
   const { setPanePty, closePaneById, newPaneWithPty, getNewPaneDimensions } = layout;
   const titleContext = useTitle();
+  let isActive = true;
   let initialized = false;
   const [isInitialized, setIsInitialized] = createSignal(false);
 
@@ -183,12 +184,14 @@ export function TerminalProvider(props: TerminalProviderProps) {
     // Detect host capabilities first (for graphics passthrough)
     detectHostCapabilities()
       .then(() => {
+        if (!isActive) return;
         if (!isShimClient()) {
           // Clean up any orphaned PTYs from previous hot reloads (dev mode)
           return destroyAllPtys();
         }
       })
       .then(() => {
+        if (!isActive) return;
         setIsInitialized(true);
         // Subscribe to title changes across all PTYs
         // Titles are stored in TitleContext (plain Map) to avoid layout store updates
@@ -201,6 +204,10 @@ export function TerminalProvider(props: TerminalProviderProps) {
             titleContext.setTitle(paneId, event.title);
           }
         }).then((unsub) => {
+          if (!isActive) {
+            unsub();
+            return;
+          }
           titleSubscriptionUnsub = unsub;
         });
         subscribeToPtyLifecycle((event) => {
@@ -208,16 +215,23 @@ export function TerminalProvider(props: TerminalProviderProps) {
             ptyLifecycleHandlers.handlePtyDestroyed(event.ptyId);
           }
         }).then((unsub) => {
+          if (!isActive) {
+            unsub();
+            return;
+          }
           lifecycleSubscriptionUnsub = unsub;
         });
       })
       .catch((err) => {
-        console.error('Failed to initialize terminal:', err);
+        if (isActive) {
+          console.error('Failed to initialize terminal:', err);
+        }
       });
   });
 
   // Cleanup on unmount
   onCleanup(() => {
+    isActive = false;
     // Unsubscribe title subscription
     if (titleSubscriptionUnsub) {
       titleSubscriptionUnsub();

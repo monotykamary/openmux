@@ -35,6 +35,14 @@ const ptyStates = new Map<string, PtyState>();
 const emulatorCache = new Map<string, ScrollbackAwareEmulator>();
 let emulatorFactory: ((ptyId: string) => ScrollbackAwareEmulator) | null = null;
 
+function clearPtySubscribers(ptyId: string): void {
+  unifiedSubscribers.delete(ptyId);
+  stateSubscribers.delete(ptyId);
+  scrollSubscribers.delete(ptyId);
+  exitSubscribers.delete(ptyId);
+  titleSubscribers.delete(ptyId);
+}
+
 export function registerEmulatorFactory(factory: (ptyId: string) => ScrollbackAwareEmulator): void {
   emulatorFactory = factory;
 }
@@ -105,6 +113,7 @@ export function handlePtyTitle(ptyId: string, title: string): void {
 export function handlePtyLifecycle(ptyId: string, eventType: 'created' | 'destroyed'): void {
   if (eventType === 'destroyed') {
     deletePtyState(ptyId);
+    clearPtySubscribers(ptyId);
   }
   for (const callback of lifecycleSubscribers) {
     callback({ type: eventType, ptyId });
@@ -142,6 +151,9 @@ export function subscribeUnified(ptyId: string, callback: UnifiedSubscriber): ()
 
   return () => {
     set.delete(callback);
+    if (set.size === 0) {
+      unifiedSubscribers.delete(ptyId);
+    }
   };
 }
 
@@ -157,6 +169,9 @@ export function subscribeState(ptyId: string, callback: (state: TerminalState) =
 
   return () => {
     set.delete(callback);
+    if (set.size === 0) {
+      stateSubscribers.delete(ptyId);
+    }
   };
 }
 
@@ -167,6 +182,9 @@ export function subscribeScroll(ptyId: string, callback: () => void): () => void
 
   return () => {
     set.delete(callback);
+    if (set.size === 0) {
+      scrollSubscribers.delete(ptyId);
+    }
   };
 }
 
@@ -177,6 +195,9 @@ export function subscribeExit(ptyId: string, callback: (exitCode: number) => voi
 
   return () => {
     set.delete(callback);
+    if (set.size === 0) {
+      exitSubscribers.delete(ptyId);
+    }
   };
 }
 
@@ -192,6 +213,9 @@ export function subscribeToTitle(ptyId: string, callback: (title: string) => voi
 
   return () => {
     set.delete(callback);
+    if (set.size === 0) {
+      titleSubscribers.delete(ptyId);
+    }
   };
 }
 

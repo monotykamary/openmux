@@ -236,6 +236,7 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
     titleChange: null,
     polling: null,
   };
+  let subscriptionsEpoch = 0;
 
   // Incremental title update handler - O(1) instead of full refresh
   const handleTitleChange = (event: { ptyId: string; title: string }) => {
@@ -324,23 +325,38 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
   };
 
   const setupSubscriptions = async () => {
+    const epoch = ++subscriptionsEpoch;
     // Subscribe to PTY lifecycle events for auto-refresh (created/destroyed)
     // Use debounced refresh to prevent animation stutter from rapid events
-    subscriptions.lifecycle = await subscribeToPtyLifecycle(() => {
+    const lifecycleUnsub = await subscribeToPtyLifecycle(() => {
       debouncedRefreshPtys();
     });
+    if (epoch !== subscriptionsEpoch || !state.showAggregateView) {
+      lifecycleUnsub();
+      return;
+    }
+    subscriptions.lifecycle = lifecycleUnsub;
 
     // Subscribe to title changes - use incremental update instead of full refresh
-    subscriptions.titleChange = await subscribeToAllTitleChanges(handleTitleChange);
+    const titleUnsub = await subscribeToAllTitleChanges(handleTitleChange);
+    if (epoch !== subscriptionsEpoch || !state.showAggregateView) {
+      titleUnsub();
+      return;
+    }
+    subscriptions.titleChange = titleUnsub;
 
     // Poll all PTYs every 5 seconds using native APIs (very fast, ~1ms per PTY)
     // Title change events handle most updates - this is just a fallback
+    if (epoch !== subscriptionsEpoch || !state.showAggregateView) {
+      return;
+    }
     subscriptions.polling = setInterval(() => {
       incrementalRefreshPtys();
     }, 5000);
   };
 
   const cleanupSubscriptions = () => {
+    subscriptionsEpoch += 1;
     subscriptions.lifecycle?.();
     subscriptions.titleChange?.();
     if (subscriptions.polling) clearInterval(subscriptions.polling);
