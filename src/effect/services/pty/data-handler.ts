@@ -4,6 +4,7 @@
  */
 import type { SyncModeParser } from "../../../terminal/sync-mode-parser"
 import type { InternalPtySession } from "./types"
+import { deferMacrotask } from "../../../core/scheduling"
 
 interface DataHandlerOptions {
   session: InternalPtySession
@@ -84,11 +85,11 @@ export function createDataHandler(options: DataHandlerOptions) {
     }
   }
 
-  // Helper to schedule notification (uses setTimeout to yield for rendering)
+  // Helper to schedule notification (uses macrotask to yield for rendering)
   const scheduleNotify = () => {
     if (!session.pendingNotify) {
       session.pendingNotify = true
-      setTimeout(drainPending, 0)
+      deferMacrotask(drainPending)
     }
   }
 

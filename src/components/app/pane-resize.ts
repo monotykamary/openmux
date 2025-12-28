@@ -4,6 +4,7 @@
  */
 
 import type { PaneData } from '../../core/types';
+import { deferNextTick } from '../../core/scheduling';
 
 export interface PaneResizeDeps {
   // State accessors
@@ -27,13 +28,6 @@ export function createPaneResizeHandlers(deps: PaneResizeDeps) {
   type PaneGeometry = { cols: number; rows: number; x: number; y: number };
   const lastGeometry = new Map<string, PaneGeometry>();
   const RESIZE_BATCH_SIZE = 2;
-  const defer = (fn: () => void) => {
-    if (typeof setImmediate !== 'undefined') {
-      setImmediate(fn);
-    } else {
-      setTimeout(fn, 0);
-    }
-  };
   let resizeScheduled = false;
   let resizeRunning = false;
   let resizeRerunRequested = false;
@@ -94,7 +88,7 @@ export function createPaneResizeHandlers(deps: PaneResizeDeps) {
       return;
     }
     resizeScheduled = true;
-    defer(() => {
+    deferNextTick(() => {
       resizeScheduled = false;
       resizeRunning = true;
       resizeRerunRequested = false;
@@ -110,7 +104,7 @@ export function createPaneResizeHandlers(deps: PaneResizeDeps) {
         }
 
         if (index < panesSnapshot.length) {
-          defer(runBatch);
+          deferNextTick(runBatch);
           return;
         }
 

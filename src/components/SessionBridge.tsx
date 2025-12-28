@@ -11,6 +11,7 @@ import type { WorkspaceId } from '../core/types';
 import type { Workspaces } from '../core/operations/layout-actions';
 import { collectPanes } from '../core/layout-tree';
 import { pruneMissingPanes } from './session-bridge-utils';
+import { deferMacrotask } from '../core/scheduling';
 import {
   clearPtyTracking,
   setSessionCwdMap,
@@ -150,12 +151,12 @@ export function SessionBridge(props: SessionBridgeProps) {
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => deferMacrotask(resolve));
     destroyAllPTYs();
     clearPtyTracking();
     clearSessionCwdMap();
     clearSessionCommandMap();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => deferMacrotask(resolve));
   };
 
   return (

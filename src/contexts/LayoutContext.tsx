@@ -19,6 +19,7 @@ import {
   getWorkspacePaneCount,
   calculateMasterStackLayout,
 } from '../core/operations/master-stack-layout';
+import { deferMacrotask, deferNextTick } from '../core/scheduling';
 import { containsPane, updatePaneInNode } from '../core/layout-tree';
 import {
   layoutReducer,
@@ -224,13 +225,13 @@ export function LayoutProvider(props: LayoutProviderProps) {
   const dispatch = (action: LayoutAction) => {
     // SET_PANE_PTY uses fast direct path update - defer to avoid blocking animations
     if (action.type === 'SET_PANE_PTY') {
-      setTimeout(() => applySetPanePty(action.paneId, action.ptyId), 0);
+      deferMacrotask(() => applySetPanePty(action.paneId, action.ptyId));
       return;
     }
 
     // NEW_PANE uses fast produce path - defer to avoid blocking animations in other panes
     if (action.type === 'NEW_PANE') {
-      setTimeout(() => applyNewPane(action.title), 0);
+      deferMacrotask(() => applyNewPane(action.title));
       return;
     }
 
@@ -242,14 +243,8 @@ export function LayoutProvider(props: LayoutProviderProps) {
       pendingActions.push(action);
       if (!flushScheduled) {
         flushScheduled = true;
-        // Use setImmediate/setTimeout(0) to defer to next event loop iteration
-        // This allows any pending rendering to complete before layout changes
-        // setImmediate is faster than setTimeout(0) when available (Node/Bun)
-        if (typeof setImmediate !== 'undefined') {
-          setImmediate(flushActions);
-        } else {
-          setTimeout(flushActions, 0);
-        }
+        // Defer to next event loop iteration to allow pending rendering to complete.
+        deferNextTick(flushActions);
       }
       return;
     }

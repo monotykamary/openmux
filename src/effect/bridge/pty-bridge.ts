@@ -9,6 +9,7 @@ import { Pty } from "../services"
 import { PtyId, Cols, Rows } from "../types"
 import type { TerminalState, UnifiedTerminalUpdate } from "../../core/types"
 import type { ITerminalEmulator } from "../../terminal/emulator-interface"
+import { deferMacrotask } from "../../core/scheduling"
 
 /**
  * Create a PTY session using Effect service.
@@ -116,14 +117,14 @@ export async function getPtyLastCommand(ptyId: string): Promise<string | undefin
 export function destroyPty(ptyId: string): void {
   // Defer to macrotask (setTimeout) for truly non-blocking behavior
   // Microtasks still block the current frame, macrotasks run after rendering
-  setTimeout(() => {
+  deferMacrotask(() => {
     runEffectIgnore(
       Effect.gen(function* () {
         const pty = yield* Pty
         yield* pty.destroy(PtyId.make(ptyId))
       })
     )
-  }, 0)
+  })
 }
 
 /**
@@ -131,14 +132,14 @@ export function destroyPty(ptyId: string): void {
  * This is fire-and-forget - deferred to next macrotask to avoid blocking animations.
  */
 export function destroyAllPtys(): void {
-  setTimeout(() => {
+  deferMacrotask(() => {
     runEffectIgnore(
       Effect.gen(function* () {
         const pty = yield* Pty
         yield* pty.destroyAll()
       })
     )
-  }, 0)
+  })
 }
 
 /**

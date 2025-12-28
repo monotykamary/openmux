@@ -9,6 +9,7 @@ import {
   isPtyCreated,
   markPtyCreated,
 } from '../../effect/bridge';
+import { deferMacrotask } from '../../core/scheduling';
 
 type PaneRectangle = { width: number; height: number };
 
@@ -133,12 +134,12 @@ export function usePtyCreation(params: {
           pendingPtyCreation.add(pane.id);
 
           // Defer to next macrotask - allows animations to continue
-          setTimeout(() => {
+          deferMacrotask(() => {
             const success = createPtyForPane(pane);
             if (!success) {
               setTimeout(() => setPtyRetryCounter((c) => c + 1), 100);
             }
-          }, 0);
+          });
         }
       }
     )

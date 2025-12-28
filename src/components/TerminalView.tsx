@@ -33,6 +33,7 @@ import {
   calculatePrefetchRequest,
   guardScrollbackRender,
 } from './terminal-view';
+import { deferMacrotask } from '../core/scheduling';
 
 const visiblePtyCounts = new Map<string, number>();
 
@@ -130,18 +131,18 @@ export function TerminalView(props: TerminalViewProps) {
         let cachedRows: TerminalCell[][] = [];
 
         // Batched render request - coalesces multiple updates into one render
-        // Use setTimeout instead of queueMicrotask to defer after current frame
-        // queueMicrotask runs before render (blocking), setTimeout runs after
+        // Use macrotask instead of queueMicrotask to defer after current frame
+        // queueMicrotask runs before render (blocking), macrotask runs after
         const requestRenderFrame = () => {
           if (!renderRequested && mounted) {
             renderRequested = true;
-            setTimeout(() => {
+            deferMacrotask(() => {
               if (mounted) {
                 renderRequested = false;
                 setVersion(v => v + 1);
                 renderer.requestRender();
               }
-            }, 0);
+            });
           }
         };
 

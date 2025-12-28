@@ -16,6 +16,7 @@ import {
   clearAllPtyCaches,
   type PtyCaches,
 } from '../../hooks/usePtySubscription';
+import { deferMacrotask } from '../../core/scheduling';
 
 export interface PtyLifecycleDeps {
   /** Map of ptyId -> paneId for current session */
@@ -145,7 +146,7 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
 
     // Defer subscription setup to next frame to avoid blocking the render
     // This spreads out the work and prevents stutter
-    setTimeout(async () => {
+    deferMacrotask(async () => {
       if (!ptyToPaneMap.has(ptyId)) {
         return;
       }
@@ -164,7 +165,7 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
         exitUnsub();
         unsub();
       });
-    }, 0);
+    });
 
     return ptyId;
   };
@@ -201,7 +202,7 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
     }
 
     // Defer subscription setup to next frame to avoid blocking the render
-    setTimeout(async () => {
+    deferMacrotask(async () => {
       if (!ptyToPaneMap.has(ptyId)) {
         return;
       }
@@ -220,7 +221,7 @@ export function createPtyLifecycleHandlers(deps: PtyLifecycleDeps) {
         exitUnsub();
         unsub();
       });
-    }, 0);
+    });
 
     return paneId;
   };

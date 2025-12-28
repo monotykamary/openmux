@@ -5,6 +5,7 @@
 
 import type { ConfirmationType } from '../../core/types';
 import type { Accessor, Setter } from 'solid-js';
+import { deferMacrotask } from '../../core/scheduling';
 
 export interface ConfirmationState {
   visible: boolean;
@@ -130,9 +131,9 @@ export function createConfirmationHandlers(deps: ConfirmationHandlerDeps) {
       // Defer to macrotask to avoid blocking animations
       // Pass skipPaneClose=true since we already closed the pane above
       if (ptyId) {
-        setTimeout(() => {
+        deferMacrotask(() => {
           destroyPTY(ptyId, { skipPaneClose: true });
-        }, 0);
+        });
       }
     } else if (type === 'exit') {
       await onQuit();
