@@ -40,9 +40,13 @@ get_lib_info() {
             if [[ "$ARCH" == "arm64" ]]; then
                 LIB_NAME="libzig_pty_arm64.dylib"
                 LIB_NAME_FALLBACK="libzig_pty.dylib"
+                GIT_LIB_NAME="libzig_git_arm64.dylib"
+                GIT_LIB_NAME_FALLBACK="libzig_git.dylib"
             else
                 LIB_NAME="libzig_pty.dylib"
                 LIB_NAME_FALLBACK="libzig_pty.dylib"
+                GIT_LIB_NAME="libzig_git.dylib"
+                GIT_LIB_NAME_FALLBACK="libzig_git.dylib"
             fi
             ;;
         linux)
@@ -50,15 +54,21 @@ get_lib_info() {
             if [[ "$ARCH" == "arm64" ]]; then
                 LIB_NAME="libzig_pty_arm64.so"
                 LIB_NAME_FALLBACK="libzig_pty.so"
+                GIT_LIB_NAME="libzig_git_arm64.so"
+                GIT_LIB_NAME_FALLBACK="libzig_git.so"
             else
                 LIB_NAME="libzig_pty.so"
                 LIB_NAME_FALLBACK="libzig_pty.so"
+                GIT_LIB_NAME="libzig_git.so"
+                GIT_LIB_NAME_FALLBACK="libzig_git.so"
             fi
             ;;
         windows)
             LIB_EXT="dll"
             LIB_NAME="zig_pty.dll"
             LIB_NAME_FALLBACK="zig_pty.dll"
+            GIT_LIB_NAME="zig_git.dll"
+            GIT_LIB_NAME_FALLBACK="zig_git.dll"
             ;;
     esac
 
@@ -88,6 +98,34 @@ build_zig_pty() {
     cd "$PROJECT_DIR"
 
     echo "Built zig-pty native library"
+}
+
+# Build zig-git native library
+build_zig_git() {
+    echo "Building zig-git native library..."
+
+    local zig_git_dir="$PROJECT_DIR/zig-git"
+
+    if [[ ! -d "$zig_git_dir" ]]; then
+        echo "Error: zig-git directory not found at $zig_git_dir"
+        exit 1
+    fi
+
+    if ! command -v zig &> /dev/null; then
+        echo "Error: zig compiler not found. Please install Zig: https://ziglang.org/download/"
+        exit 1
+    fi
+
+    if ! command -v cmake &> /dev/null; then
+        echo "Error: cmake not found. Please install CMake: https://cmake.org/download/"
+        exit 1
+    fi
+
+    cd "$zig_git_dir"
+    zig build -Doptimize=ReleaseFast
+    cd "$PROJECT_DIR"
+
+    echo "Built zig-git native library"
 }
 
 # Build ghostty-vt native library
@@ -154,6 +192,7 @@ sign_macos_artifacts() {
     local targets=(
         "$DIST_DIR/$BINARY_NAME-bin"
         "$DIST_DIR/libzig_pty.$LIB_EXT"
+        "$DIST_DIR/libzig_git.$LIB_EXT"
         "$DIST_DIR/$GHOSTTY_LIB_NAME"
     )
 
@@ -199,6 +238,7 @@ build() {
 
     # Build zig-pty native library first
     build_zig_pty
+    build_zig_git
     build_ghostty_vt
 
     # Bundle with Solid.js plugin (bun build --compile doesn't run preload scripts)
@@ -248,6 +288,21 @@ build() {
         exit 1
     fi
 
+    # Find and copy native library from zig-git
+    local git_lib="$PROJECT_DIR/zig-git/zig-out/lib/$GIT_LIB_NAME"
+
+    if [[ ! -f "$git_lib" ]]; then
+        git_lib="$PROJECT_DIR/zig-git/zig-out/lib/$GIT_LIB_NAME_FALLBACK"
+    fi
+
+    if [[ -f "$git_lib" ]]; then
+        cp "$git_lib" "$DIST_DIR/libzig_git.$LIB_EXT"
+        echo "Copied: $(basename "$git_lib") -> $DIST_DIR/libzig_git.$LIB_EXT"
+    else
+        echo "Error: Could not find native git library at $git_lib"
+        exit 1
+    fi
+
     # Copy ghostty-vt native library
     local ghostty_dir="${GHOSTTY_VT_DIR:-$PROJECT_DIR/ghostty}"
     if [[ ! -d "$ghostty_dir" ]]; then
@@ -288,6 +343,7 @@ create_wrapper() {
 @echo off
 set "SCRIPT_DIR=%~dp0"
 set "ZIG_PTY_LIB=%SCRIPT_DIR%zig_pty.dll"
+set "ZIG_GIT_LIB=%SCRIPT_DIR%zig_git.dll"
 set "GHOSTTY_VT_LIB=%SCRIPT_DIR%libghostty-vt.dll"
 if not defined OPENMUX_ORIGINAL_CWD set "OPENMUX_ORIGINAL_CWD=%CD%"
 cd /d "%SCRIPT_DIR%"
@@ -301,6 +357,7 @@ WRAPPER
 #!/usr/bin/env bash
 SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 export ZIG_PTY_LIB="\${ZIG_PTY_LIB:-\$SCRIPT_DIR/libzig_pty.$LIB_EXT}"
+export ZIG_GIT_LIB="\${ZIG_GIT_LIB:-\$SCRIPT_DIR/libzig_git.$LIB_EXT}"
 export GHOSTTY_VT_LIB="\${GHOSTTY_VT_LIB:-\$SCRIPT_DIR/$GHOSTTY_LIB_NAME}"
 export OPENMUX_ORIGINAL_CWD="\${OPENMUX_ORIGINAL_CWD:-\$(pwd)}"
 cd "\$SCRIPT_DIR"
@@ -324,6 +381,7 @@ create_release() {
         "$BINARY_NAME" \
         "$BINARY_NAME-bin" \
         "libzig_pty.$LIB_EXT" \
+        "libzig_git.$LIB_EXT" \
         "$GHOSTTY_LIB_NAME" \
         "bunfig.toml"
 
@@ -349,6 +407,9 @@ install_binary() {
     if [[ -f "$DIST_DIR/libzig_pty.$LIB_EXT" ]]; then
         cp "$DIST_DIR/libzig_pty.$LIB_EXT" "$LIB_INSTALL_DIR/libzig_pty.$LIB_EXT"
     fi
+    if [[ -f "$DIST_DIR/libzig_git.$LIB_EXT" ]]; then
+        cp "$DIST_DIR/libzig_git.$LIB_EXT" "$LIB_INSTALL_DIR/libzig_git.$LIB_EXT"
+    fi
     if [[ -f "$DIST_DIR/$GHOSTTY_LIB_NAME" ]]; then
         cp "$DIST_DIR/$GHOSTTY_LIB_NAME" "$LIB_INSTALL_DIR/$GHOSTTY_LIB_NAME"
     fi
@@ -363,6 +424,7 @@ install_binary() {
         cat > "$INSTALL_DIR/$BINARY_NAME.cmd" << WRAPPER
 @echo off
 set "ZIG_PTY_LIB=$LIB_INSTALL_DIR\\zig_pty.dll"
+set "ZIG_GIT_LIB=$LIB_INSTALL_DIR\\zig_git.dll"
 set "GHOSTTY_VT_LIB=$LIB_INSTALL_DIR\\libghostty-vt.dll"
 if not defined OPENMUX_ORIGINAL_CWD set "OPENMUX_ORIGINAL_CWD=%CD%"
 cd /d "$LIB_INSTALL_DIR"
@@ -372,6 +434,7 @@ WRAPPER
         cat > "$INSTALL_DIR/$BINARY_NAME" << WRAPPER
 #!/usr/bin/env bash
 export ZIG_PTY_LIB="\${ZIG_PTY_LIB:-$LIB_INSTALL_DIR/libzig_pty.$LIB_EXT}"
+export ZIG_GIT_LIB="\${ZIG_GIT_LIB:-$LIB_INSTALL_DIR/libzig_git.$LIB_EXT}"
 export GHOSTTY_VT_LIB="\${GHOSTTY_VT_LIB:-$LIB_INSTALL_DIR/$GHOSTTY_LIB_NAME}"
 export OPENMUX_ORIGINAL_CWD="\${OPENMUX_ORIGINAL_CWD:-\$(pwd)}"
 cd "$LIB_INSTALL_DIR"

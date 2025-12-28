@@ -36,6 +36,31 @@ jobs:
         with:
           version: 0.15.2
 
+      - name: Get libgit2 revision
+        id: libgit2
+        run: echo "rev=$(git -C vendor/libgit2 rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache libgit2 build
+        uses: actions/cache@v4
+        with:
+          path: zig-git/zig-out/libgit2
+          key: libgit2-${{ runner.os }}-${{ runner.arch }}-${{ steps.libgit2.outputs.rev }}-${{ hashFiles('zig-git/build.zig') }}
+
+      - name: Setup CMake
+        run: |
+          if command -v cmake >/dev/null 2>&1; then
+            cmake --version
+            exit 0
+          fi
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y cmake
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install cmake
+          else
+            echo "Unsupported OS for cmake install" >&2
+            exit 1
+          fi
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:

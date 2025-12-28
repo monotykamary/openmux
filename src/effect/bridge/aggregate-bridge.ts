@@ -7,13 +7,14 @@ import { Effect, Option } from "effect"
 import { runEffect } from "../runtime"
 import { Pty } from "../services"
 import type { PtyId } from "../types"
-import { getGitDiffStats, type GitDiffStats } from "../services/pty/helpers"
+import type { GitDiffStats, GitInfo } from "../services/pty/helpers"
 
 interface PtyMetadata {
   ptyId: string
   cwd: string
   gitBranch: string | undefined
   gitDiffStats: GitDiffStats | undefined
+  gitDirty: boolean
   foregroundProcess: string | undefined
   shell: string | undefined
   workspaceId: number | undefined
@@ -42,10 +43,10 @@ const fetchPtyMetadata = (ptyId: PtyId, options: FetchPtyMetadataOptions = {}) =
       return Option.none<PtyMetadata>()
     }
 
-    // Fetch cwd, gitBranch, foregroundProcess in PARALLEL
-    const [cwd, gitBranch, foregroundProcess] = yield* Effect.all([
+    // Fetch cwd, git info, foregroundProcess in PARALLEL
+    const [cwd, gitInfo, foregroundProcess] = yield* Effect.all([
       pty.getCwd(ptyId).pipe(Effect.orElseSucceed(() => process.cwd())),
-      pty.getGitBranch(ptyId).pipe(Effect.orElseSucceed(() => undefined)),
+      pty.getGitInfo(ptyId).pipe(Effect.orElseSucceed(() => undefined)),
       pty.getForegroundProcess(ptyId).pipe(Effect.orElseSucceed(() => undefined)),
     ], { concurrency: "unbounded" })
 
@@ -58,13 +59,16 @@ const fetchPtyMetadata = (ptyId: PtyId, options: FetchPtyMetadataOptions = {}) =
     // Skip during polling to avoid expensive git operations that cause stuttering
     const gitDiffStats = options.skipGitDiffStats
       ? undefined
-      : yield* getGitDiffStats(cwd).pipe(Effect.orElseSucceed(() => undefined))
+      : yield* pty.getGitDiffStats(ptyId).pipe(Effect.orElseSucceed(() => undefined))
+
+    const gitInfoValue = gitInfo as GitInfo | undefined
 
     return Option.some<PtyMetadata>({
       ptyId,
       cwd,
-      gitBranch,
+      gitBranch: gitInfoValue?.branch,
       gitDiffStats,
+      gitDirty: gitInfoValue?.dirty ?? false,
       foregroundProcess,
       shell: session.shell,
       workspaceId: undefined, // Will be enriched by AggregateView

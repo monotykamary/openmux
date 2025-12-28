@@ -223,6 +223,18 @@ export function createRequestHandler(params: {
           return;
         }
 
+        case 'getGitInfo': {
+          const info = await params.withPty((pty) => pty.getGitInfo(PtyId.make(requestParams.ptyId as string)));
+          params.sendResponse(socket, requestId, { info });
+          return;
+        }
+
+        case 'getGitDiffStats': {
+          const diff = await params.withPty((pty) => pty.getGitDiffStats(PtyId.make(requestParams.ptyId as string)));
+          params.sendResponse(socket, requestId, { diff });
+          return;
+        }
+
         case 'getTitle': {
           const title = await params.withPty((pty) => pty.getTitle(PtyId.make(requestParams.ptyId as string)));
           params.sendResponse(socket, requestId, { title });

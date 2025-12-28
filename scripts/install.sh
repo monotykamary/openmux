@@ -101,6 +101,7 @@ download_and_extract() {
     mv "$tmp_dir/openmux" "$BIN_DIR/"
     mv "$tmp_dir/openmux-bin" "$BIN_DIR/"
     mv "$tmp_dir/libzig_pty.$LIB_EXT" "$BIN_DIR/"
+    mv "$tmp_dir/libzig_git.$LIB_EXT" "$BIN_DIR/"
     mv "$tmp_dir/libghostty-vt.$LIB_EXT" "$BIN_DIR/" || true
     mv "$tmp_dir/bunfig.toml" "$BIN_DIR/" || true
     chmod +x "$BIN_DIR/openmux-bin" "$BIN_DIR/openmux"

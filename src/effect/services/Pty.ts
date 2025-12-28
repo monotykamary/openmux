@@ -15,6 +15,7 @@ import * as ShimClient from "../../shim/client"
 
 // Import extracted modules
 import type { InternalPtySession } from "./pty/types"
+import type { GitDiffStats, GitInfo } from "./pty/helpers"
 import { makeSubscriptionRegistry } from "./pty/subscription-manager"
 import { createSession } from "./pty/session-factory"
 import { createOperations } from "./pty/operations"
@@ -124,6 +125,12 @@ export class Pty extends Context.Tag("@openmux/Pty")<
 
     /** Get git branch for a PTY's current directory */
     readonly getGitBranch: (id: PtyId) => Effect.Effect<string | undefined, PtyNotFoundError | PtyCwdError>
+
+    /** Get git branch + dirty state for a PTY's current directory */
+    readonly getGitInfo: (id: PtyId) => Effect.Effect<GitInfo | undefined, PtyNotFoundError | PtyCwdError>
+
+    /** Get git diff stats for a PTY's current directory */
+    readonly getGitDiffStats: (id: PtyId) => Effect.Effect<GitDiffStats | undefined, PtyNotFoundError | PtyCwdError>
 
     /** Subscribe to PTY lifecycle events (created/destroyed) */
     readonly subscribeToLifecycle: (
@@ -247,6 +254,8 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         listAll: operations.listAll,
         getForegroundProcess: subscriptions.getForegroundProcess,
         getGitBranch: subscriptions.getGitBranch,
+        getGitInfo: subscriptions.getGitInfo,
+        getGitDiffStats: subscriptions.getGitDiffStats,
         subscribeToLifecycle: subscriptions.subscribeToLifecycle,
         getTitle: operations.getTitle,
         getLastCommand: operations.getLastCommand,
@@ -338,6 +347,10 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           Effect.promise(() => ShimClient.getForegroundProcess(String(id))),
         getGitBranch: (id) =>
           Effect.promise(() => ShimClient.getGitBranch(String(id))),
+        getGitInfo: (id) =>
+          Effect.promise(() => ShimClient.getGitInfo(String(id))),
+        getGitDiffStats: (id) =>
+          Effect.promise(() => ShimClient.getGitDiffStats(String(id))),
         subscribeToLifecycle: (callback) =>
           Effect.sync(() =>
             ShimClient.subscribeToLifecycle((event) => {
@@ -403,6 +416,8 @@ export class Pty extends Context.Tag("@openmux/Pty")<
     listAll: () => Effect.succeed([]),
     getForegroundProcess: () => Effect.succeed(undefined),
     getGitBranch: () => Effect.succeed(undefined),
+    getGitInfo: () => Effect.succeed(undefined),
+    getGitDiffStats: () => Effect.succeed(undefined),
     subscribeToLifecycle: () => Effect.succeed(() => {}),
     getTitle: () => Effect.succeed(""),
     getLastCommand: () => Effect.succeed(undefined),

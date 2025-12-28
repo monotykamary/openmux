@@ -11,7 +11,7 @@ import {
   type ParentProps,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import { listAllPtysWithMetadata, subscribeToPtyLifecycle, subscribeToAllTitleChanges } from '../effect/bridge';
+import { listAllPtysWithMetadata, getPtyMetadata, subscribeToPtyLifecycle, subscribeToAllTitleChanges } from '../effect/bridge';
 
 // =============================================================================
 // State Types
@@ -29,6 +29,7 @@ export interface PtyInfo {
   cwd: string;
   gitBranch: string | undefined;
   gitDiffStats: GitDiffStats | undefined;
+  gitDirty: boolean;
   foregroundProcess: string | undefined;
   shell: string | undefined;
   /** Workspace ID where this PTY is located (if found in current session) */
@@ -146,6 +147,27 @@ function buildPtyIndex(ptys: PtyInfo[]): Map<string, number> {
   return new Map(ptys.map((p, i) => [p.ptyId, i]));
 }
 
+function recomputeMatches(state: AggregateViewState) {
+  const basePtys = getBasePtys(state.allPtys, state.showInactive);
+  const matchedPtys = filterPtys(basePtys, state.filterQuery);
+  const matchedPtysIndex = buildPtyIndex(matchedPtys);
+  const currentSelectedPtyId = state.selectedPtyId;
+  const currentPtyIndex = currentSelectedPtyId ? matchedPtysIndex.get(currentSelectedPtyId) : undefined;
+  const currentPtyStillExists = currentPtyIndex !== undefined;
+  const newSelectedIndex = currentPtyStillExists
+    ? currentPtyIndex
+    : Math.min(state.selectedIndex, Math.max(0, matchedPtys.length - 1));
+  const selectedPtyId = matchedPtys[newSelectedIndex]?.ptyId ?? null;
+
+  state.matchedPtys = matchedPtys;
+  state.matchedPtysIndex = matchedPtysIndex;
+  state.selectedIndex = newSelectedIndex;
+  state.selectedPtyId = selectedPtyId;
+  if (!currentPtyStillExists || selectedPtyId === null) {
+    state.previewMode = false;
+  }
+}
+
 // =============================================================================
 // Context
 // =============================================================================
@@ -187,37 +209,26 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
 
     try {
       setState('isLoading', true);
-      const ptys = await listAllPtysWithMetadata();
-      const basePtys = getBasePtys(ptys, state.showInactive);
-      const matchedPtys = filterPtys(basePtys, state.filterQuery);
-
-      // Build O(1) lookup indexes
-      const allPtysIndex = buildPtyIndex(ptys);
-      const matchedPtysIndex = buildPtyIndex(matchedPtys);
-
-      // Determine new selected PTY using O(1) lookup
-      const currentSelectedPtyId = state.selectedPtyId;
-      const currentPtyIndex = currentSelectedPtyId ? matchedPtysIndex.get(currentSelectedPtyId) : undefined;
-      const currentPtyStillExists = currentPtyIndex !== undefined;
-
-      // If currently selected PTY was destroyed, exit preview mode and select next available
-      const newSelectedIndex = currentPtyStillExists
-        ? currentPtyIndex
-        : Math.min(state.selectedIndex, Math.max(0, matchedPtys.length - 1));
-      const selectedPtyId = matchedPtys[newSelectedIndex]?.ptyId ?? null;
+      const ptys = await listAllPtysWithMetadata({ skipGitDiffStats: true });
 
       setState(produce((s) => {
-        s.allPtys = ptys;
-        s.matchedPtys = matchedPtys;
-        s.allPtysIndex = allPtysIndex;
-        s.matchedPtysIndex = matchedPtysIndex;
-        s.selectedIndex = newSelectedIndex;
-        s.selectedPtyId = selectedPtyId;
+        const merged = ptys.map((pty) => {
+          const prevIndex = s.allPtysIndex.get(pty.ptyId);
+          if (prevIndex === undefined) return pty;
+          const prev = s.allPtys[prevIndex];
+          const repoChanged =
+            prev.cwd !== pty.cwd ||
+            prev.gitBranch !== pty.gitBranch ||
+            prev.gitDirty !== pty.gitDirty;
+          const gitDiffStats =
+            pty.gitDiffStats ?? (repoChanged ? undefined : prev.gitDiffStats);
+          return { ...pty, gitDiffStats };
+        });
+
+        s.allPtys = merged;
+        s.allPtysIndex = buildPtyIndex(merged);
         s.isLoading = false;
-        // Exit preview mode if the selected PTY was destroyed or no PTYs remain
-        if (!currentPtyStillExists || selectedPtyId === null) {
-          s.previewMode = false;
-        }
+        recomputeMatches(s);
       }));
     } finally {
       refreshInProgress = false;
@@ -228,13 +239,15 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
   interface SubscriptionManager {
     lifecycle: (() => void) | null;
     titleChange: (() => void) | null;
-    polling: ReturnType<typeof setInterval> | null;
+    pollingActive: ReturnType<typeof setInterval> | null;
+    pollingInactive: ReturnType<typeof setInterval> | null;
   }
 
   const subscriptions: SubscriptionManager = {
     lifecycle: null,
     titleChange: null,
-    polling: null,
+    pollingActive: null,
+    pollingInactive: null,
   };
   let subscriptionsEpoch = 0;
 
@@ -258,69 +271,72 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
   // when multiple panes are created/destroyed rapidly
   const debouncedRefreshPtys = debounce(() => refreshPtys(), 100);
 
-  // Incremental refresh - polls all PTYs and updates changed fields
-  // Uses native APIs (FFI/proc) so the burst is very fast (~1ms per PTY)
-  let incrementalRefreshInProgress = false;
-  const incrementalRefreshPtys = async () => {
-    if (incrementalRefreshInProgress || state.allPtys.length === 0) return;
-    incrementalRefreshInProgress = true;
+  let subsetRefreshInProgress = false;
+  const refreshPtysSubset = async (ptyIds: string[]) => {
+    if (subsetRefreshInProgress || ptyIds.length === 0) return;
+    subsetRefreshInProgress = true;
 
     try {
-      // Fetch all PTYs at once (native APIs make this fast)
-      const newPtys = await listAllPtysWithMetadata({ skipGitDiffStats: true });
-      const newPtysMap = new Map(newPtys.map(p => [p.ptyId, p]));
+      const results = await Promise.all(
+        ptyIds.map((id) => getPtyMetadata(id, { skipGitDiffStats: true }))
+      );
+      const updates = results.filter((result): result is PtyInfo => result !== null);
 
-      // Check if PTY list changed (added/removed)
-      const oldPtyIds = new Set(state.allPtys.map(p => p.ptyId));
-      const newPtyIds = new Set(newPtys.map(p => p.ptyId));
-      const listChanged = oldPtyIds.size !== newPtyIds.size ||
-        [...oldPtyIds].some(id => !newPtyIds.has(id));
+      if (updates.length === 0) return;
 
-      if (listChanged) {
-        // PTYs added or removed - do full refresh
-        await refreshPtys();
-        return;
-      }
-
-      // Update only changed fields in existing PTYs
       setState(produce((s) => {
-        for (let i = 0; i < s.allPtys.length; i++) {
-          const oldPty = s.allPtys[i];
-          const newPty = newPtysMap.get(oldPty.ptyId);
-          if (!newPty) continue;
-
-          if (oldPty.foregroundProcess !== newPty.foregroundProcess) {
-            s.allPtys[i].foregroundProcess = newPty.foregroundProcess;
+        for (const update of updates) {
+          const index = s.allPtysIndex.get(update.ptyId);
+          if (index === undefined || !s.allPtys[index]) continue;
+          if (s.allPtys[index].foregroundProcess !== update.foregroundProcess) {
+            s.allPtys[index].foregroundProcess = update.foregroundProcess;
           }
-          if (oldPty.gitBranch !== newPty.gitBranch) {
-            s.allPtys[i].gitBranch = newPty.gitBranch;
+          if (s.allPtys[index].gitBranch !== update.gitBranch) {
+            s.allPtys[index].gitBranch = update.gitBranch;
+            s.allPtys[index].gitDiffStats = undefined;
           }
-          if (oldPty.cwd !== newPty.cwd) {
-            s.allPtys[i].cwd = newPty.cwd;
+          if (s.allPtys[index].gitDirty !== update.gitDirty) {
+            s.allPtys[index].gitDirty = update.gitDirty;
+            s.allPtys[index].gitDiffStats = undefined;
           }
-          // Preserve gitDiffStats from initial load (we skip it during polling)
+          if (s.allPtys[index].cwd !== update.cwd) {
+            s.allPtys[index].cwd = update.cwd;
+            s.allPtys[index].gitDiffStats = undefined;
+          }
         }
-        const basePtys = getBasePtys(s.allPtys, s.showInactive);
-        const matchedPtys = filterPtys(basePtys, s.filterQuery);
-        const matchedPtysIndex = buildPtyIndex(matchedPtys);
-        const currentSelectedPtyId = s.selectedPtyId;
-        const currentPtyIndex = currentSelectedPtyId ? matchedPtysIndex.get(currentSelectedPtyId) : undefined;
-        const currentPtyStillExists = currentPtyIndex !== undefined;
-        const newSelectedIndex = currentPtyStillExists
-          ? currentPtyIndex
-          : Math.min(s.selectedIndex, Math.max(0, matchedPtys.length - 1));
-        const selectedPtyId = matchedPtys[newSelectedIndex]?.ptyId ?? null;
 
-        s.matchedPtys = matchedPtys;
-        s.matchedPtysIndex = matchedPtysIndex;
-        s.selectedIndex = newSelectedIndex;
-        s.selectedPtyId = selectedPtyId;
-        if (!currentPtyStillExists || selectedPtyId === null) {
-          s.previewMode = false;
+        recomputeMatches(s);
+      }));
+    } finally {
+      subsetRefreshInProgress = false;
+    }
+  };
+
+  let selectedDiffRefreshInProgress = false;
+  const refreshSelectedDiffStats = async (ptyId: string) => {
+    if (selectedDiffRefreshInProgress) return;
+    selectedDiffRefreshInProgress = true;
+
+    try {
+      const update = await getPtyMetadata(ptyId, { skipGitDiffStats: false });
+      if (!update) return;
+
+      setState(produce((s) => {
+        const index = s.allPtysIndex.get(update.ptyId);
+        if (index !== undefined && s.allPtys[index]) {
+          s.allPtys[index].gitDiffStats = update.gitDiffStats;
+          s.allPtys[index].gitBranch = update.gitBranch;
+          s.allPtys[index].gitDirty = update.gitDirty;
+        }
+        const matchedIndex = s.matchedPtysIndex.get(update.ptyId);
+        if (matchedIndex !== undefined && s.matchedPtys[matchedIndex]) {
+          s.matchedPtys[matchedIndex].gitDiffStats = update.gitDiffStats;
+          s.matchedPtys[matchedIndex].gitBranch = update.gitBranch;
+          s.matchedPtys[matchedIndex].gitDirty = update.gitDirty;
         }
       }));
     } finally {
-      incrementalRefreshInProgress = false;
+      selectedDiffRefreshInProgress = false;
     }
   };
 
@@ -345,24 +361,41 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
     }
     subscriptions.titleChange = titleUnsub;
 
-    // Poll all PTYs every 5 seconds using native APIs (very fast, ~1ms per PTY)
-    // Title change events handle most updates - this is just a fallback
+    // Dynamic polling: active PTYs update faster, inactive slower.
     if (epoch !== subscriptionsEpoch || !state.showAggregateView) {
       return;
     }
-    subscriptions.polling = setInterval(() => {
-      incrementalRefreshPtys();
-    }, 5000);
+    const activePollMs = 2000;
+    const inactivePollMs = 10000;
+
+    subscriptions.pollingActive = setInterval(() => {
+      if (!state.showAggregateView || state.allPtys.length === 0) return;
+      const activeIds = new Set(state.allPtys.filter(isActivePty).map((pty) => pty.ptyId));
+      if (state.selectedPtyId) activeIds.add(state.selectedPtyId);
+      refreshPtysSubset(Array.from(activeIds));
+    }, activePollMs);
+
+    subscriptions.pollingInactive = setInterval(() => {
+      if (!state.showAggregateView || state.allPtys.length === 0) return;
+      const activeIds = new Set(state.allPtys.filter(isActivePty).map((pty) => pty.ptyId));
+      if (state.selectedPtyId) activeIds.add(state.selectedPtyId);
+      const inactiveIds = state.allPtys
+        .filter((pty) => !activeIds.has(pty.ptyId))
+        .map((pty) => pty.ptyId);
+      refreshPtysSubset(inactiveIds);
+    }, inactivePollMs);
   };
 
   const cleanupSubscriptions = () => {
     subscriptionsEpoch += 1;
     subscriptions.lifecycle?.();
     subscriptions.titleChange?.();
-    if (subscriptions.polling) clearInterval(subscriptions.polling);
+    if (subscriptions.pollingActive) clearInterval(subscriptions.pollingActive);
+    if (subscriptions.pollingInactive) clearInterval(subscriptions.pollingInactive);
     subscriptions.lifecycle = null;
     subscriptions.titleChange = null;
-    subscriptions.polling = null;
+    subscriptions.pollingActive = null;
+    subscriptions.pollingInactive = null;
   };
 
   // Refresh PTYs when view opens and subscribe to lifecycle/title events
@@ -374,6 +407,13 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
     } else {
       cleanupSubscriptions();
     }
+  });
+
+  createEffect(() => {
+    if (!state.showAggregateView) return;
+    const selectedPtyId = state.selectedPtyId;
+    if (!selectedPtyId) return;
+    refreshSelectedDiffStats(selectedPtyId);
   });
 
   // Cleanup on unmount

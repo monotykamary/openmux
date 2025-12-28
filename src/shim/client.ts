@@ -141,6 +141,18 @@ export async function getGitBranch(ptyId: string): Promise<string | undefined> {
   return (response.header.result as { branch?: string }).branch;
 }
 
+export async function getGitInfo(ptyId: string): Promise<{ branch: string | undefined; dirty: boolean } | undefined> {
+  const response = await sendRequest('getGitInfo', { ptyId });
+  const info = (response.header.result as { info?: { branch?: string; dirty?: boolean } | null }).info ?? undefined;
+  if (!info) return undefined;
+  return { branch: info.branch ?? undefined, dirty: Boolean(info.dirty) };
+}
+
+export async function getGitDiffStats(ptyId: string): Promise<{ added: number; removed: number } | undefined> {
+  const response = await sendRequest('getGitDiffStats', { ptyId });
+  return (response.header.result as { diff?: { added: number; removed: number } | null }).diff ?? undefined;
+}
+
 export async function getTitle(ptyId: string): Promise<string> {
   const cached = getPtyState(ptyId)?.title;
   if (cached !== undefined) {

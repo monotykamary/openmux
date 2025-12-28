@@ -33,6 +33,7 @@ export function PtyCard(props: PtyCardProps) {
   const dirName = () => getDirectoryName(props.pty.cwd);
   const process = () => props.pty.foregroundProcess ?? 'shell';
   const gitBranch = () => props.pty.gitBranch;
+  const gitDirty = () => props.pty.gitDirty;
   const gitDiffStats = () => formatDiffStats(props.pty.gitDiffStats);
 
   // Padding constants
@@ -66,7 +67,11 @@ export function PtyCard(props: PtyCardProps) {
   };
 
   // Build second line content
-  const branchText = () => gitBranch() ?? '';
+  const branchText = () => {
+    const branch = gitBranch() ?? '';
+    if (!gitDirty()) return branch;
+    return branch ? `${branch} *` : '*';
+  };
   const diffStats = () => gitDiffStats();
 
   // Calculate diff stats width for right-alignment

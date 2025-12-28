@@ -7,7 +7,7 @@ import type { PtyNotFoundError } from "../../errors"
 import type { PtyId } from "../../types"
 import type { InternalPtySession } from "./types"
 import { getCurrentScrollState } from "./notification"
-import { getGitBranch } from "./helpers"
+import { getGitInfo, getGitDiffStats } from "./helpers"
 import type { SubscriptionRegistry } from "./subscription-manager"
 
 export interface SubscriptionsDeps {
@@ -102,7 +102,22 @@ export function createSubscriptions(deps: SubscriptionsDeps) {
     // Use native zig-pty method directly (no subprocess spawning)
     const cwd = session.pty.getCwd()
     if (!cwd) return undefined
-    return yield* getGitBranch(cwd)
+    const info = yield* getGitInfo(cwd)
+    return info?.branch
+  })
+
+  const getGitInfoFn = Effect.fn("Pty.getGitInfo")(function* (id: PtyId) {
+    const session = yield* getSessionOrFail(id)
+    const cwd = session.pty.getCwd()
+    if (!cwd) return undefined
+    return yield* getGitInfo(cwd)
+  })
+
+  const getGitDiffStatsFn = Effect.fn("Pty.getGitDiffStats")(function* (id: PtyId) {
+    const session = yield* getSessionOrFail(id)
+    const cwd = session.pty.getCwd()
+    if (!cwd) return undefined
+    return yield* getGitDiffStats(cwd)
   })
 
   const subscribeToLifecycle = Effect.fn("Pty.subscribeToLifecycle")(function* (
@@ -140,6 +155,8 @@ export function createSubscriptions(deps: SubscriptionsDeps) {
     onExit,
     getForegroundProcess: getForegroundProcessFn,
     getGitBranch: getGitBranchFn,
+    getGitInfo: getGitInfoFn,
+    getGitDiffStats: getGitDiffStatsFn,
     subscribeToLifecycle,
     subscribeToTitleChange,
     subscribeToAllTitleChanges,
