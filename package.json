@@ -19,6 +19,7 @@
     "build": "./scripts/build.sh",
     "build:release": "./scripts/build.sh --release",
     "install:local": "./scripts/build.sh --install",
+    "update:submodules": "./scripts/update-submodules.sh",
     "prepare": "effect-language-service patch",
     "test": "vitest run && (cd native/zig-pty && zig build test --summary all) && (cd native/zig-git && zig build test --summary all) && ./scripts/test-ghostty-vt.sh",
     "test:ts": "vitest run",
