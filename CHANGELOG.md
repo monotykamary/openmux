@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.70](https://github.com/monotykamary/openmux/compare/v0.2.69...v0.2.70) (2025-12-28)
+
+
+### Performance
+
+* **app:** batch pane resize scheduling ([db41942](https://github.com/monotykamary/openmux/commit/db4194291e2dc5061c94930e22a121d6dec0a5b5))
+
+
+### Refactoring
+
+* **scheduling:** centralize cooperative defers ([7cb9dbf](https://github.com/monotykamary/openmux/commit/7cb9dbf4c3cee0e6b6df9b10706d74db77a60e33))
+
 ### [0.2.69](https://github.com/monotykamary/openmux/compare/v0.2.68...v0.2.69) (2025-12-28)
 
 
