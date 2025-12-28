@@ -113,6 +113,8 @@ bun dev        # Run with watch mode
 - `Alt+[` / `Alt+]` - Cycle layout mode (vertical → horizontal → stacked)
 - `Alt+z` - Toggle zoom (fullscreen focused pane)
 - `Alt+x` - Close pane
+- `Alt+-` - Split pane horizontally
+- `Alt+\` - Split pane vertically
 - `Alt+1-9` - Switch to workspace 1-9
 
 ### Mouse

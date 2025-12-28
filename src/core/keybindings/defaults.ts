@@ -23,6 +23,8 @@ export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
     'alt+]': 'layout.cycle.next',
     'alt+z': 'pane.zoom',
     'alt+x': 'pane.close',
+    'alt+-': 'pane.split.horizontal',
+    'alt+\\': 'pane.split.vertical',
     ...Object.fromEntries(
       Array.from({ length: 9 }, (_, i) => [`alt+${i + 1}`, `workspace.switch.${i + 1}`])
     ),
