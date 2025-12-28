@@ -205,14 +205,6 @@ async function refreshRepoInfo(
       }
       repoCache.set(key, entry)
     } else {
-      const diffReset =
-        entry.branch !== (info.branch ?? undefined) ||
-        entry.dirty !== info.dirty ||
-        entry.staged !== info.staged ||
-        entry.unstaged !== info.unstaged ||
-        entry.untracked !== info.untracked ||
-        entry.conflicted !== info.conflicted
-
       entry.gitDir = gitDir
       entry.workDir = workDir
       entry.branch = info.branch ?? undefined
@@ -229,9 +221,6 @@ async function refreshRepoInfo(
       entry.stale = false
       entry.lastFetched = now
       entry.lastAccess = now
-      if (diffReset) {
-        entry.diffStats = undefined
-      }
     }
 
     cwdToRepoKey.set(cwd, key)

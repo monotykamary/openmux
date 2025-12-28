@@ -287,46 +287,30 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
   // when multiple panes are created/destroyed rapidly
   const debouncedRefreshPtys = debounce(() => refreshPtys(), 100);
 
-  const syncGitFields = (
-    target: PtyInfo,
-    update: PtyInfo,
-    options: { preserveDiffStats?: boolean } = {}
-  ) => {
-    let diffReset = false;
-    let repoKeyChanged = false;
-
+  const syncGitFields = (target: PtyInfo, update: PtyInfo) => {
     if (target.gitRepoKey !== update.gitRepoKey) {
       target.gitRepoKey = update.gitRepoKey;
-      diffReset = true;
-      repoKeyChanged = true;
     }
     if (target.cwd !== update.cwd) {
       target.cwd = update.cwd;
-      diffReset = true;
     }
     if (target.gitBranch !== update.gitBranch) {
       target.gitBranch = update.gitBranch;
-      diffReset = true;
     }
     if (target.gitDirty !== update.gitDirty) {
       target.gitDirty = update.gitDirty;
-      diffReset = true;
     }
     if (target.gitStaged !== update.gitStaged) {
       target.gitStaged = update.gitStaged;
-      diffReset = true;
     }
     if (target.gitUnstaged !== update.gitUnstaged) {
       target.gitUnstaged = update.gitUnstaged;
-      diffReset = true;
     }
     if (target.gitUntracked !== update.gitUntracked) {
       target.gitUntracked = update.gitUntracked;
-      diffReset = true;
     }
     if (target.gitConflicted !== update.gitConflicted) {
       target.gitConflicted = update.gitConflicted;
-      diffReset = true;
     }
     if (target.gitAhead !== update.gitAhead) {
       target.gitAhead = update.gitAhead;
@@ -343,25 +327,20 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
     if (target.gitDetached !== update.gitDetached) {
       target.gitDetached = update.gitDetached;
     }
-
-    if ((!options.preserveDiffStats || repoKeyChanged) && diffReset) {
-      target.gitDiffStats = undefined;
-    }
-
-    return { diffReset, repoKeyChanged };
+    // Keep diff stats until refreshed to avoid flicker on status updates.
   };
 
   const applyRepoUpdate = (
     list: PtyInfo[],
     update: PtyInfo,
-    options: { preserveDiffStats?: boolean; applyDiffStats?: boolean } = {}
+    options: { applyDiffStats?: boolean } = {}
   ) => {
     const repoKey = update.gitRepoKey;
     if (!repoKey) return;
 
     for (const pty of list) {
       if (pty.gitRepoKey !== repoKey) continue;
-      syncGitFields(pty, update, { preserveDiffStats: options.preserveDiffStats });
+      syncGitFields(pty, update);
       if (options.applyDiffStats && update.gitDiffStats !== undefined) {
         pty.gitDiffStats = update.gitDiffStats;
       }
@@ -392,7 +371,7 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
           syncGitFields(s.allPtys[index], update);
           if (update.gitRepoKey && !updatedRepos.has(update.gitRepoKey)) {
             updatedRepos.add(update.gitRepoKey);
-            applyRepoUpdate(s.allPtys, update, { preserveDiffStats: true });
+            applyRepoUpdate(s.allPtys, update);
           }
         }
 
@@ -415,17 +394,17 @@ export function AggregateViewProvider(props: AggregateViewProviderProps) {
       setState(produce((s) => {
         const index = s.allPtysIndex.get(update.ptyId);
         if (index !== undefined && s.allPtys[index]) {
-          syncGitFields(s.allPtys[index], update, { preserveDiffStats: true });
+          syncGitFields(s.allPtys[index], update);
           s.allPtys[index].gitDiffStats = update.gitDiffStats;
         }
         const matchedIndex = s.matchedPtysIndex.get(update.ptyId);
         if (matchedIndex !== undefined && s.matchedPtys[matchedIndex]) {
-          syncGitFields(s.matchedPtys[matchedIndex], update, { preserveDiffStats: true });
+          syncGitFields(s.matchedPtys[matchedIndex], update);
           s.matchedPtys[matchedIndex].gitDiffStats = update.gitDiffStats;
         }
 
-        applyRepoUpdate(s.allPtys, update, { preserveDiffStats: true, applyDiffStats: true });
-        applyRepoUpdate(s.matchedPtys, update, { preserveDiffStats: true, applyDiffStats: true });
+        applyRepoUpdate(s.allPtys, update, { applyDiffStats: true });
+        applyRepoUpdate(s.matchedPtys, update, { applyDiffStats: true });
       }));
     } finally {
       selectedDiffRefreshInProgress = false;
