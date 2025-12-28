@@ -3,10 +3,12 @@
  */
 
 import { createContext, createMemo, createSignal, onCleanup, onMount, useContext, type ParentProps, type Accessor } from 'solid-js';
+import { Effect, Stream, Duration } from 'effect';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getConfigPath, loadUserConfigSync, type UserConfig } from '../core/user-config';
 import { resolveKeybindings, type ResolvedKeybindings } from '../core/keybindings';
+import { runStream } from '../effect/stream-utils';
 
 interface ConfigContextValue {
   config: Accessor<UserConfig>;
@@ -31,37 +33,28 @@ export function ConfigProvider(props: ParentProps) {
   };
 
   onMount(() => {
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const configDir = path.dirname(configPath);
     const configFile = path.basename(configPath);
 
-    const scheduleReload = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        reloadConfig();
-      }, 50);
-    };
+    const watchStream = Stream.async<Buffer | string | null>((emit) => {
+      let watcher: fs.FSWatcher | null = null;
+      try {
+        watcher = fs.watch(configDir, { persistent: false }, (_eventType, filename) => {
+          void emit.single(filename ?? null);
+        });
+      } catch (error) {
+        console.warn('[openmux] Config watch failed:', error);
+        return;
+      }
+      return Effect.sync(() => watcher?.close());
+    }).pipe(
+      Stream.filter((filename) => !filename || filename.toString() === configFile),
+      Stream.debounce(Duration.millis(50)),
+      Stream.tap(() => Effect.sync(() => reloadConfig()))
+    );
 
-    let watcher: fs.FSWatcher | null = null;
-    try {
-      watcher = fs.watch(configDir, { persistent: false }, (_eventType, filename) => {
-        if (!filename) {
-          scheduleReload();
-          return;
-        }
-        const name = filename.toString();
-        if (name === configFile) {
-          scheduleReload();
-        }
-      });
-    } catch (error) {
-      console.warn('[openmux] Config watch failed:', error);
-    }
-
-    onCleanup(() => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      watcher?.close();
-    });
+    const stop = runStream(watchStream, { label: 'config-watch' });
+    onCleanup(() => stop());
   });
 
   return (

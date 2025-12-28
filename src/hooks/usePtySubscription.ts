@@ -8,8 +8,10 @@ import {
   subscribeUnifiedToPty,
   getEmulator,
 } from '../effect/bridge';
+import { Effect, Stream } from 'effect';
 import type { TerminalScrollState, UnifiedTerminalUpdate } from '../core/types';
 import type { ITerminalEmulator } from '../terminal/emulator-interface';
+import { runStream, streamFromSubscription } from '../effect/stream-utils';
 
 /**
  * Caches used for synchronous access to PTY state
@@ -42,16 +44,23 @@ export async function subscribeToPtyWithCaches(
 
   // Subscribe to unified updates (terminal + scroll combined)
   // This eliminates race conditions from separate subscriptions
-  const unsubState = await subscribeUnifiedToPty(ptyId, (update: UnifiedTerminalUpdate) => {
-    if (options?.cacheScrollState !== false) {
-      caches.scrollStates.set(ptyId, update.scrollState);
-    }
-  });
+  const unifiedStream = streamFromSubscription<UnifiedTerminalUpdate>((emit) =>
+    subscribeUnifiedToPty(ptyId, emit)
+  ).pipe(
+    Stream.tap((update) =>
+      Effect.sync(() => {
+        if (options?.cacheScrollState !== false) {
+          caches.scrollStates.set(ptyId, update.scrollState);
+        }
+      })
+    )
+  );
+  const stopUpdates = runStream(unifiedStream, { label: 'pty-unified-updates' });
 
   // Return combined unsubscribe function
   return () => {
     unsubExit();
-    unsubState();
+    stopUpdates();
   };
 }
 

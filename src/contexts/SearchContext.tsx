@@ -11,11 +11,14 @@ import {
   createContext,
   useContext,
   createSignal,
+  onMount,
   onCleanup,
   type ParentProps,
 } from 'solid-js';
+import { Effect, Stream, Duration } from 'effect';
 import { getEmulator, getTerminalState, getScrollState } from '../effect/bridge';
 import { useTerminal } from './TerminalContext';
+import { runStream } from '../effect/stream-utils';
 
 // Import extracted search utilities
 import type { SearchState, SearchContextValue } from './search/types';
@@ -50,21 +53,11 @@ export function SearchProvider(props: SearchProviderProps) {
   // Version counter to trigger re-renders when search state changes
   const [searchVersion, setSearchVersion] = createSignal(0);
 
-  // Debounce timer for search
-  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  // Pending query for debounced search
-  let pendingQuery = '';
+  let queryEmitter: ((query: string) => void) | null = null;
 
   // Spatial index for O(1) match lookup by line
   // Map<lineIndex, Array<{startCol, endCol}>>
   let matchLookup = new Map<number, Array<{ startCol: number; endCol: number }>>();
-
-  // Cleanup on unmount
-  onCleanup(() => {
-    if (searchDebounceTimer) {
-      clearTimeout(searchDebounceTimer);
-    }
-  });
 
   // Update state and rebuild spatial index
   const updateSearchState = (newState: SearchState | null) => {
@@ -76,6 +69,57 @@ export function SearchProvider(props: SearchProviderProps) {
       ? buildMatchLookup(newState.matches)
       : new Map();
   };
+
+  const searchStream = Stream.async<string>((emit) => {
+    queryEmitter = (query) => {
+      void emit.single(query);
+    };
+    return Effect.sync(() => {
+      queryEmitter = null;
+    });
+  }).pipe(
+    Stream.debounce(Duration.millis(SEARCH_DEBOUNCE_MS)),
+    Stream.tap((query) =>
+      Effect.tryPromise(async () => {
+        const currentState = searchState();
+        if (!currentState || !currentState.emulator || !currentState.terminalState) return;
+        if (currentState.query !== query) return;
+
+        const { matches, hasMore } = await currentState.emulator.search(query);
+        const latestState = searchState();
+        if (!latestState || !latestState.terminalState || latestState.query !== query) return;
+
+        const initialIndex = matches.length > 0 ? matches.length - 1 : -1;
+        updateSearchState({
+          ...latestState,
+          query,
+          matches,
+          hasMore,
+          currentMatchIndex: initialIndex,
+        });
+
+        if (matches.length > 0) {
+          const match = matches[initialIndex];
+          const offset = calculateScrollOffset(
+            match.lineIndex,
+            latestState.scrollbackLength,
+            latestState.terminalState.rows
+          );
+          setScrollOffset(latestState.ptyId, offset);
+        }
+      })
+    )
+  );
+
+  // Cleanup on unmount
+  let stopSearchStream: (() => void) | null = null;
+  onCleanup(() => {
+    stopSearchStream?.();
+  });
+
+  onMount(() => {
+    stopSearchStream = runStream(searchStream, { label: 'search-debounce' });
+  });
 
   // Enter search mode
   const enterSearchMode = async (ptyId: string) => {
@@ -106,12 +150,6 @@ export function SearchProvider(props: SearchProviderProps) {
     const state = searchState();
     if (!state) return;
 
-    // Clear any pending debounced search
-    if (searchDebounceTimer) {
-      clearTimeout(searchDebounceTimer);
-      searchDebounceTimer = null;
-    }
-
     // Restore original scroll position if requested (on Escape)
     if (restorePosition && state.originalScrollOffset !== undefined) {
       setScrollOffset(state.ptyId, state.originalScrollOffset);
@@ -125,13 +163,6 @@ export function SearchProvider(props: SearchProviderProps) {
     const state = searchState();
     if (!state || !state.emulator || !state.terminalState) return;
 
-    pendingQuery = query;
-
-    // Clear existing debounce timer
-    if (searchDebounceTimer) {
-      clearTimeout(searchDebounceTimer);
-    }
-
     // Update query immediately for display (show typing instantly)
     updateSearchState({
       ...state,
@@ -139,41 +170,7 @@ export function SearchProvider(props: SearchProviderProps) {
       // Keep previous matches while debouncing (reduces flicker)
     });
 
-    // Debounce the actual search
-    searchDebounceTimer = setTimeout(async () => {
-      const currentState = searchState();
-      if (!currentState || !currentState.emulator || !currentState.terminalState) return;
-      if (pendingQuery !== query) return; // Query changed, skip
-
-      // Perform search via emulator (async - may run in worker)
-      const { matches, hasMore } = await currentState.emulator.search(query);
-
-      // Check again after async search in case state changed
-      if (pendingQuery !== query) return;
-
-      // Start at the most recent match (last in array = closest to bottom of terminal)
-      const initialIndex = matches.length > 0 ? matches.length - 1 : -1;
-
-      // Update state with matches
-      updateSearchState({
-        ...currentState,
-        query,
-        matches,
-        hasMore,
-        currentMatchIndex: initialIndex,
-      });
-
-      // Auto-scroll to the initial match (most recent)
-      if (matches.length > 0) {
-        const match = matches[initialIndex];
-        const offset = calculateScrollOffset(
-          match.lineIndex,
-          currentState.scrollbackLength,
-          currentState.terminalState.rows
-        );
-        setScrollOffset(currentState.ptyId, offset);
-      }
-    }, SEARCH_DEBOUNCE_MS);
+    queryEmitter?.(query);
   };
 
   // Navigate to next match

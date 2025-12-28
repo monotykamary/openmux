@@ -1,4 +1,5 @@
 import net from 'net';
+import { Effect, Stream } from 'effect';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
 import { Buffer } from 'buffer';
@@ -10,6 +11,7 @@ import { unpackDirtyUpdate } from '../../terminal/cell-serialization';
 import { encodeFrame, FrameReader, SHIM_SOCKET_DIR, SHIM_SOCKET_PATH, type ShimHeader } from '../protocol';
 import { bufferToArrayBuffer } from './utils';
 import { handlePtyExit, handlePtyLifecycle, handlePtyTitle, handleUnifiedUpdate } from './state';
+import { runStream } from '../../effect/stream-utils';
 
 const CLIENT_VERSION = 1;
 const CLIENT_ID = `client_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -27,6 +29,7 @@ let connecting: Promise<void> | null = null;
 let spawnAttempted = false;
 let shimPid: number | null = null;
 let detached = false;
+let socketDataStop: (() => void) | null = null;
 
 const detachedSubscribers = new Set<() => void>();
 
@@ -133,6 +136,27 @@ function handleFrame(header: ShimHeader, payloads: Buffer[]): void {
   }
 }
 
+function createSocketDataStream(
+  client: net.Socket,
+  frameReader: FrameReader
+): Stream.Stream<Buffer> {
+  return Stream.async<Buffer>((emit) => {
+    const handleData = (chunk: Buffer) => {
+      void emit.single(chunk);
+    };
+    client.on('data', handleData);
+    return Effect.sync(() => {
+      client.off('data', handleData);
+    });
+  }).pipe(
+    Stream.tap((chunk) =>
+      Effect.sync(() => {
+        frameReader.feed(chunk, handleFrame);
+      })
+    )
+  );
+}
+
 async function connectSocket(): Promise<void> {
   await fs.mkdir(SHIM_SOCKET_DIR, { recursive: true });
 
@@ -146,15 +170,21 @@ async function connectSocket(): Promise<void> {
       client.removeListener('error', handleError);
       socket = client;
       reader = new FrameReader();
-      client.on('data', (chunk) => reader?.feed(chunk, handleFrame));
       client.on('error', () => {
         // ignore, reconnect on demand
       });
       client.on('close', () => {
+        socketDataStop?.();
+        socketDataStop = null;
         socket = null;
         reader = null;
         markDetached();
       });
+      socketDataStop?.();
+      socketDataStop = runStream(
+        createSocketDataStream(client, reader),
+        { label: 'shim-client-data' }
+      );
       resolve();
     };
     client.once('error', handleError);

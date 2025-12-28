@@ -3,15 +3,16 @@
  */
 
 import { produce, type SetStoreFunction } from 'solid-js/store';
+import { Effect, Schedule, Stream, Duration } from 'effect';
 import type { PtyInfo, AggregateViewState } from './aggregate-view-types';
 import {
-  debounce,
   buildPtyIndex,
   recomputeMatches,
   syncGitFields,
   applyRepoUpdate,
   isActivePty,
 } from './aggregate-view-helpers';
+import { runStream, streamFromSubscription } from '../effect/stream-utils';
 import {
   listAllPtysWithMetadata,
   getPtyMetadata,
@@ -22,8 +23,8 @@ import {
 export interface SubscriptionManager {
   lifecycle: (() => void) | null;
   titleChange: (() => void) | null;
-  pollingActive: ReturnType<typeof setInterval> | null;
-  pollingInactive: ReturnType<typeof setInterval> | null;
+  pollingActive: (() => void) | null;
+  pollingInactive: (() => void) | null;
 }
 
 export interface RefreshState {
@@ -184,12 +185,13 @@ export async function setupSubscriptions(
   handleTitleChange: (event: { ptyId: string; title: string }) => void
 ): Promise<void> {
   const epoch = ++subscriptionsEpoch.value;
-  const debouncedRefreshPtys = debounce(() => refreshPtys(), 100);
 
   // Subscribe to PTY lifecycle events for auto-refresh (created/destroyed)
-  const lifecycleUnsub = await subscribeToPtyLifecycle(() => {
-    debouncedRefreshPtys();
-  });
+  const lifecycleStream = streamFromSubscription(subscribeToPtyLifecycle).pipe(
+    Stream.debounce(Duration.millis(100)),
+    Stream.tap(() => Effect.tryPromise(() => refreshPtys()))
+  );
+  const lifecycleUnsub = runStream(lifecycleStream, { label: 'aggregate-view-lifecycle' });
   if (epoch !== subscriptionsEpoch.value || !state.showAggregateView) {
     lifecycleUnsub();
     return;
@@ -197,7 +199,10 @@ export async function setupSubscriptions(
   subscriptions.lifecycle = lifecycleUnsub;
 
   // Subscribe to title changes - use incremental update instead of full refresh
-  const titleUnsub = await subscribeToAllTitleChanges(handleTitleChange);
+  const titleStream = streamFromSubscription(subscribeToAllTitleChanges).pipe(
+    Stream.tap((event) => Effect.sync(() => handleTitleChange(event)))
+  );
+  const titleUnsub = runStream(titleStream, { label: 'aggregate-view-title' });
   if (epoch !== subscriptionsEpoch.value || !state.showAggregateView) {
     titleUnsub();
     return;
@@ -211,22 +216,30 @@ export async function setupSubscriptions(
   const activePollMs = 2000;
   const inactivePollMs = 10000;
 
-  subscriptions.pollingActive = setInterval(() => {
-    if (!state.showAggregateView || state.allPtys.length === 0) return;
-    const activeIds = new Set(state.allPtys.filter(isActivePty).map((pty) => pty.ptyId));
-    if (state.selectedPtyId) activeIds.add(state.selectedPtyId);
-    refreshPtysSubset(Array.from(activeIds));
-  }, activePollMs);
+  const activePollStream = Stream.repeatEffectWithSchedule(
+    Effect.tryPromise(async () => {
+      if (!state.showAggregateView || state.allPtys.length === 0) return;
+      const activeIds = new Set(state.allPtys.filter(isActivePty).map((pty) => pty.ptyId));
+      if (state.selectedPtyId) activeIds.add(state.selectedPtyId);
+      await refreshPtysSubset(Array.from(activeIds));
+    }),
+    Schedule.fixed(Duration.millis(activePollMs))
+  );
+  subscriptions.pollingActive = runStream(activePollStream, { label: 'aggregate-view-poll-active' });
 
-  subscriptions.pollingInactive = setInterval(() => {
-    if (!state.showAggregateView || state.allPtys.length === 0) return;
-    const activeIds = new Set(state.allPtys.filter(isActivePty).map((pty) => pty.ptyId));
-    if (state.selectedPtyId) activeIds.add(state.selectedPtyId);
-    const inactiveIds = state.allPtys
-      .filter((pty) => !activeIds.has(pty.ptyId))
-      .map((pty) => pty.ptyId);
-    refreshPtysSubset(inactiveIds);
-  }, inactivePollMs);
+  const inactivePollStream = Stream.repeatEffectWithSchedule(
+    Effect.tryPromise(async () => {
+      if (!state.showAggregateView || state.allPtys.length === 0) return;
+      const activeIds = new Set(state.allPtys.filter(isActivePty).map((pty) => pty.ptyId));
+      if (state.selectedPtyId) activeIds.add(state.selectedPtyId);
+      const inactiveIds = state.allPtys
+        .filter((pty) => !activeIds.has(pty.ptyId))
+        .map((pty) => pty.ptyId);
+      await refreshPtysSubset(inactiveIds);
+    }),
+    Schedule.fixed(Duration.millis(inactivePollMs))
+  );
+  subscriptions.pollingInactive = runStream(inactivePollStream, { label: 'aggregate-view-poll-inactive' });
 }
 
 export function cleanupSubscriptions(
@@ -236,8 +249,8 @@ export function cleanupSubscriptions(
   subscriptionsEpoch.value += 1;
   subscriptions.lifecycle?.();
   subscriptions.titleChange?.();
-  if (subscriptions.pollingActive) clearInterval(subscriptions.pollingActive);
-  if (subscriptions.pollingInactive) clearInterval(subscriptions.pollingInactive);
+  subscriptions.pollingActive?.();
+  subscriptions.pollingInactive?.();
   subscriptions.lifecycle = null;
   subscriptions.titleChange = null;
   subscriptions.pollingActive = null;

@@ -4,21 +4,6 @@
 
 import type { PtyInfo, AggregateViewState } from './aggregate-view-types';
 
-/**
- * Debounce a function - delays execution until after wait ms have elapsed
- * since the last call. Useful for reducing rapid successive calls.
- */
-export function debounce<T extends (...args: unknown[]) => void>(
-  fn: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<T>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), wait);
-  };
-}
-
 /** Filter PTYs by search query (matches cwd, git branch, or process) */
 export function filterPtys(ptys: PtyInfo[], query: string): PtyInfo[] {
   if (!query.trim()) return ptys;
