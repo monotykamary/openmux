@@ -18,11 +18,13 @@ interface PtyCardProps {
 /**
  * Format git diff stats as colored text spans
  */
-function formatDiffStats(stats: { added: number; removed: number } | undefined) {
+function formatDiffStats(stats: { added: number; removed: number; binary?: number } | undefined) {
   if (!stats) return null;
+  const binaryCount = stats.binary ?? 0;
   return {
     added: `+${stats.added}`,
     removed: `-${stats.removed}`,
+    binary: binaryCount > 0 ? `*${binaryCount}` : undefined,
   };
 }
 
@@ -59,9 +61,10 @@ export function PtyCard(props: PtyCardProps) {
   const bgColor = () => props.isSelected ? '#3b82f6' : undefined;
   // Dim color needs to be readable - lighter on blue, darker otherwise
   const dimColor = () => props.isSelected ? '#93c5fd' : '#666666';
-  // Git diff colors - green for additions, red for removals
+  // Git diff colors - green for additions, red for removals, gray for binary
   const addedColor = () => props.isSelected ? '#86efac' : '#22c55e';
   const removedColor = () => props.isSelected ? '#fca5a5' : '#ef4444';
+  const binaryColor = () => props.isSelected ? '#cbd5f5' : '#94a3b8';
 
   const handleClick = (event: { preventDefault: () => void }) => {
     event.preventDefault();
@@ -85,7 +88,9 @@ export function PtyCard(props: PtyCardProps) {
   const diffStatsText = () => {
     const stats = diffStats();
     if (!stats) return '';
-    return `${stats.added},${stats.removed}`;
+    return stats.binary
+      ? `${stats.added},${stats.removed},${stats.binary}`
+      : `${stats.added},${stats.removed}`;
   };
 
   // Available width accounting for right padding
@@ -122,6 +127,12 @@ export function PtyCard(props: PtyCardProps) {
             <text fg={addedColor()}>{diffStats()!.added}</text>
             <text fg={dimColor()}>,</text>
             <text fg={removedColor()}>{diffStats()!.removed}</text>
+            {diffStats()!.binary && (
+              <>
+                <text fg={dimColor()}>,</text>
+                <text fg={binaryColor()}>{diffStats()!.binary}</text>
+              </>
+            )}
           </>
         )}
       </box>

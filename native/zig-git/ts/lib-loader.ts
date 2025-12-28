@@ -97,7 +97,7 @@ export const lib = dlopen(libPath, {
   },
   omx_git_diff_stats_async: { args: [FFIType.cstring], returns: FFIType.i32 },
   omx_git_diff_stats_poll: {
-    args: [FFIType.i32, FFIType.pointer, FFIType.pointer],
+    args: [FFIType.i32, FFIType.pointer, FFIType.pointer, FFIType.pointer],
     returns: FFIType.i32,
   },
   omx_git_diff_stats_cancel: { args: [FFIType.i32], returns: FFIType.void },

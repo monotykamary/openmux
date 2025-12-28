@@ -4,6 +4,7 @@ const c = @cImport({
 });
 
 const constants = @import("constants.zig");
+const git_mutex = @import("git_mutex.zig");
 
 pub const DiffState = enum(u8) {
     pending,
@@ -18,6 +19,7 @@ pub const DiffRequest = struct {
     state: std.atomic.Value(DiffState),
     added: std.atomic.Value(c_int),
     removed: std.atomic.Value(c_int),
+    binary: std.atomic.Value(c_int),
 
     pub fn init() DiffRequest {
         return .{
@@ -26,6 +28,7 @@ pub const DiffRequest = struct {
             .state = std.atomic.Value(DiffState).init(.failed),
             .added = std.atomic.Value(c_int).init(0),
             .removed = std.atomic.Value(c_int).init(0),
+            .binary = std.atomic.Value(c_int).init(0),
         };
     }
 };
@@ -102,21 +105,28 @@ fn diffThreadLoop() void {
 
             var added: c_int = 0;
             var removed: c_int = 0;
-            const ok = computeDiffStats(cwd_ptr, &added, &removed);
+            var binary: c_int = 0;
+            const ok = computeDiffStats(cwd_ptr, &added, &removed, &binary);
 
             const new_state: DiffState = if (ok) .complete else .failed;
 
-            if (req.state.cmpxchgStrong(.pending, new_state, .acq_rel, .acquire)) |_| {
-                freeDiffRequest(@intCast(i));
-            } else {
-                req.added.store(added, .release);
-                req.removed.store(removed, .release);
+            // Store results before marking complete to avoid races with poll/free.
+            req.added.store(added, .release);
+            req.removed.store(removed, .release);
+            req.binary.store(binary, .release);
+
+            if (req.state.cmpxchgStrong(.pending, new_state, .acq_rel, .acquire)) |old_state| {
+                if (old_state == .cancelled) {
+                    freeDiffRequest(@intCast(i));
+                }
             }
 
             _ = diff_queue_count.fetchSub(1, .release);
         }
     }
 }
+
+const MAX_DIFF_FILE_BYTES: c.git_off_t = 1024 * 1024;
 
 fn setDiffOptions(options: *c.git_diff_options) void {
     _ = c.git_diff_options_init(options, c.GIT_DIFF_OPTIONS_VERSION);
@@ -127,13 +137,30 @@ fn setDiffOptions(options: *c.git_diff_options) void {
     if (@hasDecl(c, "GIT_DIFF_RECURSE_UNTRACKED_DIRS")) {
         options.flags |= c.GIT_DIFF_RECURSE_UNTRACKED_DIRS;
     }
+    // Treat large files as binary to avoid loading huge content into memory.
+    options.max_size = MAX_DIFF_FILE_BYTES;
+}
+
+fn countBinaryCb(
+    _: ?*const c.git_diff_delta,
+    _: ?*const c.git_diff_binary,
+    payload: ?*anyopaque,
+) callconv(.c) c_int {
+    if (payload == null) return 0;
+    const count_ptr: *c_int = @ptrCast(@alignCast(payload.?));
+    count_ptr.* += 1;
+    return 0;
 }
 
 fn computeDiffStats(
     cwd: [*:0]const u8,
     out_added: *c_int,
     out_removed: *c_int,
+    out_binary: *c_int,
 ) bool {
+    git_mutex.lock();
+    defer git_mutex.unlock();
+
     var repo: ?*c.git_repository = null;
     if (c.git_repository_open_ext(&repo, cwd, c.GIT_REPOSITORY_OPEN_FROM_ENV, null) != 0) {
         return false;
@@ -185,8 +212,13 @@ fn computeDiffStats(
     if (head_commit) |commit| c.git_commit_free(commit);
     if (head_tree) |tree| c.git_tree_free(tree);
 
-    if (diff == null) return false;
+    if (diff == null) {
+        return false;
+    }
     defer c.git_diff_free(diff.?);
+
+    var binary_count: c_int = 0;
+    _ = c.git_diff_foreach(diff.?, null, countBinaryCb, null, null, &binary_count);
 
     var stats: ?*c.git_diff_stats = null;
     if (c.git_diff_get_stats(&stats, diff.?) != 0 or stats == null) {
@@ -199,6 +231,7 @@ fn computeDiffStats(
 
     out_added.* = @intCast(added);
     out_removed.* = @intCast(removed);
+    out_binary.* = binary_count;
     return true;
 }
 
@@ -219,6 +252,7 @@ pub fn freeDiffRequest(id: u32) void {
     diff_requests[id].state.store(.failed, .release);
     diff_requests[id].added.store(0, .release);
     diff_requests[id].removed.store(0, .release);
+    diff_requests[id].binary.store(0, .release);
 }
 
 pub fn getDiffRequest(id: u32) ?*DiffRequest {

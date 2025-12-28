@@ -8,6 +8,7 @@ import type { GitInfo } from '../effect/services/pty/helpers';
 export interface GitDiffStats {
   added: number;
   removed: number;
+  binary: number;
 }
 
 /** PTY info for the aggregate view */

@@ -59,10 +59,10 @@ const statusAsync = await getRepoStatusAsync("/path/to/repo");
  console.log(statusAsync);
 // Same structure as getRepoStatus
 
-// Async diff stats (added/removed line counts)
+// Async diff stats (added/removed line counts + binary file count)
 const diffStats = await getDiffStatsAsync("/path/to/repo");
 console.log(diffStats);
-// { added: 15, removed: 3 }
+// { added: 15, removed: 3, binary: 1 }
 ```
 
 ## API
@@ -113,7 +113,7 @@ Gets repository status asynchronously using a background thread. Non-blocking fo
 
 ### `getDiffStatsAsync(cwd: string, options?)`
 
-Gets diff statistics (added/removed lines) asynchronously.
+Gets diff statistics (added/removed lines) asynchronously (includes binary file count).
 
 **Options:**
 - `pollIntervalMs?: number` - Poll interval in ms (default: 10)
@@ -121,6 +121,7 @@ Gets diff statistics (added/removed lines) asynchronously.
 **Returns** `Promise<GitDiffStats | null>`:
 - `added: number` - Number of lines added
 - `removed: number` - Number of lines removed
+- `binary: number` - Number of binary files changed
 
 ### `cancelRepoStatus(requestId: number)`
 

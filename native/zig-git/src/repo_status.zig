@@ -4,6 +4,7 @@ const c = @cImport({
 });
 
 const constants = @import("constants.zig");
+const git_mutex = @import("git_mutex.zig");
 
 pub const RepoStatus = struct {
     branch: [constants.MAX_BRANCH_LEN]u8 = undefined,
@@ -254,6 +255,9 @@ pub fn fillRepoStatus(repo: *c.git_repository, out: *RepoStatus) void {
 }
 
 pub fn computeRepoStatus(cwd: [*:0]const u8, out: *RepoStatus) bool {
+    git_mutex.lock();
+    defer git_mutex.unlock();
+
     clearRepoStatus(out);
 
     var repo: ?*c.git_repository = null;

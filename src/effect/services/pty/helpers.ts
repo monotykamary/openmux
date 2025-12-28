@@ -33,6 +33,7 @@ export interface GitInfo {
 export interface GitDiffStats {
   added: number
   removed: number
+  binary: number
 }
 
 interface RepoEntry {
@@ -303,7 +304,7 @@ export const getGitBranch = (cwd: string): Effect.Effect<string | undefined> =>
 
 /**
  * Get the git diff statistics for a directory.
- * Includes untracked files via libgit2.
+ * Includes untracked changes and binary file count.
  */
 export const getGitDiffStats = (cwd: string): Effect.Effect<GitDiffStats | undefined> =>
   Effect.tryPromise(async () => {
@@ -315,7 +316,7 @@ export const getGitDiffStats = (cwd: string): Effect.Effect<GitDiffStats | undef
 
     entry.diffInFlight = getDiffStatsAsync(cwd).then((stats: NativeGitDiffStats | null) => {
       entry.diffInFlight = undefined
-      if (!stats || (stats.added === 0 && stats.removed === 0)) {
+      if (!stats || (stats.added === 0 && stats.removed === 0 && stats.binary === 0)) {
         entry.diffStats = undefined
         return undefined
       }

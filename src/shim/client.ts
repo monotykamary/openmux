@@ -177,9 +177,19 @@ export async function getGitInfo(ptyId: string): Promise<GitInfo | undefined> {
   };
 }
 
-export async function getGitDiffStats(ptyId: string): Promise<{ added: number; removed: number } | undefined> {
+export async function getGitDiffStats(
+  ptyId: string
+): Promise<{ added: number; removed: number; binary: number } | undefined> {
   const response = await sendRequest('getGitDiffStats', { ptyId });
-  return (response.header.result as { diff?: { added: number; removed: number } | null }).diff ?? undefined;
+  const diff = (response.header.result as {
+    diff?: { added: number; removed: number; binary?: number } | null;
+  }).diff;
+  if (!diff) return undefined;
+  return {
+    added: Number(diff.added ?? 0),
+    removed: Number(diff.removed ?? 0),
+    binary: Number(diff.binary ?? 0),
+  };
 }
 
 export async function getTitle(ptyId: string): Promise<string> {

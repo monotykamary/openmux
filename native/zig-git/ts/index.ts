@@ -41,6 +41,7 @@ export interface GitRepoStatus extends NativeGitInfo {
 export interface GitDiffStats {
   added: number;
   removed: number;
+  binary: number;
 }
 
 const BRANCH_BUF_SIZE = 256;
@@ -278,9 +279,15 @@ export function getDiffStatsAsync(
   return new Promise((resolve) => {
     const addedBuf = Buffer.alloc(4);
     const removedBuf = Buffer.alloc(4);
+    const binaryBuf = Buffer.alloc(4);
 
     const poll = () => {
-      const status = lib.symbols.omx_git_diff_stats_poll(requestId, addedBuf, removedBuf);
+      const status = lib.symbols.omx_git_diff_stats_poll(
+        requestId,
+        addedBuf,
+        removedBuf,
+        binaryBuf
+      );
       if (status === DIFF_PENDING) {
         setTimeout(poll, pollIntervalMs);
         return;
@@ -293,6 +300,7 @@ export function getDiffStatsAsync(
       resolve({
         added: addedBuf.readInt32LE(0),
         removed: removedBuf.readInt32LE(0),
+        binary: binaryBuf.readInt32LE(0),
       });
     };
 

@@ -129,6 +129,7 @@ pub export fn omx_git_diff_stats_async(cwd: [*:0]const u8) c_int {
     req.state.store(.pending, .release);
     req.added.store(0, .release);
     req.removed.store(0, .release);
+    req.binary.store(0, .release);
 
     async_diff.signalDiffQueue();
 
@@ -161,6 +162,7 @@ pub export fn omx_git_diff_stats_poll(
     request_id: c_int,
     out_added: *c_int,
     out_removed: *c_int,
+    out_binary: *c_int,
 ) c_int {
     if (request_id < 0) return constants.DIFF_ERROR;
 
@@ -172,6 +174,7 @@ pub export fn omx_git_diff_stats_poll(
         .complete => {
             out_added.* = req.added.load(.acquire);
             out_removed.* = req.removed.load(.acquire);
+            out_binary.* = req.binary.load(.acquire);
             async_diff.freeDiffRequest(@intCast(request_id));
             return 0;
         },
@@ -519,6 +522,46 @@ test "status async reports branch after commit" {
     try std.testing.expectEqual(@as(u8, 0), detached);
 }
 
+test "diff stats include tracked changes" {
+    _ = omx_git_init();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    const repo_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(repo_path);
+
+    const repo = try initRepo(allocator, repo_path);
+    defer c.git_repository_free(repo);
+
+    try commitFile(allocator, repo, tmp.dir, "tracked.txt", "a\nb\n");
+    try tmp.dir.writeFile(.{ .sub_path = "tracked.txt", .data = "a\nb\nc\n" });
+
+    const repo_path_z = try allocator.dupeZ(u8, repo_path);
+    defer allocator.free(repo_path_z);
+
+    const req_id = omx_git_diff_stats_async(repo_path_z);
+    try std.testing.expect(req_id >= 0);
+
+    var added: c_int = 0;
+    var removed: c_int = 0;
+    var binary: c_int = 0;
+    var status: c_int = constants.DIFF_PENDING;
+
+    while (status == constants.DIFF_PENDING) {
+        status = omx_git_diff_stats_poll(req_id, &added, &removed, &binary);
+        if (status == constants.DIFF_PENDING) {
+            std.Thread.sleep(1 * std.time.ns_per_ms);
+        }
+    }
+
+    try std.testing.expectEqual(@as(c_int, 0), status);
+    try std.testing.expectEqual(@as(c_int, 1), added);
+    try std.testing.expectEqual(@as(c_int, 0), removed);
+    try std.testing.expectEqual(@as(c_int, 0), binary);
+}
+
 test "diff stats include untracked changes" {
     _ = omx_git_init();
 
@@ -532,7 +575,8 @@ test "diff stats include untracked changes" {
     const repo = try initRepo(allocator, repo_path);
     defer c.git_repository_free(repo);
 
-    try tmp.dir.writeFile(.{ .sub_path = "untracked.txt", .data = "a\nb\nc\n" });
+    try commitFile(allocator, repo, tmp.dir, "tracked.txt", "first\n");
+    try tmp.dir.writeFile(.{ .sub_path = "untracked.txt", .data = "one\ntwo\nthree\n" });
 
     const repo_path_z = try allocator.dupeZ(u8, repo_path);
     defer allocator.free(repo_path_z);
@@ -542,18 +586,70 @@ test "diff stats include untracked changes" {
 
     var added: c_int = 0;
     var removed: c_int = 0;
+    var binary: c_int = 0;
     var status: c_int = constants.DIFF_PENDING;
 
     while (status == constants.DIFF_PENDING) {
-        status = omx_git_diff_stats_poll(req_id, &added, &removed);
+        status = omx_git_diff_stats_poll(req_id, &added, &removed, &binary);
         if (status == constants.DIFF_PENDING) {
             std.Thread.sleep(1 * std.time.ns_per_ms);
         }
     }
 
     try std.testing.expectEqual(@as(c_int, 0), status);
-    try std.testing.expectEqual(@as(c_int, 3), added);
+    if (@hasDecl(c, "GIT_DIFF_SHOW_UNTRACKED_CONTENT")) {
+        try std.testing.expectEqual(@as(c_int, 3), added);
+    } else {
+        try std.testing.expectEqual(@as(c_int, 0), added);
+    }
     try std.testing.expectEqual(@as(c_int, 0), removed);
+    try std.testing.expectEqual(@as(c_int, 0), binary);
+}
+
+test "diff stats count binary changes separately" {
+    _ = omx_git_init();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    const repo_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(repo_path);
+
+    const repo = try initRepo(allocator, repo_path);
+    defer c.git_repository_free(repo);
+
+    try commitFile(allocator, repo, tmp.dir, "tracked.txt", "a\n");
+
+    const binary_size: usize = 1024 * 1024 + 1;
+    const binary_data = try allocator.alloc(u8, binary_size);
+    defer allocator.free(binary_data);
+    @memset(binary_data, 0);
+
+    try tmp.dir.writeFile(.{ .sub_path = "tracked.txt", .data = binary_data });
+
+    const repo_path_z = try allocator.dupeZ(u8, repo_path);
+    defer allocator.free(repo_path_z);
+
+    const req_id = omx_git_diff_stats_async(repo_path_z);
+    try std.testing.expect(req_id >= 0);
+
+    var added: c_int = 0;
+    var removed: c_int = 0;
+    var binary: c_int = 0;
+    var status: c_int = constants.DIFF_PENDING;
+
+    while (status == constants.DIFF_PENDING) {
+        status = omx_git_diff_stats_poll(req_id, &added, &removed, &binary);
+        if (status == constants.DIFF_PENDING) {
+            std.Thread.sleep(1 * std.time.ns_per_ms);
+        }
+    }
+
+    try std.testing.expectEqual(@as(c_int, 0), status);
+    try std.testing.expectEqual(@as(c_int, 0), added);
+    try std.testing.expectEqual(@as(c_int, 0), removed);
+    try std.testing.expectEqual(@as(c_int, 1), binary);
 }
 
 test "repo info returns branch after commit" {
