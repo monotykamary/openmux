@@ -66,5 +66,10 @@ export function handleSplitPane(
   }
 
   updated = recalculateLayout(updated, state.viewport, state.config);
-  return { ...state, workspaces: updateWorkspace(state, updated), layoutVersion: state.layoutVersion + 1 };
+  return {
+    ...state,
+    workspaces: updateWorkspace(state, updated),
+    layoutVersion: state.layoutVersion + 1,
+    layoutGeometryVersion: state.layoutGeometryVersion + 1,
+  };
 }

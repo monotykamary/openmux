@@ -106,6 +106,11 @@ export function handleNavigate(state: LayoutState, direction: Direction): Layout
 
         if (workspace.zoomed) {
           updated = recalculateLayout(updated, state.viewport, state.config);
+          return {
+            ...state,
+            workspaces: updateWorkspace(state, updated),
+            layoutGeometryVersion: state.layoutGeometryVersion + 1,
+          };
         }
 
         return { ...state, workspaces: updateWorkspace(state, updated) };
@@ -144,6 +149,11 @@ export function handleNavigate(state: LayoutState, direction: Direction): Layout
 
     if (workspace.zoomed || stackIndexChanged) {
       updated = recalculateLayout(updated, state.viewport, state.config);
+      return {
+        ...state,
+        workspaces: updateWorkspace(state, updated),
+        layoutGeometryVersion: state.layoutGeometryVersion + 1,
+      };
     }
 
     return { ...state, workspaces: updateWorkspace(state, updated) };
@@ -176,6 +186,11 @@ export function handleNavigate(state: LayoutState, direction: Direction): Layout
   const needsStackedRecalc = workspace.layoutMode === 'stacked' && stackIndexChanged;
   if (workspace.zoomed || needsStackedRecalc) {
     updated = recalculateLayout(updated, state.viewport, state.config);
+    return {
+      ...state,
+      workspaces: updateWorkspace(state, updated),
+      layoutGeometryVersion: state.layoutGeometryVersion + 1,
+    };
   }
 
   return { ...state, workspaces: updateWorkspace(state, updated) };

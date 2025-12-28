@@ -22,6 +22,7 @@ describe('Layout Reducer', () => {
 
       expect(newState.viewport).toEqual(newViewport);
       expect(newState.workspaces[1]!.mainPane!.rectangle).toEqual(newViewport);
+      expect(newState.layoutGeometryVersion).toBe(1);
     });
 
     it('should recalculate all workspaces', () => {

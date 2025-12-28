@@ -42,6 +42,8 @@ interface LayoutContextValue {
   populatedWorkspaces: WorkspaceId[];
   /** Version counter that increments on save-worthy layout changes */
   layoutVersion: number;
+  /** Version counter that increments when pane geometry changes */
+  layoutGeometryVersion: number;
   // Actions
   focusPane: (paneId: string) => void;
   navigate: (direction: Direction) => void;
@@ -87,6 +89,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
     viewport: { x: 0, y: 0, width: 80, height: 24 },
     config: mergedConfig(),
     layoutVersion: 0,
+    layoutGeometryVersion: 0,
   };
 
   // We use createStore but apply the existing reducer for state transitions
@@ -108,6 +111,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
         }
       }
       draft.layoutVersion++;
+      draft.layoutGeometryVersion++;
     }));
   });
 
@@ -122,6 +126,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
       setState('viewport', newState.viewport);
       setState('config', newState.config);
       setState('layoutVersion', newState.layoutVersion);
+      setState('layoutGeometryVersion', newState.layoutGeometryVersion);
     });
   };
 
@@ -208,6 +213,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
       draft.workspaces[wsId] = calculateMasterStackLayout(workspace, draft.viewport, draft.config);
 
       draft.layoutVersion++;
+      draft.layoutGeometryVersion++;
     }));
 
     return newPaneId;
@@ -341,6 +347,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
     get panes() { return panes(); },
     get populatedWorkspaces() { return populatedWorkspaces(); },
     get layoutVersion() { return state.layoutVersion; },
+    get layoutGeometryVersion() { return state.layoutGeometryVersion; },
     focusPane,
     navigate,
     newPane,

@@ -35,9 +35,15 @@ export function handleFocusPane(state: LayoutState, paneId: string): LayoutState
 
   // In stacked layout, switching active stack entry needs a layout pass to set rectangles.
   const needsStackedRecalc = workspace.layoutMode === 'stacked' && stackIndexChanged;
-  // If zoomed, recalculate layout so new focused pane gets fullscreen
-  if (workspace.zoomed || needsStackedRecalc) {
+  const needsRecalc = workspace.zoomed || needsStackedRecalc;
+  // If zoomed/stacked, recalculate layout so new focused pane gets updated geometry
+  if (needsRecalc) {
     updated = recalculateLayout(updated, state.viewport, state.config);
+    return {
+      ...state,
+      workspaces: updateWorkspace(state, updated),
+      layoutGeometryVersion: state.layoutGeometryVersion + 1,
+    };
   }
 
   return { ...state, workspaces: updateWorkspace(state, updated) };

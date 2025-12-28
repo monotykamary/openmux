@@ -18,7 +18,12 @@ export function handleSetLayoutMode(state: LayoutState, mode: LayoutMode): Layou
   if (updated.mainPane) {
     updated = recalculateLayout(updated, state.viewport, state.config);
   }
-  return { ...state, workspaces: updateWorkspace(state, updated), layoutVersion: state.layoutVersion + 1 };
+  return {
+    ...state,
+    workspaces: updateWorkspace(state, updated),
+    layoutVersion: state.layoutVersion + 1,
+    layoutGeometryVersion: state.layoutGeometryVersion + 1,
+  };
 }
 
 /**
@@ -102,7 +107,12 @@ export function handleSwapMain(state: LayoutState): LayoutState {
   };
 
   updated = recalculateLayout(updated, state.viewport, state.config);
-  return { ...state, workspaces: updateWorkspace(state, updated), layoutVersion: state.layoutVersion + 1 };
+  return {
+    ...state,
+    workspaces: updateWorkspace(state, updated),
+    layoutVersion: state.layoutVersion + 1,
+    layoutGeometryVersion: state.layoutGeometryVersion + 1,
+  };
 }
 
 /**
@@ -140,7 +150,12 @@ export function handleMovePane(state: LayoutState, direction: Direction): Layout
       }
 
       updated = recalculateLayout(updated, state.viewport, state.config);
-      return { ...state, workspaces: updateWorkspace(state, updated), layoutVersion: state.layoutVersion + 1 };
+      return {
+        ...state,
+        workspaces: updateWorkspace(state, updated),
+        layoutVersion: state.layoutVersion + 1,
+        layoutGeometryVersion: state.layoutGeometryVersion + 1,
+      };
     }
   }
 
@@ -165,7 +180,12 @@ export function handleMovePane(state: LayoutState, direction: Direction): Layout
     };
 
     updated = recalculateLayout(updated, state.viewport, state.config);
-    return { ...state, workspaces: updateWorkspace(state, updated), layoutVersion: state.layoutVersion + 1 };
+    return {
+      ...state,
+      workspaces: updateWorkspace(state, updated),
+      layoutVersion: state.layoutVersion + 1,
+      layoutGeometryVersion: state.layoutGeometryVersion + 1,
+    };
   }
 
   if (direction === 'west' || direction === 'east') {
@@ -189,7 +209,12 @@ export function handleMovePane(state: LayoutState, direction: Direction): Layout
       };
 
       updated = recalculateLayout(updated, state.viewport, state.config);
-      return { ...state, workspaces: updateWorkspace(state, updated), layoutVersion: state.layoutVersion + 1 };
+      return {
+        ...state,
+        workspaces: updateWorkspace(state, updated),
+        layoutVersion: state.layoutVersion + 1,
+        layoutGeometryVersion: state.layoutGeometryVersion + 1,
+      };
     }
 
     if (stackIndex === -1) return state;
@@ -206,7 +231,12 @@ export function handleMovePane(state: LayoutState, direction: Direction): Layout
     };
 
     updated = recalculateLayout(updated, state.viewport, state.config);
-    return { ...state, workspaces: updateWorkspace(state, updated), layoutVersion: state.layoutVersion + 1 };
+    return {
+      ...state,
+      workspaces: updateWorkspace(state, updated),
+      layoutVersion: state.layoutVersion + 1,
+      layoutGeometryVersion: state.layoutGeometryVersion + 1,
+    };
   }
 
   return state;
@@ -226,5 +256,10 @@ export function handleToggleZoom(state: LayoutState): LayoutState {
   };
 
   updated = recalculateLayout(updated, state.viewport, state.config);
-  return { ...state, workspaces: updateWorkspace(state, updated), layoutVersion: state.layoutVersion + 1 };
+  return {
+    ...state,
+    workspaces: updateWorkspace(state, updated),
+    layoutVersion: state.layoutVersion + 1,
+    layoutGeometryVersion: state.layoutGeometryVersion + 1,
+  };
 }

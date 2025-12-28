@@ -22,6 +22,7 @@ export function pruneMissingPanes(params: {
     viewport: params.viewport,
     config: params.config,
     layoutVersion: 0,
+    layoutGeometryVersion: 0,
   };
 
   for (const paneId of new Set(params.paneIds)) {

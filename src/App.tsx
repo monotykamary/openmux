@@ -329,13 +329,13 @@ function AppContent() {
     )
   );
 
-  // Resize PTYs and update positions when layout structure or terminal size changes
-  // Use layoutVersion (structural changes) and terminal dimensions instead of panes
-  // This avoids re-running on non-structural changes like ptyId/title updates
+  // Resize PTYs and update positions when pane geometry or terminal size changes
+  // Use layoutGeometryVersion (geometry changes) and terminal dimensions instead of panes
+  // This avoids re-running on non-geometry changes like ptyId/title updates
   createEffect(() => {
     if (!terminal.isInitialized) return;
-    // Track structural changes (pane add/remove, layout mode) and viewport resize
-    layout.layoutVersion;
+    // Track geometry changes (layout mode, stacked focus, zoom) and viewport resize
+    layout.layoutGeometryVersion;
     const _width = width();
     const _height = height();
     if (_width <= 0 || _height <= 0) return;

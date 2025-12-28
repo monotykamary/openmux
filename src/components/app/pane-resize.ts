@@ -24,10 +24,14 @@ export function createPaneResizeHandlers(deps: PaneResizeDeps) {
     setPanePosition,
   } = deps;
 
+  type PaneGeometry = { cols: number; rows: number; x: number; y: number };
+  const lastGeometry = new Map<string, PaneGeometry>();
+
   /**
    * Resize all PTYs and update their positions based on current pane dimensions
    */
   const resizeAllPanes = () => {
+    const seenPtys = new Set<string>();
     for (const pane of getPanes()) {
       if (!pane.ptyId || !pane.rectangle) continue;
 
@@ -35,9 +39,27 @@ export function createPaneResizeHandlers(deps: PaneResizeDeps) {
       const rows = Math.max(1, pane.rectangle.height - 2);
       const x = pane.rectangle.x + 1;
       const y = pane.rectangle.y + 1;
+      const geometry: PaneGeometry = { cols, rows, x, y };
+      const previous = lastGeometry.get(pane.ptyId);
+      const sizeChanged = !previous || previous.cols !== cols || previous.rows !== rows;
+      const positionChanged = !previous || previous.x !== x || previous.y !== y;
 
-      resizePTY(pane.ptyId, cols, rows);
-      setPanePosition(pane.ptyId, x, y);
+      if (sizeChanged) {
+        resizePTY(pane.ptyId, cols, rows);
+      }
+      if (positionChanged) {
+        setPanePosition(pane.ptyId, x, y);
+      }
+      if (sizeChanged || positionChanged) {
+        lastGeometry.set(pane.ptyId, geometry);
+      }
+      seenPtys.add(pane.ptyId);
+    }
+
+    for (const ptyId of Array.from(lastGeometry.keys())) {
+      if (!seenPtys.has(ptyId)) {
+        lastGeometry.delete(ptyId);
+      }
     }
   };
 
@@ -50,7 +72,11 @@ export function createPaneResizeHandlers(deps: PaneResizeDeps) {
       if (pane.ptyId && pane.rectangle) {
         const cols = Math.max(1, pane.rectangle.width - 2);
         const rows = Math.max(1, pane.rectangle.height - 2);
+        const x = pane.rectangle.x + 1;
+        const y = pane.rectangle.y + 1;
         resizePTY(pane.ptyId, cols, rows);
+        setPanePosition(pane.ptyId, x, y);
+        lastGeometry.set(pane.ptyId, { cols, rows, x, y });
       }
     }
   };

@@ -15,6 +15,8 @@ export interface LayoutState {
   config: LayoutConfig;
   /** Version counter that increments on save-worthy changes */
   layoutVersion: number;
+  /** Version counter that increments when pane geometry changes */
+  layoutGeometryVersion: number;
 }
 
 export type LayoutAction =

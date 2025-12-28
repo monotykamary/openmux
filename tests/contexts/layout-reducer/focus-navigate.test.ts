@@ -81,6 +81,7 @@ describe('Layout Reducer', () => {
       // When zoomed, focused pane should get full viewport
       expect(newWorkspace.stackPanes[0]?.rectangle).toEqual(defaultViewport);
       expect(newWorkspace.mainPane?.rectangle).toBeUndefined();
+      expect(newState.layoutGeometryVersion).toBe(1);
     });
   });
 
@@ -208,10 +209,12 @@ describe('Layout Reducer', () => {
         let newState = layoutReducer(state, { type: 'NAVIGATE', direction: 'north' });
         expect(newState.workspaces[1]!.focusedPaneId).toBe('pane-4');
         expect(newState.workspaces[1]!.activeStackIndex).toBe(2);
+        expect(newState.layoutGeometryVersion).toBe(1);
 
         newState = layoutReducer(newState, { type: 'NAVIGATE', direction: 'south' });
         expect(newState.workspaces[1]!.focusedPaneId).toBe('pane-2');
         expect(newState.workspaces[1]!.activeStackIndex).toBe(0);
+        expect(newState.layoutGeometryVersion).toBe(2);
       });
 
       it('should navigate within split tree before cycling tabs', () => {

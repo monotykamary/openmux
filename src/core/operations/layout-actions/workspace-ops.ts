@@ -22,7 +22,12 @@ export function handleSetViewport(state: LayoutState, viewport: Rectangle): Layo
       newWorkspaces[id] = workspace;
     }
   }
-  return { ...state, workspaces: newWorkspaces, viewport };
+  return {
+    ...state,
+    workspaces: newWorkspaces,
+    viewport,
+    layoutGeometryVersion: state.layoutGeometryVersion + 1,
+  };
 }
 
 /**
@@ -37,9 +42,15 @@ export function handleSwitchWorkspace(state: LayoutState, workspaceId: Workspace
       workspaces: updateWorkspace(state, newWorkspace),
       activeWorkspaceId: workspaceId,
       layoutVersion: state.layoutVersion + 1,
+      layoutGeometryVersion: state.layoutGeometryVersion + 1,
     };
   }
-  return { ...state, activeWorkspaceId: workspaceId, layoutVersion: state.layoutVersion + 1 };
+  return {
+    ...state,
+    activeWorkspaceId: workspaceId,
+    layoutVersion: state.layoutVersion + 1,
+    layoutGeometryVersion: state.layoutGeometryVersion + 1,
+  };
 }
 
 /**
@@ -68,6 +79,7 @@ export function handleLoadSession(
     ...state,
     workspaces: newWorkspaces,
     activeWorkspaceId,
+    layoutGeometryVersion: state.layoutGeometryVersion + 1,
   };
 }
 
@@ -80,5 +92,6 @@ export function handleClearAll(state: LayoutState): LayoutState {
     ...state,
     workspaces: {},
     activeWorkspaceId: 1,
+    layoutGeometryVersion: state.layoutGeometryVersion + 1,
   };
 }

@@ -17,6 +17,7 @@ export function createInitialState(overrides?: Partial<LayoutState>): LayoutStat
     viewport: defaultViewport,
     config: DEFAULT_CONFIG,
     layoutVersion: 0,
+    layoutGeometryVersion: 0,
     ...overrides,
   };
 }

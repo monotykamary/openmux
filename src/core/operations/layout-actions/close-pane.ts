@@ -60,13 +60,23 @@ function closePaneById(
 
   if (updated.mainPane) {
     updated = recalculateLayout(updated, state.viewport, state.config);
-    return { ...state, workspaces: updateWorkspace(state, updated), layoutVersion: state.layoutVersion + 1 };
+    return {
+      ...state,
+      workspaces: updateWorkspace(state, updated),
+      layoutVersion: state.layoutVersion + 1,
+      layoutGeometryVersion: state.layoutGeometryVersion + 1,
+    };
   }
 
   // Workspace is now empty - remove it
   const remainingWorkspaces = { ...state.workspaces };
   delete remainingWorkspaces[workspace.id];
-  return { ...state, workspaces: remainingWorkspaces, layoutVersion: state.layoutVersion + 1 };
+  return {
+    ...state,
+    workspaces: remainingWorkspaces,
+    layoutVersion: state.layoutVersion + 1,
+    layoutGeometryVersion: state.layoutGeometryVersion + 1,
+  };
 }
 
 /**
