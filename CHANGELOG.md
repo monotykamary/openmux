@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.72](https://github.com/monotykamary/openmux/compare/v0.2.71...v0.2.72) (2025-12-28)
+
+
+### Bug Fixes
+
+* **git:** restore diff stats with binary counts ([bfbd961](https://github.com/monotykamary/openmux/commit/bfbd96130792c78ca2a1c059ab309694d29ecff6))
+
 ### [0.2.71](https://github.com/monotykamary/openmux/compare/v0.2.70...v0.2.71) (2025-12-28)
 
 
