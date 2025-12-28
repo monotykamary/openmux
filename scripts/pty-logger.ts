@@ -9,7 +9,7 @@
  * The wrapped command's output goes to stdout normally.
  */
 
-import { spawn } from '../zig-pty/src/index';
+import { spawn } from '../native/zig-pty/src/index';
 
 const ESC = '\x1b';
 const BEL = '\x07';

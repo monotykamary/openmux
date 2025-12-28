@@ -6,10 +6,10 @@ import { Effect } from "effect"
 import type { TerminalColors } from "../../../../src/terminal/terminal-colors"
 import { Cols, Rows } from "../../../../src/effect/types"
 import { createSession } from "../../../../src/effect/services/pty/session-factory"
-import { spawnAsync } from "../../../../zig-pty/ts/index"
+import { spawnAsync } from "../../../../native/zig-pty/ts/index"
 import { createGhosttyVTEmulator } from "../../../../src/terminal/ghostty-vt/emulator"
 
-vi.mock("../../../../zig-pty/ts/index", () => ({
+vi.mock("../../../../native/zig-pty/ts/index", () => ({
   spawnAsync: vi.fn(),
 }))
 

@@ -10,7 +10,7 @@ import {
   getDiffStatsAsync,
   type GitDiffStats as NativeGitDiffStats,
   type GitRepoState,
-} from "../../../../zig-git/ts/index"
+} from "../../../../native/zig-git/ts/index"
 
 export interface GitInfo {
   branch: string | undefined

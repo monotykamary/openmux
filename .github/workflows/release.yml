@@ -43,8 +43,8 @@ jobs:
       - name: Cache libgit2 build
         uses: actions/cache@v4
         with:
-          path: zig-git/zig-out/libgit2
-          key: libgit2-${{ runner.os }}-${{ runner.arch }}-${{ steps.libgit2.outputs.rev }}-${{ hashFiles('zig-git/build.zig') }}
+          path: native/zig-git/zig-out/libgit2
+          key: libgit2-${{ runner.os }}-${{ runner.arch }}-${{ steps.libgit2.outputs.rev }}-${{ hashFiles('native/zig-git/build.zig') }}
 
       - name: Setup CMake
         run: |

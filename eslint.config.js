@@ -7,7 +7,7 @@ export default [
       "coverage/**",
       "dist/**",
       "vendor/**",
-      "zig-pty/**",
+      "native/**",
       "assets/**",
       "scripts/**",
       "tests/**",

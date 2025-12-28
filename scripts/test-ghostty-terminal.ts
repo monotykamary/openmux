@@ -15,7 +15,7 @@
  */
 
 import { CellFlags, GhosttyVtTerminal, type GhosttyCell } from '../src/terminal/ghostty-vt';
-import { spawn, type IPty } from '../zig-pty/src/index';
+import { spawn, type IPty } from '../native/zig-pty/src/index';
 
 // Get terminal size
 let cols = process.stdout.columns || 80;

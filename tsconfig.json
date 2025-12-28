@@ -1,5 +1,5 @@
 {
-  "include": ["src/**/*", "zig-pty/**/*"],
+  "include": ["src/**/*", "native/zig-pty/ts/**/*", "native/zig-git/ts/**/*"],
   "exclude": ["node_modules"],
   "compilerOptions": {
     // Effect Language Service

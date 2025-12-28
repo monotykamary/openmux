@@ -80,7 +80,7 @@ get_lib_info() {
 build_zig_pty() {
     echo "Building zig-pty native library..."
 
-    local zig_pty_dir="$PROJECT_DIR/zig-pty"
+    local zig_pty_dir="$PROJECT_DIR/native/zig-pty"
 
     if [[ ! -d "$zig_pty_dir" ]]; then
         echo "Error: zig-pty directory not found at $zig_pty_dir"
@@ -104,7 +104,7 @@ build_zig_pty() {
 build_zig_git() {
     echo "Building zig-git native library..."
 
-    local zig_git_dir="$PROJECT_DIR/zig-git"
+    local zig_git_dir="$PROJECT_DIR/native/zig-git"
 
     if [[ ! -d "$zig_git_dir" ]]; then
         echo "Error: zig-git directory not found at $zig_git_dir"
@@ -273,11 +273,11 @@ build() {
     fi
 
     # Find and copy native library from zig-pty
-    local pty_lib="$PROJECT_DIR/zig-pty/zig-out/lib/$LIB_NAME"
+    local pty_lib="$PROJECT_DIR/native/zig-pty/zig-out/lib/$LIB_NAME"
 
     # Fallback to non-arch-specific name if needed
     if [[ ! -f "$pty_lib" ]]; then
-        pty_lib="$PROJECT_DIR/zig-pty/zig-out/lib/$LIB_NAME_FALLBACK"
+        pty_lib="$PROJECT_DIR/native/zig-pty/zig-out/lib/$LIB_NAME_FALLBACK"
     fi
 
     if [[ -f "$pty_lib" ]]; then
@@ -289,10 +289,10 @@ build() {
     fi
 
     # Find and copy native library from zig-git
-    local git_lib="$PROJECT_DIR/zig-git/zig-out/lib/$GIT_LIB_NAME"
+    local git_lib="$PROJECT_DIR/native/zig-git/zig-out/lib/$GIT_LIB_NAME"
 
     if [[ ! -f "$git_lib" ]]; then
-        git_lib="$PROJECT_DIR/zig-git/zig-out/lib/$GIT_LIB_NAME_FALLBACK"
+        git_lib="$PROJECT_DIR/native/zig-git/zig-out/lib/$GIT_LIB_NAME_FALLBACK"
     fi
 
     if [[ -f "$git_lib" ]]; then

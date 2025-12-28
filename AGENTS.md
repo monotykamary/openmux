@@ -15,7 +15,7 @@ bun run build:release # Build optimized binary
 bun run install:local # Build and install locally
 bun run test          # Run TS + Zig + Ghostty VT tests
 bun run test:ts       # Run Vitest only
-bun run test:zig      # Run Zig PTY tests only
+bun run test:pty      # Run Zig PTY tests only
 bun run test:ghostty-vt # Run Ghostty VT Zig tests
 bun run test:watch    # Run Vitest in watch mode
 bun run check:circular # Detect circular deps in src/

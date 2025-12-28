@@ -40,10 +40,9 @@ function resolveLibPath(): string {
   const basePaths = [
     // Compiled binary: library next to executable (set by wrapper or manual)
     execDir,
-    // Development: zig-pty/zig-out/lib/
+    // Development: native/zig-pty/zig-out/lib/
     join(here, "zig-out", "lib"),
-    join(here, "..", "zig-pty", "zig-out", "lib"),
-    join(process.cwd(), "zig-pty", "zig-out", "lib"),
+    join(process.cwd(), "native", "zig-pty", "zig-out", "lib"),
   ];
 
   const fallbackPaths: string[] = [];

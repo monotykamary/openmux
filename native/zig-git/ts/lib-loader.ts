@@ -35,8 +35,7 @@ function resolveLibPath(): string {
   const basePaths = [
     execDir,
     join(here, "zig-out", "lib"),
-    join(here, "..", "zig-git", "zig-out", "lib"),
-    join(process.cwd(), "zig-git", "zig-out", "lib"),
+    join(process.cwd(), "native", "zig-git", "zig-out", "lib"),
   ];
 
   const candidates: string[] = [];

@@ -84,7 +84,7 @@ pub fn build(b: *std.Build) void {
         []const u8,
         "libgit2_dir",
         "Path to libgit2 sources",
-    ) orelse "../vendor/libgit2";
+    ) orelse "../../vendor/libgit2";
     const libgit2_build_dir_opt = b.option(
         []const u8,
         "libgit2_build_dir",
