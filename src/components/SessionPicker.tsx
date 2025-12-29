@@ -190,7 +190,7 @@ export function SessionPicker(props: SessionPickerProps) {
   const overlayWidth = () => Math.min(60, props.width - 4);
   // Height: search(1) + separator(1) + sessions/empty(max 1) + separator(1) + footer(1) + gap(1) + border(2) + padding(2) = 10 minimum
   const sessionRowCount = () => Math.max(1, session.filteredSessions.length); // At least 1 for "No sessions found"
-  const overlayHeight = () => Math.min(sessionRowCount() + 8, props.height - 4);
+  const overlayHeight = () => Math.min(sessionRowCount() + 6, props.height - 4);
   const overlayX = () => Math.floor((props.width - overlayWidth()) / 2);
   const overlayY = () => Math.floor((props.height - overlayHeight()) / 2);
 
@@ -206,7 +206,8 @@ export function SessionPicker(props: SessionPickerProps) {
           border: true,
           borderStyle: 'rounded',
           borderColor: accentColor(),
-          padding: 1,
+          paddingLeft: 1,
+          paddingRight: 1,
           zIndex: 100,
         }}
         backgroundColor="#1a1a1a"
@@ -259,9 +260,6 @@ export function SessionPicker(props: SessionPickerProps) {
           </box>
           <box style={{ height: 1 }}>
             <text fg="#666666">{buildHintText()}</text>
-          </box>
-          <box style={{ height: 1 }}>
-            <text>{' '.repeat(overlayWidth() - 4)}</text>
           </box>
         </box>
       </box>

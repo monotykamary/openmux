@@ -280,9 +280,9 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
   };
   const overlayHeight = () => {
     if (tab() === 'apply') {
-      return Math.min(applyContentRows() + 4, props.height - 4);
+      return Math.min(applyContentRows() + 2, props.height - 4);
     }
-    return Math.min(saveContentRows() + 4, props.height - 4);
+    return Math.min(saveContentRows() + 2, props.height - 4);
   };
   const overlayX = () => Math.floor((props.width - overlayWidth()) / 2);
   const overlayY = () => Math.floor((props.height - overlayHeight()) / 2);
@@ -401,7 +401,8 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
           border: true,
           borderStyle: 'rounded',
           borderColor: accentColor(),
-          padding: 1,
+          paddingLeft: 1,
+          paddingRight: 1,
           zIndex: 120,
         }}
         backgroundColor="#1a1a1a"
