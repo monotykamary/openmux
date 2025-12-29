@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.75](https://github.com/monotykamary/openmux/compare/v0.2.74...v0.2.75) (2025-12-29)
+
+
+### Bug Fixes
+
+* **overlay:** remove top and bottom padding gaps ([bb2bd75](https://github.com/monotykamary/openmux/commit/bb2bd75c97f54193757b63a1c8e11160e6014e86))
+
 ### [0.2.74](https://github.com/monotykamary/openmux/compare/v0.2.73...v0.2.74) (2025-12-29)
 
 
