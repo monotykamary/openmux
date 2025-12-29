@@ -62,10 +62,10 @@ export function handleNormalModeAction(
       options.onNewPane ? options.onNewPane() : layout.newPane();
       return true;
     case 'pane.split.vertical':
-      layout.splitPane('vertical');
+      options.onSplitPane ? options.onSplitPane('vertical') : layout.splitPane('vertical');
       return true;
     case 'pane.split.horizontal':
-      layout.splitPane('horizontal');
+      options.onSplitPane ? options.onSplitPane('horizontal') : layout.splitPane('horizontal');
       return true;
     case 'pane.close':
       options.onRequestClosePane ? options.onRequestClosePane() : layout.closePane();
@@ -165,11 +165,11 @@ export function handlePrefixModeAction(
       exitPrefix();
       return true;
     case 'pane.split.vertical':
-      layout.splitPane('vertical');
+      options.onSplitPane ? options.onSplitPane('vertical') : layout.splitPane('vertical');
       exitPrefix();
       return true;
     case 'pane.split.horizontal':
-      layout.splitPane('horizontal');
+      options.onSplitPane ? options.onSplitPane('horizontal') : layout.splitPane('horizontal');
       exitPrefix();
       return true;
     case 'pane.close':

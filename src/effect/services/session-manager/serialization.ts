@@ -36,7 +36,8 @@ function forEachPane(
 
 function serializeLayoutNode(
   node: WorkspaceLayoutNode,
-  cwdMap: Map<string, string>
+  cwdMap: Map<string, string>,
+  fallbackCwd: string
 ): SerializedLayoutNode {
   if (isSplitNode(node)) {
     return SerializedSplitNode.make({
@@ -44,15 +45,15 @@ function serializeLayoutNode(
       id: node.id,
       direction: node.direction,
       ratio: node.ratio,
-      first: serializeLayoutNode(node.first, cwdMap),
-      second: serializeLayoutNode(node.second, cwdMap),
+      first: serializeLayoutNode(node.first, cwdMap, fallbackCwd),
+      second: serializeLayoutNode(node.second, cwdMap, fallbackCwd),
     })
   }
 
   return SerializedPaneData.make({
     id: node.id,
     title: node.title,
-    cwd: node.ptyId ? cwdMap.get(node.ptyId) ?? process.cwd() : process.cwd(),
+    cwd: node.ptyId ? cwdMap.get(node.ptyId) ?? fallbackCwd : fallbackCwd,
   })
 }
 
@@ -118,8 +119,34 @@ export function serializeWorkspace(
     return null
   }
 
-  const mainPane = workspace.mainPane ? serializeLayoutNode(workspace.mainPane, cwdMap) : null
-  const stackPanes = workspace.stackPanes.map((pane) => serializeLayoutNode(pane, cwdMap))
+  const panes: WorkspacePaneNode[] = []
+  forEachPane(workspace.mainPane, (pane) => panes.push(pane))
+  for (const node of workspace.stackPanes) {
+    forEachPane(node, (pane) => panes.push(pane))
+  }
+
+  const focusedPane = workspace.focusedPaneId
+    ? panes.find((pane) => pane.id === workspace.focusedPaneId)
+    : undefined
+  const focusedCwd = focusedPane?.ptyId ? cwdMap.get(focusedPane.ptyId) : undefined
+  let firstPaneCwd: string | undefined
+  for (const pane of panes) {
+    if (!pane.ptyId) continue
+    const cwd = cwdMap.get(pane.ptyId)
+    if (cwd) {
+      firstPaneCwd = cwd
+      break
+    }
+  }
+
+  const fallbackCwd = focusedCwd ?? firstPaneCwd ?? process.env.OPENMUX_ORIGINAL_CWD ?? process.cwd()
+
+  const mainPane = workspace.mainPane
+    ? serializeLayoutNode(workspace.mainPane, cwdMap, fallbackCwd)
+    : null
+  const stackPanes = workspace.stackPanes.map((pane) =>
+    serializeLayoutNode(pane, cwdMap, fallbackCwd)
+  )
 
   return SerializedWorkspace.make({
     id: WorkspaceId.make(id),

@@ -190,11 +190,15 @@ function AppContent() {
     setFocusedPty(focusedPtyId ?? null);
   });
 
-  const { handleNewPane } = usePtyCreation({
-    layout,
+  const { handleNewPane, handleSplitPane } = usePtyCreation({
+    layout: {
+      get panes() { return layout.panes; },
+      getFocusedPaneId: () => layout.activeWorkspace.focusedPaneId,
+    },
     terminal,
     sessionState,
     newPane,
+    splitPane: layout.splitPane,
   });
 
   // Create paste handler for manual paste (Ctrl+V, prefix+p/])
@@ -257,6 +261,7 @@ function AppContent() {
       {
         onPaste: handlePaste,
         onNewPane: handleNewPane,
+        onSplitPane: handleSplitPane,
         onQuit: handleQuit,
         onDetach: handleDetach,
         onRequestQuit: confirmationHandlers.handleRequestQuit,
@@ -288,6 +293,7 @@ function AppContent() {
   const keyboardHandler = useKeyboardHandler({
     onPaste: handlePaste,
     onNewPane: handleNewPane,
+    onSplitPane: handleSplitPane,
     onQuit: handleQuit,
     onDetach: handleDetach,
     onRequestQuit: confirmationHandlers.handleRequestQuit,

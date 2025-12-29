@@ -15,6 +15,7 @@ type PaneRectangle = { width: number; height: number };
 
 type LayoutAccess = {
   panes: Array<{ id: string; ptyId?: string; rectangle?: PaneRectangle | null }>;
+  getFocusedPaneId?: () => string | null | undefined;
 };
 
 type TerminalAccess = {
@@ -29,25 +30,65 @@ type SessionStateLike = {
   switching: boolean;
 };
 
+export async function resolvePaneCwd(params: {
+  paneId: string;
+  focusedPaneId?: string | null;
+  sessionCwd?: string;
+  pendingCwdRef: string | null;
+  pendingCwdPromise: Promise<string | null> | null;
+  fallbackCwd: string;
+}): Promise<{ cwd: string; clearPending: boolean }> {
+  const isFocused = params.paneId === params.focusedPaneId;
+  let pendingCwd = isFocused ? params.pendingCwdRef : null;
+
+  if (!params.sessionCwd && isFocused && !pendingCwd && params.pendingCwdPromise) {
+    try {
+      const resolved = await params.pendingCwdPromise;
+      if (resolved) {
+        pendingCwd = resolved;
+      }
+    } catch {
+      // Ignore and fall back to fallback cwd below.
+    }
+  }
+
+  return {
+    cwd: params.sessionCwd ?? pendingCwd ?? params.fallbackCwd,
+    clearPending: isFocused,
+  };
+}
+
 export function usePtyCreation(params: {
   layout: LayoutAccess;
   terminal: TerminalAccess;
   sessionState: SessionStateLike;
   newPane: (kind?: string) => void;
-}): { handleNewPane: () => void } {
+  splitPane: (direction: 'horizontal' | 'vertical') => void;
+}): { handleNewPane: () => void; handleSplitPane: (direction: 'horizontal' | 'vertical') => void } {
   // Ref for passing CWD to effect (avoids closure issues)
   let pendingCwdRef: string | null = null;
+  let pendingCwdPromise: Promise<string | null> | null = null;
+
+  const queueFocusedCwd = () => {
+    pendingCwdPromise = params.terminal.getFocusedCwd().then((cwd) => {
+      if (cwd) pendingCwdRef = cwd;
+      return cwd;
+    });
+  };
 
   // Create new pane handler - instant feedback, CWD retrieval in background
   const handleNewPane = () => {
     // Fire off CWD retrieval in background (don't await)
-    params.terminal.getFocusedCwd().then((cwd) => {
-      if (cwd) pendingCwdRef = cwd;
-    });
+    queueFocusedCwd();
 
     // Create pane immediately (shows border instantly)
     // PTY will be created by the effect with CWD when available
     params.newPane();
+  };
+
+  const handleSplitPane = (direction: 'horizontal' | 'vertical') => {
+    queueFocusedCwd();
+    params.splitPane(direction);
   };
 
   // Retry counter to trigger effect re-run when PTY creation fails
@@ -82,7 +123,7 @@ export function usePtyCreation(params: {
         if (!isSessionInit) return;
         if (isSwitching) return;
 
-        const createPtyForPane = (pane: typeof panes[number]) => {
+        const createPtyForPane = async (pane: typeof panes[number]) => {
           try {
             // SYNC check: verify PTY wasn't created in a previous session/effect run
             const alreadyCreated = isPtyCreated(pane.id);
@@ -97,9 +138,20 @@ export function usePtyCreation(params: {
 
             // Check for session-restored CWD first, then pending CWD from new pane handler,
             // then OPENMUX_ORIGINAL_CWD (set by wrapper to preserve user's cwd)
-            const sessionCwd = getSessionCwdFromCoordinator(pane.id);
-            let cwd = sessionCwd ?? pendingCwdRef ?? process.env.OPENMUX_ORIGINAL_CWD ?? undefined;
-            pendingCwdRef = null; // Clear after use
+            const focusedPaneId = params.layout.getFocusedPaneId?.();
+            const { cwd, clearPending } = await resolvePaneCwd({
+              paneId: pane.id,
+              focusedPaneId,
+              sessionCwd: getSessionCwdFromCoordinator(pane.id),
+              pendingCwdRef,
+              pendingCwdPromise,
+              fallbackCwd: process.env.OPENMUX_ORIGINAL_CWD ?? process.cwd(),
+            });
+
+            if (clearPending) {
+              pendingCwdRef = null; // Clear after we reach the focused pane
+              pendingCwdPromise = null;
+            }
 
             // Mark as created BEFORE calling createPTY (persistent marker)
             markPtyCreated(pane.id);
@@ -135,15 +187,16 @@ export function usePtyCreation(params: {
 
           // Defer to next macrotask - allows animations to continue
           deferMacrotask(() => {
-            const success = createPtyForPane(pane);
-            if (!success) {
-              setTimeout(() => setPtyRetryCounter((c) => c + 1), 100);
-            }
+            createPtyForPane(pane).then((success) => {
+              if (!success) {
+                setTimeout(() => setPtyRetryCounter((c) => c + 1), 100);
+              }
+            });
           });
         }
       }
     )
   );
 
-  return { handleNewPane };
+  return { handleNewPane, handleSplitPane };
 }

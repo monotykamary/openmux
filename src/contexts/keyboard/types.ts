@@ -2,7 +2,7 @@
  * Types for keyboard context
  */
 
-import type { KeyboardState, ConfirmationType } from '../../core/types';
+import type { KeyboardState, ConfirmationType, SplitDirection } from '../../core/types';
 
 export interface KeyboardContextValue {
   state: KeyboardState;
@@ -21,6 +21,7 @@ export interface KeyboardContextValue {
 export interface KeyboardHandlerOptions {
   onPaste?: () => void;
   onNewPane?: () => void;
+  onSplitPane?: (direction: SplitDirection) => void;
   onQuit?: () => void;
   onDetach?: () => void;
   onRequestQuit?: () => void;
