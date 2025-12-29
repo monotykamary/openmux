@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.74](https://github.com/monotykamary/openmux/compare/v0.2.73...v0.2.74) (2025-12-29)
+
+
+### Bug Fixes
+
+* **layout:** inherit focused cwd for pane creation ([0591947](https://github.com/monotykamary/openmux/commit/059194753ee940ff78441b9a7d54a89e43b0b0e7))
+
 ### [0.2.73](https://github.com/monotykamary/openmux/compare/v0.2.72...v0.2.73) (2025-12-29)
 
 ### [0.2.72](https://github.com/monotykamary/openmux/compare/v0.2.71...v0.2.72) (2025-12-28)
