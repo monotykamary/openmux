@@ -27,7 +27,6 @@ import {
   resizePty,
   destroyPty,
   destroyAllPtys,
-  setPanePosition,
   readFromClipboard,
   subscribeToAllTitleChanges,
   subscribeToPtyLifecycle,
@@ -68,8 +67,6 @@ interface TerminalContextValue {
   pasteToFocused: () => Promise<boolean>;
   /** Resize a PTY session */
   resizePTY: (ptyId: string, cols: number, rows: number) => void;
-  /** Update pane position for graphics passthrough */
-  setPanePosition: (ptyId: string, x: number, y: number) => void;
   /** Get the current working directory of the focused pane */
   getFocusedCwd: () => Promise<string | null>;
   /** Get the CWD for a specific PTY session */
@@ -364,12 +361,6 @@ export function TerminalProvider(props: TerminalProviderProps) {
     resizePty(ptyId, cols, rows);
   };
 
-  // Update pane position for graphics passthrough
-  const handleSetPanePosition = (ptyId: string, x: number, y: number) => {
-    // Fire and forget
-    setPanePosition(ptyId, x, y);
-  };
-
   // Write to a specific PTY
   const handleWriteToPTY = (ptyId: string, data: string) => {
     // Fire and forget for responsive typing
@@ -400,7 +391,6 @@ export function TerminalProvider(props: TerminalProviderProps) {
     writeToPTY: handleWriteToPTY,
     pasteToFocused,
     resizePTY: handleResizePTY,
-    setPanePosition: handleSetPanePosition,
     getFocusedCwd: cacheAccessors.getFocusedCwd,
     getSessionCwd: cacheAccessors.getSessionCwd,
     getSessionForegroundProcess: cacheAccessors.getSessionForegroundProcess,

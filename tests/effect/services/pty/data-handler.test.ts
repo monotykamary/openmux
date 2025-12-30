@@ -5,7 +5,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { createDataHandler } from "../../../../src/effect/services/pty/data-handler"
 import { createSyncModeParser } from "../../../../src/terminal/sync-mode-parser"
 import type { InternalPtySession } from "../../../../src/effect/services/pty/types"
-import type { GraphicsPassthrough } from "../../../../src/terminal/graphics-passthrough"
 import type { TerminalQueryPassthrough } from "../../../../src/terminal/terminal-query-passthrough"
 
 function createSession() {
@@ -13,10 +12,6 @@ function createSession() {
     write: vi.fn(),
     isDisposed: false,
   }
-
-  const passthrough = {
-    process: (data: string) => data,
-  } as GraphicsPassthrough
 
   const queryPassthrough = {
     process: (data: string) => data,
@@ -26,7 +21,6 @@ function createSession() {
     id: "pty-test" as InternalPtySession["id"],
     pty: {} as InternalPtySession["pty"],
     emulator: emulator as InternalPtySession["emulator"],
-    graphicsPassthrough: passthrough,
     queryPassthrough,
     cols: 80,
     rows: 24,

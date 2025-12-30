@@ -21,7 +21,6 @@ export {
   destroyAllPtys,
   getTerminalState,
   onPtyExit,
-  setPanePosition,
   getScrollState,
   setScrollOffset,
   scrollToBottom,

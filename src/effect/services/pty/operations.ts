@@ -121,15 +121,6 @@ export function createOperations(deps: OperationsDeps) {
     return session.emulator.getTerminalState()
   })
 
-  const setPanePosition = Effect.fn("Pty.setPanePosition")(function* (
-    id: PtyId,
-    x: number,
-    y: number
-  ) {
-    const session = yield* getSessionOrFail(id)
-    session.graphicsPassthrough.setPanePosition(x, y)
-  })
-
   const getScrollState = Effect.fn("Pty.getScrollState")(function* (id: PtyId) {
     const session = yield* getSessionOrFail(id)
     const scrollbackLength = session.emulator.getScrollbackLength()
@@ -195,7 +186,6 @@ export function createOperations(deps: OperationsDeps) {
     destroy,
     getSession,
     getTerminalState,
-    setPanePosition,
     getScrollState,
     setScrollOffset,
     setUpdateEnabled,

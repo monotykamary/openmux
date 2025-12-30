@@ -28,10 +28,6 @@ export async function destroyAllPtys(): Promise<void> {
   await sendRequest('destroyAll');
 }
 
-export async function setPanePosition(ptyId: string, x: number, y: number): Promise<void> {
-  await sendRequest('setPanePosition', { ptyId, x, y });
-}
-
 export async function getPtyCwd(ptyId: string): Promise<string> {
   const response = await sendRequest('getCwd', { ptyId });
   return (response.header.result as { cwd: string }).cwd;

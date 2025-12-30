@@ -179,22 +179,6 @@ export async function onPtyExit(
 }
 
 /**
- * Set pane position for graphics passthrough.
- */
-export async function setPanePosition(
-  ptyId: string,
-  x: number,
-  y: number
-): Promise<void> {
-  await runEffectIgnore(
-    Effect.gen(function* () {
-      const pty = yield* Pty
-      yield* pty.setPanePosition(PtyId.make(ptyId), x, y)
-    })
-  )
-}
-
-/**
  * Get scroll state for a PTY session.
  */
 export async function getScrollState(

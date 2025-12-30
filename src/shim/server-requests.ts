@@ -111,15 +111,6 @@ export function createRequestHandler(params: {
           }, 10);
           return;
 
-        case 'setPanePosition':
-          await params.withPty((pty) => pty.setPanePosition(
-            PtyId.make(requestParams.ptyId as string),
-            requestParams.x as number,
-            requestParams.y as number
-          ));
-          params.sendResponse(socket, requestId);
-          return;
-
         case 'getCwd': {
           const cwd = await params.withPty((pty) => pty.getCwd(PtyId.make(requestParams.ptyId as string)));
           params.sendResponse(socket, requestId, { cwd });

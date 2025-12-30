@@ -94,7 +94,7 @@ ThemeProvider              // Styling/theming
 - `emulator-interface.ts` - ITerminalEmulator abstraction
 - `input-handler.ts`, `sync-mode-parser.ts` - Input/escape handling
 - `title-parser.ts`, `terminal-query-passthrough/` - Title/query parsing
-- `graphics-passthrough.ts`, `paste-intercepting-stdin.ts`, `focused-pty-registry.ts`
+- `paste-intercepting-stdin.ts`, `focused-pty-registry.ts`
 
 **Shim / detach (src/shim/)**
 - `main.ts`, `server.ts` - Shim server + RPC handling

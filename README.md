@@ -24,7 +24,6 @@ A terminal multiplexer with master-stack layout (Zellij-style), built with:
 - Detach/attach (leave sessions running in background)
 - Pane zoom (fullscreen focused pane)
 - Aggregate view for browsing/filtering PTYs across workspaces
-- Kitty Graphics and Sixel protocol support
 - Mouse tracking (click to focus, tabbed pane switching)
 - Scrollback support with mouse wheel and scrollbar
 
@@ -308,7 +307,6 @@ Current status:
 - [x] Session persistence
 - [x] Pane zoom
 - [x] Mouse support
-- [x] Graphics protocol passthrough (Kitty/Sixel)
 - [x] Scrollback support
 - [x] Aggregate view (PTY browser)
 - [x] Attach/detach (steal + lock)

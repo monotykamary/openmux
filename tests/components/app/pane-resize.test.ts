@@ -47,41 +47,33 @@ describe('createPaneResizeHandlers', () => {
   test('batches resize work across ticks', () => {
     const panes = [0, 1, 2, 3, 4].map(makePane);
     const resizePTY = vi.fn();
-    const setPanePosition = vi.fn();
 
     const handlers = createPaneResizeHandlers({
       getPanes: () => panes,
       resizePTY,
-      setPanePosition,
     });
 
     handlers.scheduleResizeAllPanes();
 
     expect(resizePTY).not.toHaveBeenCalled();
-    expect(setPanePosition).not.toHaveBeenCalled();
 
     runNextTick();
     expect(resizePTY).toHaveBeenCalledTimes(2);
-    expect(setPanePosition).toHaveBeenCalledTimes(2);
 
     runNextTick();
     expect(resizePTY).toHaveBeenCalledTimes(4);
-    expect(setPanePosition).toHaveBeenCalledTimes(4);
 
     runNextTick();
     expect(resizePTY).toHaveBeenCalledTimes(5);
-    expect(setPanePosition).toHaveBeenCalledTimes(5);
   });
 
   test('coalesces rapid resize scheduling', () => {
     const panes = [0, 1, 2].map(makePane);
     const resizePTY = vi.fn();
-    const setPanePosition = vi.fn();
 
     const handlers = createPaneResizeHandlers({
       getPanes: () => panes,
       resizePTY,
-      setPanePosition,
     });
 
     handlers.scheduleResizeAllPanes();
@@ -94,6 +86,5 @@ describe('createPaneResizeHandlers', () => {
     }
 
     expect(resizePTY).toHaveBeenCalledTimes(3);
-    expect(setPanePosition).toHaveBeenCalledTimes(3);
   });
 });

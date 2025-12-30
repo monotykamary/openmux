@@ -57,7 +57,7 @@ function AppContent() {
   const { setViewport, newPane, closePane } = layout;
   // Don't destructure isInitialized - it's a reactive getter that loses reactivity when destructured
   const terminal = useTerminal();
-  const { destroyPTY, resizePTY, setPanePosition, writeToFocused, writeToPTY, pasteToFocused, getFocusedEmulator } = terminal;
+  const { destroyPTY, resizePTY, writeToFocused, writeToPTY, pasteToFocused, getFocusedEmulator } = terminal;
   const session = useSession();
   const { togglePicker, toggleTemplateOverlay, state: sessionState, saveSession } = session;
   // Keep selection/search contexts to access reactive getters
@@ -143,7 +143,6 @@ function AppContent() {
   const paneResizeHandlers = createPaneResizeHandlers({
     getPanes: () => layout.panes,
     resizePTY,
-    setPanePosition,
   });
 
   // Connect focused PTY registry for clipboard passthrough

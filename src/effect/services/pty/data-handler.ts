@@ -1,6 +1,6 @@
 /**
  * PTY data handler factory - creates the data processing pipeline
- * Handles sync mode parsing, graphics passthrough, and query passthrough.
+ * Handles sync mode parsing and query passthrough.
  */
 import type { SyncModeParser } from "../../../terminal/sync-mode-parser"
 import type { InternalPtySession } from "./types"
@@ -95,12 +95,8 @@ export function createDataHandler(options: DataHandlerOptions) {
 
   // The data handler function
   const handleData = (data: string) => {
-    // First, handle terminal queries (cursor position, device attributes, colors, etc.)
-    // This must happen before graphics passthrough to intercept queries
-    const afterQueries = session.queryPassthrough.process(data)
-
-    // Then handle graphics passthrough (Kitty graphics, Sixel)
-    const textData = session.graphicsPassthrough.process(afterQueries)
+    // Handle terminal queries (cursor position, device attributes, colors, etc.)
+    const textData = session.queryPassthrough.process(data)
     if (commandParser) {
       commandParser.processData(textData)
     }

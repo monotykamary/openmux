@@ -1,6 +1,6 @@
 /**
  * Pane resize handlers for App
- * Handles PTY resizing and position updates
+ * Handles PTY resizing
  */
 
 import type { PaneData } from '../../core/types';
@@ -12,7 +12,6 @@ export interface PaneResizeDeps {
 
   // PTY operations
   resizePTY: (ptyId: string, cols: number, rows: number) => void;
-  setPanePosition: (ptyId: string, x: number, y: number) => void;
 }
 
 /**
@@ -22,10 +21,9 @@ export function createPaneResizeHandlers(deps: PaneResizeDeps) {
   const {
     getPanes,
     resizePTY,
-    setPanePosition,
   } = deps;
 
-  type PaneGeometry = { cols: number; rows: number; x: number; y: number };
+  type PaneGeometry = { cols: number; rows: number };
   const lastGeometry = new Map<string, PaneGeometry>();
   const RESIZE_BATCH_SIZE = 2;
   let resizeScheduled = false;
@@ -37,20 +35,12 @@ export function createPaneResizeHandlers(deps: PaneResizeDeps) {
 
     const cols = Math.max(1, pane.rectangle.width - 2);
     const rows = Math.max(1, pane.rectangle.height - 2);
-    const x = pane.rectangle.x + 1;
-    const y = pane.rectangle.y + 1;
-    const geometry: PaneGeometry = { cols, rows, x, y };
+    const geometry: PaneGeometry = { cols, rows };
     const previous = lastGeometry.get(pane.ptyId);
     const sizeChanged = !previous || previous.cols !== cols || previous.rows !== rows;
-    const positionChanged = !previous || previous.x !== x || previous.y !== y;
 
     if (sizeChanged) {
       resizePTY(pane.ptyId, cols, rows);
-    }
-    if (positionChanged) {
-      setPanePosition(pane.ptyId, x, y);
-    }
-    if (sizeChanged || positionChanged) {
       lastGeometry.set(pane.ptyId, geometry);
     }
     seenPtys.add(pane.ptyId);
@@ -130,11 +120,8 @@ export function createPaneResizeHandlers(deps: PaneResizeDeps) {
       if (pane.ptyId && pane.rectangle) {
         const cols = Math.max(1, pane.rectangle.width - 2);
         const rows = Math.max(1, pane.rectangle.height - 2);
-        const x = pane.rectangle.x + 1;
-        const y = pane.rectangle.y + 1;
         resizePTY(pane.ptyId, cols, rows);
-        setPanePosition(pane.ptyId, x, y);
-        lastGeometry.set(pane.ptyId, { cols, rows, x, y });
+        lastGeometry.set(pane.ptyId, { cols, rows });
       }
     }
   };

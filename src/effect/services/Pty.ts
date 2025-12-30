@@ -86,13 +86,6 @@ export class Pty extends Context.Tag("@openmux/Pty")<
       callback: (exitCode: number) => void
     ) => Effect.Effect<() => void, PtyNotFoundError>
 
-    /** Set pane position for graphics passthrough */
-    readonly setPanePosition: (
-      id: PtyId,
-      x: number,
-      y: number
-    ) => Effect.Effect<void, PtyNotFoundError>
-
     /** Get scroll state */
     readonly getScrollState: (id: PtyId) => Effect.Effect<
       { viewportOffset: number; scrollbackLength: number; isAtBottom: boolean },
@@ -245,7 +238,6 @@ export class Pty extends Context.Tag("@openmux/Pty")<
         subscribeToScroll: subscriptions.subscribeToScroll,
         subscribeUnified: subscriptions.subscribeUnified,
         onExit: subscriptions.onExit,
-        setPanePosition: operations.setPanePosition,
         getScrollState: operations.getScrollState,
         setScrollOffset: operations.setScrollOffset,
         setUpdateEnabled: operations.setUpdateEnabled,
@@ -320,8 +312,6 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           Effect.sync(() => ShimClient.subscribeUnified(String(id), callback)),
         onExit: (id, callback) =>
           Effect.sync(() => ShimClient.subscribeExit(String(id), callback)),
-        setPanePosition: (id, x, y) =>
-          Effect.promise(() => ShimClient.setPanePosition(String(id), x, y)),
         getScrollState: (id) =>
           Effect.gen(function* () {
             const state = yield* Effect.promise(() => ShimClient.getScrollState(String(id)))
@@ -402,7 +392,6 @@ export class Pty extends Context.Tag("@openmux/Pty")<
     subscribeToScroll: () => Effect.succeed(() => {}),
     subscribeUnified: () => Effect.succeed(() => {}),
     onExit: () => Effect.succeed(() => {}),
-    setPanePosition: () => Effect.void,
     getScrollState: () =>
       Effect.succeed({
         viewportOffset: 0,

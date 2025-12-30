@@ -4,7 +4,6 @@
 import { Effect } from "effect"
 import { spawnAsync } from "../../../../native/zig-pty/ts/index"
 import { createGhosttyVTEmulator } from "../../../terminal/ghostty-vt/emulator"
-import { GraphicsPassthrough } from "../../../terminal/graphics-passthrough"
 import { TerminalQueryPassthrough } from "../../../terminal/terminal-query-passthrough"
 import { createSyncModeParser } from "../../../terminal/sync-mode-parser"
 import { getCapabilityEnvironment } from "../../../terminal/capabilities"
@@ -58,9 +57,6 @@ export function createSession(
     })
     emulator.setUpdateEnabled?.(false)
 
-    // Create graphics passthrough
-    const graphicsPassthrough = new GraphicsPassthrough()
-
     // Create terminal query passthrough for handling terminal queries
     const queryPassthrough = new TerminalQueryPassthrough()
 
@@ -94,7 +90,6 @@ export function createSession(
       id,
       pty,
       emulator,
-      graphicsPassthrough,
       queryPassthrough,
       cols,
       rows,
