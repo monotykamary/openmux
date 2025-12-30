@@ -31,6 +31,7 @@ import {
   subscribeToAllTitleChanges,
   subscribeToPtyLifecycle,
   getSessionPtyMapping,
+  waitForShimClient,
 } from '../effect/bridge';
 import {
   subscribeToPtyWithCaches,
@@ -177,6 +178,10 @@ export function TerminalProvider(props: TerminalProviderProps) {
   onMount(() => {
     if (initialized) return;
     initialized = true;
+
+    if (isShimClient()) {
+      waitForShimClient().catch(() => {});
+    }
 
     // Detect host capabilities first (for graphics passthrough)
     detectHostCapabilities()

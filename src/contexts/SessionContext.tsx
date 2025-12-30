@@ -18,6 +18,7 @@ import { Effect, Schedule, Stream, Duration } from 'effect';
 import type { SessionMetadata, WorkspaceId } from '../core/types';
 import type { Workspaces } from '../core/operations/layout-actions';
 import { useConfig } from './ConfigContext';
+import { deferNextTick } from '../core/scheduling';
 import {
   createSessionLegacy as createSessionOnDisk,
   listSessionsLegacy as listSessions,
@@ -262,11 +263,13 @@ export function SessionProvider(props: SessionProviderProps) {
 
   // Initialize on mount
   onMount(async () => {
-    await refreshSessions();
-
     // Get active session or create default
-    let activeId = await getActiveSessionId();
     const sessions = await listSessions();
+    if (sessions.length > 0) {
+      dispatch({ type: 'SET_SESSIONS', sessions });
+    }
+
+    let activeId = await getActiveSessionId();
     let activeSession = activeId
       ? sessions.find(s => s.id === activeId) ?? null
       : null;
@@ -276,6 +279,8 @@ export function SessionProvider(props: SessionProviderProps) {
       activeId = activeSession?.id ?? null;
     }
 
+    let refreshTask: Promise<void> | null = null;
+
     if (!activeSession) {
       // First run - create default session
       const metadata = await createSessionOnDisk();
@@ -283,14 +288,12 @@ export function SessionProvider(props: SessionProviderProps) {
       dispatch({ type: 'SET_SESSIONS', sessions: [metadata] });
       dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
       await props.onSessionLoad({}, 1, new Map(), new Map(), metadata.id, { allowPrune: false });
-      await refreshSessions();
     } else if (activeId) {
       // Load existing session
       dispatch({ type: 'SET_ACTIVE_SESSION', id: activeId, session: activeSession });
 
       // Update lastSwitchedAt so this session is properly marked as most recent
-      await switchToSession(activeId);
-      await refreshSessions();
+      const switchPromise = switchToSession(activeId).catch(() => {});
 
       // Load session data and notify parent
       const data = await loadSessionData(activeId);
@@ -307,13 +310,18 @@ export function SessionProvider(props: SessionProviderProps) {
       } else {
         // Session failed to load - create a fresh session instead of overwriting
         const metadata = await createSessionOnDisk();
+        dispatch({ type: 'SET_SESSIONS', sessions: [...sessions, metadata] });
         dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
         await props.onSessionLoad({}, 1, new Map(), new Map(), metadata.id, { allowPrune: false });
-        await refreshSessions();
       }
+
+      refreshTask = switchPromise.then(() => refreshSessions()).catch(() => {});
     }
 
     dispatch({ type: 'SET_INITIALIZED' });
+    deferNextTick(() => {
+      void (refreshTask ?? refreshSessions());
+    });
   });
 
   // Auto-save interval
