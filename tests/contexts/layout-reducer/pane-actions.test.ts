@@ -589,6 +589,77 @@ describe('Layout Reducer', () => {
       expect((newWorkspace.stackPanes[1] as PaneData).id).toBe(stackPanes[0]!.id);
       expect(newWorkspace.activeStackIndex).toBe(0);
     });
+
+    it('should swap panes geometrically from main to stack (east)', () => {
+      const mainPane: PaneData = { id: generatePaneId() };
+      const stackPane: PaneData = { id: generatePaneId() };
+      const workspace = createWorkspaceWithPanes(1, mainPane, [stackPane], {
+        focusedPaneId: mainPane.id,
+        activeStackIndex: 0,
+      });
+      const state = createInitialState({
+        workspaces: { 1: workspace },
+      });
+
+      const moved = layoutReducer(state, { type: 'MOVE_PANE', direction: 'east' });
+      const newWorkspace = moved.workspaces[1]!;
+
+      // The panes should have swapped positions (their data swapped)
+      expect((newWorkspace.mainPane as PaneData).id).toBe(stackPane.id);
+      expect((newWorkspace.stackPanes[0] as PaneData).id).toBe(mainPane.id);
+    });
+
+    it('should swap panes geometrically from stack to main (west)', () => {
+      const mainPane: PaneData = { id: generatePaneId() };
+      const stackPane: PaneData = { id: generatePaneId() };
+      const workspace = createWorkspaceWithPanes(1, mainPane, [stackPane], {
+        focusedPaneId: stackPane.id,
+        activeStackIndex: 0,
+      });
+      const state = createInitialState({
+        workspaces: { 1: workspace },
+      });
+
+      const moved = layoutReducer(state, { type: 'MOVE_PANE', direction: 'west' });
+      const newWorkspace = moved.workspaces[1]!;
+
+      // The panes should have swapped positions (their data swapped)
+      expect((newWorkspace.mainPane as PaneData).id).toBe(stackPane.id);
+      expect((newWorkspace.stackPanes[0] as PaneData).id).toBe(mainPane.id);
+    });
+
+    it('should swap individual panes between split trees geometrically', () => {
+      // Create main with a split and stack with a split
+      const mainPane: PaneData = { id: generatePaneId() };
+      const stackPane: PaneData = { id: generatePaneId() };
+      let state = createInitialState({
+        workspaces: {
+          1: createWorkspaceWithPanes(1, mainPane, [stackPane], {
+            focusedPaneId: mainPane.id,
+            activeStackIndex: 0,
+          }),
+        },
+      });
+
+      // Split the main pane vertically (creates two panes side by side)
+      state = layoutReducer(state, { type: 'SPLIT_PANE', direction: 'vertical' });
+      // Focus is now on the new pane (second child of split)
+      // Move that pane east - it should swap with the closest pane in stack
+      const moved = layoutReducer(state, { type: 'MOVE_PANE', direction: 'east' });
+
+      // The split structure should be preserved, but pane data swapped
+      const mainNode = moved.workspaces[1]!.mainPane!;
+      expect(isSplitNode(mainNode)).toBe(true);
+
+      // Collect all panes to verify the swap happened
+      const allPanes = collectPanes(mainNode);
+      const stackPanes = collectPanes(moved.workspaces[1]!.stackPanes[0]!);
+
+      // The stack pane should now contain the originally split pane
+      // and the main split should contain the original stack pane
+      expect(allPanes.some(p => p.id === stackPane.id)).toBe(true);
+      expect(stackPanes.some(p => p.id !== stackPane.id)).toBe(true);
+    });
   });
 
   describe('TOGGLE_ZOOM action', () => {

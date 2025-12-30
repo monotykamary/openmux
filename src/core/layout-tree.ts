@@ -168,7 +168,9 @@ export function swapPaneInDirection(
       const nextNode = result.node === node.first ? node : { ...node, first: result.node };
       return { node: nextNode, swapped: true };
     }
-    if (getSiblingForDirection(node, 'first', direction)) {
+    // Only swap if both siblings are simple panes (not splits)
+    // Otherwise, fall through to geometry-based swap which swaps individual pane data
+    if (getSiblingForDirection(node, 'first', direction) && !isSplitNode(node.first) && !isSplitNode(node.second)) {
       return { node: { ...node, first: node.second, second: node.first }, swapped: true };
     }
     return { node, swapped: false };
@@ -180,11 +182,41 @@ export function swapPaneInDirection(
       const nextNode = result.node === node.second ? node : { ...node, second: result.node };
       return { node: nextNode, swapped: true };
     }
-    if (getSiblingForDirection(node, 'second', direction)) {
+    // Only swap if both siblings are simple panes (not splits)
+    if (getSiblingForDirection(node, 'second', direction) && !isSplitNode(node.first) && !isSplitNode(node.second)) {
       return { node: { ...node, first: node.second, second: node.first }, swapped: true };
     }
     return { node, swapped: false };
   }
 
   return { node, swapped: false };
+}
+
+/**
+ * Swap two panes by ID in a single pass (handles both panes being in the same tree).
+ * pane1Data replaces pane with paneId2, pane2Data replaces pane with paneId1.
+ */
+export function swapTwoPanesById(
+  node: LayoutNode,
+  paneId1: string,
+  pane1Data: PaneData,
+  paneId2: string,
+  pane2Data: PaneData
+): LayoutNode {
+  if (!isSplitNode(node)) {
+    if (node.id === paneId1) {
+      // Replace pane1 position with pane2's data
+      return { ...pane2Data, rectangle: node.rectangle };
+    }
+    if (node.id === paneId2) {
+      // Replace pane2 position with pane1's data
+      return { ...pane1Data, rectangle: node.rectangle };
+    }
+    return node;
+  }
+
+  const updatedFirst = swapTwoPanesById(node.first, paneId1, pane1Data, paneId2, pane2Data);
+  const updatedSecond = swapTwoPanesById(node.second, paneId1, pane1Data, paneId2, pane2Data);
+  if (updatedFirst === node.first && updatedSecond === node.second) return node;
+  return { ...node, first: updatedFirst, second: updatedSecond };
 }
