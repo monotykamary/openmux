@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.77](https://github.com/monotykamary/openmux/compare/v0.2.76...v0.2.77) (2025-12-30)
+
+
+### Bug Fixes
+
+* **session:** harden restore and deletion flows ([4db12bd](https://github.com/monotykamary/openmux/commit/4db12bd3e50aad91888ee0e6681c502a6883d650))
+
 ### [0.2.76](https://github.com/monotykamary/openmux/compare/v0.2.75...v0.2.76) (2025-12-30)
 
 
