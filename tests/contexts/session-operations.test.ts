@@ -104,7 +104,8 @@ describe('createSessionOperations', () => {
       loadedData.activeWorkspaceId,
       loadedData.cwdMap,
       expect.any(Map),
-      sessionB.id
+      sessionB.id,
+      { allowPrune: true }
     );
     expect(dispatch).toHaveBeenCalledWith({
       type: 'SET_ACTIVE_SESSION',
@@ -156,7 +157,8 @@ describe('createSessionOperations', () => {
       1,
       expect.any(Map),
       expect.any(Map),
-      newSession.id
+      newSession.id,
+      { allowPrune: false }
     );
     expect(dispatch).toHaveBeenCalledWith({
       type: 'SET_ACTIVE_SESSION',

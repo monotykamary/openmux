@@ -262,7 +262,8 @@ export async function applyTemplateToSession(params: {
     activeWorkspaceId: WorkspaceId,
     cwdMap: Map<string, string>,
     commandMap: Map<string, string>,
-    sessionId: string
+    sessionId: string,
+    options?: { allowPrune?: boolean }
   ) => Promise<void>;
 }): Promise<void> {
   if (!params.activeSessionId) return;
@@ -274,6 +275,7 @@ export async function applyTemplateToSession(params: {
     layout.activeWorkspaceId,
     layout.cwdMap,
     layout.commandMap,
-    params.activeSessionId
+    params.activeSessionId,
+    { allowPrune: false }
   );
 }

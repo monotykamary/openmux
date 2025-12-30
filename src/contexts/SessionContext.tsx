@@ -133,7 +133,8 @@ interface SessionProviderProps extends ParentProps {
     activeWorkspaceId: WorkspaceId,
     cwdMap: Map<string, string>,
     commandMap: Map<string, string>,
-    sessionId: string
+    sessionId: string,
+    options?: { allowPrune?: boolean }
   ) => Promise<void>;
   /** Callback to suspend PTYs before switching (saves mapping, doesn't destroy) */
   onBeforeSwitch: (currentSessionId: string) => Promise<void>;
@@ -281,7 +282,7 @@ export function SessionProvider(props: SessionProviderProps) {
       activeId = metadata.id;
       dispatch({ type: 'SET_SESSIONS', sessions: [metadata] });
       dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
-      await props.onSessionLoad({}, 1, new Map(), new Map(), metadata.id);
+      await props.onSessionLoad({}, 1, new Map(), new Map(), metadata.id, { allowPrune: false });
       await refreshSessions();
     } else if (activeId) {
       // Load existing session
@@ -300,13 +301,14 @@ export function SessionProvider(props: SessionProviderProps) {
           data.activeWorkspaceId,
           data.cwdMap,
           new Map(),
-          activeId
+          activeId,
+          { allowPrune: false }
         );
       } else {
         // Session failed to load - create a fresh session instead of overwriting
         const metadata = await createSessionOnDisk();
         dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
-        await props.onSessionLoad({}, 1, new Map(), new Map(), metadata.id);
+        await props.onSessionLoad({}, 1, new Map(), new Map(), metadata.id, { allowPrune: false });
         await refreshSessions();
       }
     }

@@ -27,7 +27,8 @@ export interface SessionOperationsParams {
     activeWorkspaceId: WorkspaceId,
     cwdMap: Map<string, string>,
     commandMap: Map<string, string>,
-    sessionId: string
+    sessionId: string,
+    options?: { allowPrune?: boolean }
   ) => Promise<void>;
   onBeforeSwitch: (currentSessionId: string) => Promise<void>;
   onDeleteSession: (sessionId: string) => void;
@@ -73,7 +74,7 @@ export function createSessionOperations(params: SessionOperationsParams) {
     dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
 
     // Load empty workspaces for new session
-    await onSessionLoad({}, 1, new Map(), new Map(), metadata.id);
+    await onSessionLoad({}, 1, new Map(), new Map(), metadata.id, { allowPrune: false });
 
     return metadata;
   };
@@ -115,14 +116,21 @@ export function createSessionOperations(params: SessionOperationsParams) {
       if (data) {
         dispatch({ type: 'SET_ACTIVE_SESSION', id, session: data.metadata });
         // IMPORTANT: Await onSessionLoad to ensure CWD map is set before switching completes
-        await onSessionLoad(data.workspaces, data.activeWorkspaceId, data.cwdMap, new Map(), id);
+        await onSessionLoad(
+          data.workspaces,
+          data.activeWorkspaceId,
+          data.cwdMap,
+          new Map(),
+          id,
+          { allowPrune: true }
+        );
       } else {
         // Load failure - keep layout consistent by clearing to an empty session
         const fallbackSession = state.sessions.find((session) => session.id === id);
         if (fallbackSession) {
           dispatch({ type: 'SET_ACTIVE_SESSION', id, session: fallbackSession });
         }
-        await onSessionLoad({}, 1, new Map(), new Map(), id);
+        await onSessionLoad({}, 1, new Map(), new Map(), id, { allowPrune: false });
       }
 
       dispatch({ type: 'CLOSE_SESSION_PICKER' });
@@ -180,7 +188,7 @@ export function createSessionOperations(params: SessionOperationsParams) {
         } else {
           const metadata = await createSessionOnDisk();
           dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
-          await onSessionLoad({}, 1, new Map(), new Map(), metadata.id);
+          await onSessionLoad({}, 1, new Map(), new Map(), metadata.id, { allowPrune: false });
           await refreshSessions();
         }
       }

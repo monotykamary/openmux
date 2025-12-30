@@ -63,8 +63,11 @@ export function SessionBridge(props: SessionBridgeProps) {
     activeWorkspaceId: WorkspaceId,
     cwdMap: Map<string, string>,
     commandMap: Map<string, string>,
-    sessionId: string
+    sessionId: string,
+    options?: { allowPrune?: boolean }
   ) => {
+    const allowPrune = options?.allowPrune ?? true;
+
     // Try to resume PTYs for this session (if we've visited it before)
     const resumeResult = await resumeSession(sessionId);
     const restoredPtys = resumeResult?.mapping;
@@ -72,7 +75,7 @@ export function SessionBridge(props: SessionBridgeProps) {
     let workspacesToLoad = workspaces;
     let activeWorkspaceIdToLoad = activeWorkspaceId;
 
-    if (missingPaneIds.length > 0) {
+    if (allowPrune && missingPaneIds.length > 0) {
       const pruned = pruneMissingPanes({
         workspaces: workspacesToLoad,
         activeWorkspaceId: activeWorkspaceIdToLoad,
