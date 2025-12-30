@@ -214,6 +214,11 @@ function AppContent() {
     toggleTemplateOverlay();
   };
 
+  const hasAnyPanes = () =>
+    Object.values(layout.state.workspaces).some(
+      (workspace) => workspace && (workspace.mainPane || workspace.stackPanes.length > 0)
+    );
+
   const requestTemplateApplyConfirm = (applyTemplate: () => Promise<void>) => {
     templatePending.setPendingApply(() => applyTemplate);
     confirmationHandlers.handleRequestApplyTemplate();
@@ -326,7 +331,7 @@ function AppContent() {
         if (!initialized) return;
 
         // Only create a pane if no panes exist after session load
-        if (layout.panes.length === 0) {
+        if (!hasAnyPanes()) {
           newPane('shell');
         }
       },

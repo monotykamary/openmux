@@ -17,6 +17,7 @@ import type {
 import {
   SessionMetadata as EffectSessionMetadata,
 } from "../models"
+import { resolveActiveWorkspaceId } from "./session-bridge-utils"
 import type {
   SessionMetadata as LegacySessionMetadata,
   Workspace,
@@ -382,13 +383,16 @@ export async function loadSessionData(
           workspaces[ws.id as WorkspaceId] = deserializeWorkspace(ws)
         }
 
+        const storedActiveId = session.activeWorkspaceId as WorkspaceId
+        const resolvedActiveWorkspaceId = resolveActiveWorkspaceId(workspaces, storedActiveId)
+
         // Extract CWD map
         const cwdMap = extractCwdMap(session)
 
         return {
           metadata,
           workspaces,
-          activeWorkspaceId: session.activeWorkspaceId as WorkspaceId,
+          activeWorkspaceId: resolvedActiveWorkspaceId,
           cwdMap,
         }
       })

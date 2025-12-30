@@ -159,6 +159,14 @@ export function SessionProvider(props: SessionProviderProps) {
     }));
   };
 
+  const hasAnyPanes = (workspaces: Workspaces): boolean =>
+    Object.values(workspaces).some(
+      (workspace) => workspace && (workspace.mainPane || workspace.stackPanes.length > 0)
+    );
+
+  const shouldPersistSession = (workspaces: Workspaces): boolean =>
+    state.initialized && !state.switching && !!state.activeSession && hasAnyPanes(workspaces);
+
   // Picker actions
   const {
     togglePicker,
@@ -187,6 +195,7 @@ export function SessionProvider(props: SessionProviderProps) {
     getCwd: props.getCwd,
     getWorkspaces: props.getWorkspaces,
     getActiveWorkspaceId: props.getActiveWorkspaceId,
+    shouldPersistSession,
     onSessionLoad: props.onSessionLoad,
     onBeforeSwitch: props.onBeforeSwitch,
     onDeleteSession: props.onDeleteSession,
@@ -257,35 +266,48 @@ export function SessionProvider(props: SessionProviderProps) {
     // Get active session or create default
     let activeId = await getActiveSessionId();
     const sessions = await listSessions();
+    let activeSession = activeId
+      ? sessions.find(s => s.id === activeId) ?? null
+      : null;
 
-    if (!activeId && sessions.length === 0) {
+    if (!activeSession && sessions.length > 0) {
+      activeSession = sessions[0] ?? null;
+      activeId = activeSession?.id ?? null;
+    }
+
+    if (!activeSession) {
       // First run - create default session
       const metadata = await createSessionOnDisk();
       activeId = metadata.id;
       dispatch({ type: 'SET_SESSIONS', sessions: [metadata] });
       dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
+      await props.onSessionLoad({}, 1, new Map(), new Map(), metadata.id);
+      await refreshSessions();
     } else if (activeId) {
       // Load existing session
-      const session = sessions.find(s => s.id === activeId);
-      if (session) {
-        dispatch({ type: 'SET_ACTIVE_SESSION', id: activeId, session });
+      dispatch({ type: 'SET_ACTIVE_SESSION', id: activeId, session: activeSession });
 
-        // Update lastSwitchedAt so this session is properly marked as most recent
-        await switchToSession(activeId);
+      // Update lastSwitchedAt so this session is properly marked as most recent
+      await switchToSession(activeId);
+      await refreshSessions();
+
+      // Load session data and notify parent
+      const data = await loadSessionData(activeId);
+      if (data) {
+        // IMPORTANT: Await onSessionLoad to ensure CWD map is set before initialized
+        await props.onSessionLoad(
+          data.workspaces,
+          data.activeWorkspaceId,
+          data.cwdMap,
+          new Map(),
+          activeId
+        );
+      } else {
+        // Session failed to load - create a fresh session instead of overwriting
+        const metadata = await createSessionOnDisk();
+        dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
+        await props.onSessionLoad({}, 1, new Map(), new Map(), metadata.id);
         await refreshSessions();
-
-        // Load session data and notify parent
-        const data = await loadSessionData(activeId);
-        if (data && Object.keys(data.workspaces).length > 0) {
-          // IMPORTANT: Await onSessionLoad to ensure CWD map is set before initialized
-          await props.onSessionLoad(
-            data.workspaces,
-            data.activeWorkspaceId,
-            data.cwdMap,
-            new Map(),
-            activeId
-          );
-        }
       }
     }
 
@@ -302,7 +324,7 @@ export function SessionProvider(props: SessionProviderProps) {
         const workspaces = props.getWorkspaces();
         const activeWorkspaceId = props.getActiveWorkspaceId();
 
-        if (state.activeSession && Object.keys(workspaces).length > 0) {
+        if (state.activeSession && shouldPersistSession(workspaces)) {
           await saveCurrentSession(
             state.activeSession,
             workspaces,
@@ -342,7 +364,7 @@ export function SessionProvider(props: SessionProviderProps) {
     const workspaces = props.getWorkspaces();
     const activeWorkspaceId = props.getActiveWorkspaceId();
 
-    if (Object.keys(workspaces).length > 0) {
+    if (shouldPersistSession(workspaces)) {
       saveCurrentSession(
         state.activeSession,
         workspaces,

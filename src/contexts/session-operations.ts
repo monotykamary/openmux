@@ -21,6 +21,7 @@ export interface SessionOperationsParams {
   getCwd: (ptyId: string) => Promise<string>;
   getWorkspaces: () => Workspaces;
   getActiveWorkspaceId: () => WorkspaceId;
+  shouldPersistSession: (workspaces: Workspaces) => boolean;
   onSessionLoad: (
     workspaces: Workspaces,
     activeWorkspaceId: WorkspaceId,
@@ -40,6 +41,7 @@ export function createSessionOperations(params: SessionOperationsParams) {
     getCwd,
     getWorkspaces,
     getActiveWorkspaceId,
+    shouldPersistSession,
     onSessionLoad,
     onBeforeSwitch,
     onDeleteSession,
@@ -53,12 +55,14 @@ export function createSessionOperations(params: SessionOperationsParams) {
     if (state.activeSession && state.activeSessionId) {
       const workspaces = getWorkspaces();
       const activeWorkspaceId = getActiveWorkspaceId();
-      await saveCurrentSession(
-        state.activeSession,
-        workspaces,
-        activeWorkspaceId,
-        getCwd
-      );
+      if (shouldPersistSession(workspaces)) {
+        await saveCurrentSession(
+          state.activeSession,
+          workspaces,
+          activeWorkspaceId,
+          getCwd
+        );
+      }
 
       // Suspend PTYs for current session before switching
       await onBeforeSwitch(state.activeSessionId);
@@ -74,45 +78,63 @@ export function createSessionOperations(params: SessionOperationsParams) {
     return metadata;
   };
 
-  const switchSession = async (id: SessionId): Promise<void> => {
+  const switchSessionInternal = async (
+    id: SessionId,
+    options: { skipSave?: boolean; skipBeforeSwitch?: boolean } = {}
+  ): Promise<void> => {
     const state = getState();
     if (id === state.activeSessionId) return;
-
-    // Mark switching in progress to prevent "No panes" flash
-    dispatch({ type: 'SET_SWITCHING', switching: true });
 
     // Save current session
     if (state.activeSession && state.activeSessionId) {
       const workspaces = getWorkspaces();
       const activeWorkspaceId = getActiveWorkspaceId();
-      await saveCurrentSession(
-        state.activeSession,
-        workspaces,
-        activeWorkspaceId,
-        getCwd
-      );
+      if (!options.skipSave && shouldPersistSession(workspaces)) {
+        await saveCurrentSession(
+          state.activeSession,
+          workspaces,
+          activeWorkspaceId,
+          getCwd
+        );
+      }
 
       // Suspend PTYs for current session (save mapping, don't destroy)
-      await onBeforeSwitch(state.activeSessionId);
+      if (!options.skipBeforeSwitch) {
+        await onBeforeSwitch(state.activeSessionId);
+      }
     }
 
-    // Load new session
-    await switchToSession(id);
-    const data = await loadSessionData(id);
+    // Mark switching in progress to prevent "No panes" flash
+    dispatch({ type: 'SET_SWITCHING', switching: true });
 
-    if (data) {
-      dispatch({ type: 'SET_ACTIVE_SESSION', id, session: data.metadata });
-      // IMPORTANT: Await onSessionLoad to ensure CWD map is set before switching completes
-      await onSessionLoad(data.workspaces, data.activeWorkspaceId, data.cwdMap, new Map(), id);
+    try {
+      // Load new session
+      await switchToSession(id);
+      const data = await loadSessionData(id);
+
+      if (data) {
+        dispatch({ type: 'SET_ACTIVE_SESSION', id, session: data.metadata });
+        // IMPORTANT: Await onSessionLoad to ensure CWD map is set before switching completes
+        await onSessionLoad(data.workspaces, data.activeWorkspaceId, data.cwdMap, new Map(), id);
+      } else {
+        // Load failure - keep layout consistent by clearing to an empty session
+        const fallbackSession = state.sessions.find((session) => session.id === id);
+        if (fallbackSession) {
+          dispatch({ type: 'SET_ACTIVE_SESSION', id, session: fallbackSession });
+        }
+        await onSessionLoad({}, 1, new Map(), new Map(), id);
+      }
+
+      dispatch({ type: 'CLOSE_SESSION_PICKER' });
+      await refreshSessions();
+    } finally {
+      // Mark switching complete
+      dispatch({ type: 'SET_SWITCHING', switching: false });
     }
-
-    // Mark switching complete
-    dispatch({ type: 'SET_SWITCHING', switching: false });
-
-    dispatch({ type: 'CLOSE_SESSION_PICKER' });
-
-    await refreshSessions();
   };
+
+  const switchSession = async (id: SessionId): Promise<void> =>
+    switchSessionInternal(id);
 
   const renameSession = async (id: SessionId, name: string): Promise<void> => {
     await renameSessionOnDisk(id, name);
@@ -131,18 +153,40 @@ export function createSessionOperations(params: SessionOperationsParams) {
   };
 
   const deleteSession = async (id: SessionId): Promise<void> => {
-    // Clean up PTYs for the deleted session
-    onDeleteSession(id);
-
-    await deleteSessionOnDisk(id);
-    await refreshSessions();
-
-    // If deleting active session, switch to another
     const state = getState();
-    if (state.activeSessionId === id) {
-      const sessions = await listSessions();
-      if (sessions.length > 0) {
-        await switchSession(sessions[0]!.id);
+    const isActive = state.activeSessionId === id;
+    if (isActive) {
+      dispatch({ type: 'SET_SWITCHING', switching: true });
+    }
+
+    try {
+      // If deleting the active session, suspend before cleanup to capture PTYs.
+      if (isActive && state.activeSessionId) {
+        await onBeforeSwitch(state.activeSessionId);
+      }
+
+      // Clean up PTYs for the deleted session
+      onDeleteSession(id);
+
+      await deleteSessionOnDisk(id);
+      await refreshSessions();
+
+      // If deleting active session, switch to another
+      if (isActive) {
+        const sessions = await listSessions();
+        const nextSession = sessions.find((session) => session.id !== id) ?? null;
+        if (nextSession) {
+          await switchSessionInternal(nextSession.id, { skipSave: true, skipBeforeSwitch: true });
+        } else {
+          const metadata = await createSessionOnDisk();
+          dispatch({ type: 'SET_ACTIVE_SESSION', id: metadata.id, session: metadata });
+          await onSessionLoad({}, 1, new Map(), new Map(), metadata.id);
+          await refreshSessions();
+        }
+      }
+    } finally {
+      if (isActive) {
+        dispatch({ type: 'SET_SWITCHING', switching: false });
       }
     }
   };
@@ -154,14 +198,15 @@ export function createSessionOperations(params: SessionOperationsParams) {
     const workspaces = getWorkspaces();
     const activeWorkspaceId = getActiveWorkspaceId();
 
-    await saveCurrentSession(
-      state.activeSession,
-      workspaces,
-      activeWorkspaceId,
-      getCwd
-    );
-
-    await refreshSessions();
+    if (shouldPersistSession(workspaces)) {
+      await saveCurrentSession(
+        state.activeSession,
+        workspaces,
+        activeWorkspaceId,
+        getCwd
+      );
+      await refreshSessions();
+    }
   };
 
   return {

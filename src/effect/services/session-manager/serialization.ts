@@ -177,9 +177,14 @@ export function serializeSession(
     }
   }
 
+  const activeId = WorkspaceId.make(activeWorkspaceId)
+  const resolvedActiveId = serializedWorkspaces.some((ws) => ws.id === activeId)
+    ? activeId
+    : serializedWorkspaces[0]?.id ?? activeId
+
   return SerializedSession.make({
     metadata,
     workspaces: serializedWorkspaces,
-    activeWorkspaceId: WorkspaceId.make(activeWorkspaceId),
+    activeWorkspaceId: resolvedActiveId,
   })
 }
