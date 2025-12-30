@@ -2,58 +2,11 @@
  * NAVIGATE action handler
  */
 
-import type { Direction, Rectangle, Workspace, LayoutNode } from '../../types';
+import type { Direction, LayoutNode, Rectangle, Workspace } from '../../types';
 import type { LayoutState } from './types';
-import { getActiveWorkspace, updateWorkspace, recalculateLayout } from './helpers';
+import { getActiveWorkspace, getCandidateScore, recalculateLayout, updateWorkspace } from './helpers';
 import { getAllWorkspacePanes } from '../master-stack-layout';
 import { collectPanes, containsPane, findSiblingInDirection, getFirstPane } from '../../layout-tree';
-
-function getOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
-  return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
-}
-
-function getCandidateScore(
-  current: Rectangle,
-  candidate: Rectangle,
-  direction: Direction
-): number | null {
-  let primaryDistance = 0;
-  let secondaryDistance = 0;
-  let overlap = 0;
-
-  if (direction === 'west') {
-    primaryDistance = current.x - (candidate.x + candidate.width);
-    if (primaryDistance < 0) return null;
-    overlap = getOverlap(current.y, current.y + current.height, candidate.y, candidate.y + candidate.height);
-    secondaryDistance = Math.abs(
-      current.y + current.height / 2 - (candidate.y + candidate.height / 2)
-    );
-  } else if (direction === 'east') {
-    primaryDistance = candidate.x - (current.x + current.width);
-    if (primaryDistance < 0) return null;
-    overlap = getOverlap(current.y, current.y + current.height, candidate.y, candidate.y + candidate.height);
-    secondaryDistance = Math.abs(
-      current.y + current.height / 2 - (candidate.y + candidate.height / 2)
-    );
-  } else if (direction === 'north') {
-    primaryDistance = current.y - (candidate.y + candidate.height);
-    if (primaryDistance < 0) return null;
-    overlap = getOverlap(current.x, current.x + current.width, candidate.x, candidate.x + candidate.width);
-    secondaryDistance = Math.abs(
-      current.x + current.width / 2 - (candidate.x + candidate.width / 2)
-    );
-  } else {
-    primaryDistance = candidate.y - (current.y + current.height);
-    if (primaryDistance < 0) return null;
-    overlap = getOverlap(current.x, current.x + current.width, candidate.x, candidate.x + candidate.width);
-    secondaryDistance = Math.abs(
-      current.x + current.width / 2 - (candidate.x + candidate.width / 2)
-    );
-  }
-
-  const overlapPenalty = overlap > 0 ? 0 : 1000;
-  return primaryDistance * 1000 + secondaryDistance + overlapPenalty;
-}
 
 function pickBestPaneInNode(
   node: LayoutNode,
