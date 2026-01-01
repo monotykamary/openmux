@@ -113,6 +113,7 @@ export function createSession(
       pty,
       emulator,
       queryPassthrough,
+      kittyRelayDispose: undefined,
       cols,
       rows,
       cellWidth,
@@ -150,7 +151,7 @@ export function createSession(
     emulator.setPixelSize?.(session.pixelWidth, session.pixelHeight)
 
     // Set up query passthrough
-    setupQueryPassthrough({
+    const kittyRelayDispose = setupQueryPassthrough({
       queryPassthrough,
       emulator,
       pty,
@@ -163,6 +164,9 @@ export function createSession(
         cellHeight: session.cellHeight,
       }),
     })
+    if (kittyRelayDispose) {
+      session.kittyRelayDispose = kittyRelayDispose
+    }
 
     // Create sync mode parser for DEC Mode 2026 (synchronized output)
     const syncParser = createSyncModeParser()

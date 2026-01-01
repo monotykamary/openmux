@@ -14,6 +14,7 @@ import {
   handlePtyExit,
   handlePtyLifecycle,
   handlePtyTitle,
+  handlePtyKittyTransmit,
   handlePtyKittyUpdate,
   handleUnifiedUpdate,
 } from './state';
@@ -185,6 +186,14 @@ function handleFrame(header: ShimHeader, payloads: Buffer[]): void {
       removedImageIds: kitty.removedImageIds ?? [],
       imageData,
     });
+    return;
+  }
+
+  if (header.type === 'ptyKittyTransmit') {
+    const ptyId = header.ptyId as string;
+    const payload = payloads[0];
+    if (!payload) return;
+    handlePtyKittyTransmit(ptyId, payload.toString('utf8'));
     return;
   }
 

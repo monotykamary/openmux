@@ -1,7 +1,14 @@
 import { onCleanup, onMount } from 'solid-js';
 import { deferNextTick } from '../../core/scheduling';
-import { KittyGraphicsRenderer, setKittyGraphicsRenderer } from '../../terminal/kitty-graphics';
+import {
+  KittyGraphicsRenderer,
+  KittyTransmitBroker,
+  setKittyGraphicsRenderer,
+  setKittyTransmitBroker,
+} from '../../terminal/kitty-graphics';
 import { getHostCapabilities } from '../../terminal/capabilities';
+import { isShimClient } from '../../shim/mode';
+import { subscribeKittyTransmit } from '../../shim/client';
 
 type RendererLike = {
   renderNative?: () => void;
@@ -16,7 +23,9 @@ export function createKittyGraphicsBridge(params: {
 }): KittyGraphicsRenderer {
   const { renderer, ensurePixelResize, stopPixelResizePoll } = params;
   const kittyRenderer = new KittyGraphicsRenderer();
+  const kittyBroker = new KittyTransmitBroker();
   setKittyGraphicsRenderer(kittyRenderer);
+  setKittyTransmitBroker(kittyBroker);
 
   onMount(() => {
     const rendererAny = renderer as any;
@@ -67,6 +76,13 @@ export function createKittyGraphicsBridge(params: {
       };
     }
 
+    kittyBroker.setRenderer(rendererAny);
+    let unsubscribeTransmit: (() => void) | null = null;
+    if (isShimClient()) {
+      unsubscribeTransmit = subscribeKittyTransmit((event) => {
+        kittyBroker.handleSequence(event.ptyId, event.sequence);
+      });
+    }
     rendererAny.prependInputHandler?.(handleKittyResponses);
     rendererAny.prependInputHandler?.(handlePixelResolution);
     ensurePixelResize();
@@ -81,8 +97,11 @@ export function createKittyGraphicsBridge(params: {
       rendererAny.removeInputHandler?.(handleKittyResponses);
       rendererAny.removeInputHandler?.(handlePixelResolution);
       stopPixelResizePoll();
+      unsubscribeTransmit?.();
       kittyRenderer.dispose();
+      kittyBroker.dispose();
       setKittyGraphicsRenderer(null);
+      setKittyTransmitBroker(null);
       kittyResponseBuffer = '';
     });
   });

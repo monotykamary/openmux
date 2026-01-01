@@ -6,6 +6,9 @@ import type { IPty } from "../../../../native/zig-pty/ts/index"
 import type { ITerminalEmulator } from "../../../terminal/emulator-interface"
 import type { TerminalQueryPassthrough } from "../../../terminal/terminal-query-passthrough"
 import { tracePtyChunk, tracePtyEvent } from "../../../terminal/pty-trace"
+import { getKittyTransmitBroker, KittyTransmitRelay } from "../../../terminal/kitty-graphics"
+import { isShimProcess } from "../../../shim/mode"
+import { getKittyTransmitForwarder } from "../../../shim/kitty-forwarder"
 
 interface QuerySetupOptions {
   queryPassthrough: TerminalQueryPassthrough
@@ -21,7 +24,7 @@ interface QuerySetupOptions {
  * Sets up the query passthrough with all necessary callbacks
  * This handles terminal queries like cursor position, device attributes, colors, etc.
  */
-export function setupQueryPassthrough(options: QuerySetupOptions): void {
+export function setupQueryPassthrough(options: QuerySetupOptions): (() => void) | null {
   const {
     queryPassthrough,
     emulator,
@@ -74,6 +77,27 @@ export function setupQueryPassthrough(options: QuerySetupOptions): void {
     return emulator.getKittyKeyboardFlags()
   })
 
+  let relayCleanup: (() => void) | null = null
+  if (ptyId) {
+    if (isShimProcess()) {
+      const relay = new KittyTransmitRelay()
+      queryPassthrough.setKittySequenceHandler((sequence) => {
+        const result = relay.handleSequence(String(ptyId), sequence)
+        const forwarder = getKittyTransmitForwarder()
+        if (forwarder && result.forwardSequence) {
+          forwarder(String(ptyId), result.forwardSequence)
+        }
+        return result.emuSequence
+      })
+      relayCleanup = () => relay.dispose()
+    } else {
+      queryPassthrough.setKittySequenceHandler((sequence) => {
+        const broker = getKittyTransmitBroker()
+        return broker ? broker.handleSequence(String(ptyId), sequence) : sequence
+      })
+    }
+  }
+
   // Set terminal version for XTVERSION responses
   queryPassthrough.setTerminalVersion(terminalVersion)
 
@@ -104,4 +128,6 @@ export function setupQueryPassthrough(options: QuerySetupOptions): void {
       cellHeight,
     }
   })
+
+  return relayCleanup
 }

@@ -16,6 +16,7 @@ export interface InternalPtySession {
   pty: IPty
   emulator: ITerminalEmulator
   queryPassthrough: TerminalQueryPassthrough
+  kittyRelayDispose?: () => void
   cols: number
   rows: number
   pixelWidth: number

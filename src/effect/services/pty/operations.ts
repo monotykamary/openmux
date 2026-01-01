@@ -109,6 +109,7 @@ export function createOperations(deps: OperationsDeps) {
       // Kill PTY and dispose emulator
       session.pty.kill()
       session.emulator.dispose()
+      session.kittyRelayDispose?.()
       session.queryPassthrough.dispose()
 
       // Remove from map BEFORE emitting lifecycle event

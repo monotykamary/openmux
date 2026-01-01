@@ -1,5 +1,6 @@
 import type net from 'net';
 import { dirname } from 'path';
+import { Buffer } from 'buffer';
 
 import { Effect } from 'effect';
 import { PtyId } from '../effect/types';
@@ -8,6 +9,7 @@ import { packDirtyUpdate } from '../terminal/cell-serialization';
 import type { ITerminalEmulator, KittyGraphicsImageInfo, KittyGraphicsPlacement } from '../terminal/emulator-interface';
 import { setHostColors as setHostColorsDefault, type TerminalColors } from '../terminal/terminal-colors';
 import { encodeFrame, SHIM_SOCKET_PATH, type ShimHeader } from './protocol';
+import { setKittyTransmitForwarder } from './kitty-forwarder';
 import type { ShimServerState } from './server-state';
 import { createRequestHandler } from './server-requests';
 
@@ -115,6 +117,16 @@ export function createServerHandlers(state: ShimServerState, options?: ShimServe
 
   const toArrayBuffer = (data: Uint8Array): ArrayBuffer =>
     data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+
+  const sendKittyTransmit = (ptyId: string, sequence: string): void => {
+    if (!state.activeClient) return;
+    const payload = Buffer.from(sequence, 'utf8');
+    sendEvent({
+      type: 'ptyKittyTransmit',
+      ptyId,
+      payloadLengths: [payload.byteLength],
+    }, [toArrayBuffer(payload)]);
+  };
 
   const sendKittyUpdate = (
     ptyId: string,
@@ -378,6 +390,7 @@ export function createServerHandlers(state: ShimServerState, options?: ShimServe
     state.clientIds.set(socket, clientId);
     state.activeClient = socket;
     state.activeClientId = clientId;
+    setKittyTransmitForwarder(sendKittyTransmit);
     const ptyIds = await subscribeAllPtys();
     await handleLifecycle();
     await handleTitles();
@@ -389,6 +402,7 @@ export function createServerHandlers(state: ShimServerState, options?: ShimServe
 
     state.activeClient = null;
     state.activeClientId = null;
+    setKittyTransmitForwarder(null);
     for (const ptyId of state.ptySubscriptions.keys()) {
       await unsubscribeFromPty(ptyId);
     }

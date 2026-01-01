@@ -5,7 +5,13 @@ import { unpackRow, unpackTerminalState, CELL_SIZE } from '../terminal/cell-seri
 import { RemoteEmulator } from './client/emulator';
 import { sendRequest } from './client/connection';
 import { bufferToArrayBuffer } from './client/utils';
-import { getKittyState, getPtyState, registerEmulatorFactory, setPtyState } from './client/state';
+import {
+  getKittyState,
+  getPtyState,
+  registerEmulatorFactory,
+  setPtyState,
+  subscribeKittyTransmit,
+} from './client/state';
 
 export async function createPty(options: {
   cols: number;
@@ -246,5 +252,15 @@ function createRemoteEmulator(ptyId: string): RemoteEmulator {
 
 registerEmulatorFactory(createRemoteEmulator);
 
-export { getEmulator, subscribeExit, subscribeScroll, subscribeState, subscribeToAllTitles, subscribeToLifecycle, subscribeToTitle, subscribeUnified } from './client/state';
+export {
+  getEmulator,
+  subscribeExit,
+  subscribeKittyTransmit,
+  subscribeScroll,
+  subscribeState,
+  subscribeToAllTitles,
+  subscribeToLifecycle,
+  subscribeToTitle,
+  subscribeUnified,
+} from './client/state';
 export { onShimDetached, shutdownShim, waitForShim } from './client/connection';
