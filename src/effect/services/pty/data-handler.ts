@@ -45,12 +45,13 @@ export function createDataHandler(options: DataHandlerOptions) {
   }
   let kittyProbeBuffer = ""
 
-  const sawKittyQuery = (data: string): boolean => {
-    if (data.length === 0) return false
+  const analyzeKitty = (data: string): { hasKittyApc: boolean; hasKittyQuery: boolean } => {
+    if (data.length === 0) return { hasKittyApc: false, hasKittyQuery: false }
     const combined = kittyProbeBuffer + data
     kittyProbeBuffer = combined.slice(-256)
-    if (!combined.includes("a=q")) return false
-    return combined.includes(`${ESC}_G`) || combined.includes(`${APC_C1}G`)
+    const hasKittyApc = combined.includes(`${ESC}_G`) || combined.includes(`${APC_C1}G`)
+    const hasKittyQuery = hasKittyApc && combined.includes("a=q")
+    return { hasKittyApc, hasKittyQuery }
   }
 
   const flushPendingResponses = () => {
@@ -64,7 +65,7 @@ export function createDataHandler(options: DataHandlerOptions) {
     }
   }
 
-  const drainPending = () => {
+  const drainPending = (options?: { force?: boolean }) => {
     session.pendingNotify = false
 
     if (session.emulator.isDisposed) {
@@ -77,45 +78,59 @@ export function createDataHandler(options: DataHandlerOptions) {
       return
     }
 
+    const force = options?.force ?? false
     const start = now()
     let batch = ""
     let batchLen = 0
     let segmentsProcessed = 0
+    let wrote = false
 
-    while (state.pendingSegments.length > 0) {
-      const segment = state.pendingSegments[0]
-      if (segment.length === 0) {
+    if (force) {
+      while (state.pendingSegments.length > 0) {
+        const segment = state.pendingSegments.shift() ?? ""
+        if (segment.length === 0) continue
+        session.emulator.write(segment)
+        wrote = true
+        segmentsProcessed += 1
+      }
+    } else {
+      while (state.pendingSegments.length > 0) {
+        const segment = state.pendingSegments[0]
+        if (segment.length === 0) {
+          state.pendingSegments.shift()
+          continue
+        }
+
+        if (batchLen > 0 && batchLen + segment.length > maxCharsPerTick) {
+          break
+        }
+
+        batch += segment
+        batchLen += segment.length
+        segmentsProcessed += 1
         state.pendingSegments.shift()
-        continue
+
+        if (segmentsProcessed >= maxSegmentsPerTick) break
+        if (batchLen >= maxCharsPerTick) break
+        if (now() - start >= maxBudgetMs) break
       }
 
-      if (batchLen > 0 && batchLen + segment.length > maxCharsPerTick) {
-        break
+      if (batchLen === 0 && state.pendingSegments.length > 0) {
+        batch = state.pendingSegments.shift() ?? ""
       }
 
-      batch += segment
-      batchLen += segment.length
-      segmentsProcessed += 1
-      state.pendingSegments.shift()
-
-      if (segmentsProcessed >= maxSegmentsPerTick) break
-      if (batchLen >= maxCharsPerTick) break
-      if (now() - start >= maxBudgetMs) break
+      if (batch.length > 0) {
+        session.emulator.write(batch)
+        wrote = true
+      }
     }
 
-    if (batchLen === 0 && state.pendingSegments.length > 0) {
-      batch = state.pendingSegments.shift() ?? ""
-    }
-
-    if (batch.length > 0) {
-      session.emulator.write(batch)
-      if (!session.emulator.isDisposed) {
-        const responses = session.emulator.drainResponses?.()
-        if (responses && responses.length > 0) {
-          for (const response of responses) {
-            tracePtyChunk("emulator-response", response, { ptyId: session.id })
-            session.pty.write(response)
-          }
+    if (wrote && !session.emulator.isDisposed) {
+      const responses = session.emulator.drainResponses?.()
+      if (responses && responses.length > 0) {
+        for (const response of responses) {
+          tracePtyChunk("emulator-response", response, { ptyId: session.id })
+          session.pty.write(response)
         }
       }
     }
@@ -141,7 +156,8 @@ export function createDataHandler(options: DataHandlerOptions) {
   // The data handler function
   const handleData = (data: string) => {
     tracePtyChunk("pty-in", data, { ptyId: session.id })
-    const hasKittyQuery = sawKittyQuery(data)
+    const kittySignals = analyzeKitty(data)
+    const hasKittyQuery = kittySignals.hasKittyQuery
     let textData: string
     let deferredResponses: string[] | null = null
 
@@ -211,8 +227,8 @@ export function createDataHandler(options: DataHandlerOptions) {
     // Only schedule notification if we have data and aren't buffering
     // When buffering, we wait for the complete frame before notifying
     if (!isBuffering && state.pendingSegments.length > 0) {
-      if (hasKittyQuery) {
-        drainPending()
+      if (kittySignals.hasKittyApc) {
+        drainPending({ force: true })
       } else {
         scheduleNotify()
       }

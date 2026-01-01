@@ -25,6 +25,7 @@ type PendingChunk = {
   offload: OffloadState | null;
   filePayload: string;
   mode: 'stub' | 'pass' | 'buffer';
+  controlParams: Map<string, string> | null;
 };
 
 type OffloadState = {
@@ -47,14 +48,19 @@ export class KittyTransmitRelay {
   private offloadCleanupDelayMs: number;
   private cleanupTimers = new Set<ReturnType<typeof setTimeout>>();
   private tempFileCounter = 0;
+  private stubEmulator = false;
+  private stubPng = false;
 
-  constructor() {
+  constructor(options?: { stubPng?: boolean }) {
     const thresholdEnv = Number(process.env.OPENMUX_KITTY_OFFLOAD_THRESHOLD ?? '');
     this.offloadThresholdBytes = Number.isFinite(thresholdEnv) && thresholdEnv >= 0
       ? thresholdEnv
       : 512 * 1024;
     const cleanupEnv = Number(process.env.OPENMUX_KITTY_OFFLOAD_CLEANUP_MS ?? '');
     this.offloadCleanupDelayMs = Number.isFinite(cleanupEnv) && cleanupEnv >= 0 ? cleanupEnv : 5000;
+    const stubEnv = (process.env.OPENMUX_KITTY_EMULATOR_STUB ?? '').toLowerCase();
+    this.stubEmulator = stubEnv === '1' || stubEnv === 'true';
+    this.stubPng = options?.stubPng ?? false;
   }
 
   dispose(): void {
@@ -136,6 +142,7 @@ export class KittyTransmitRelay {
 
     const mergedParams = mergeTransmitParams(this.pendingChunk?.params ?? null, transmit);
     const medium = mergedParams.medium ?? 'd';
+    const isPng = (mergedParams.format ?? '') === '100';
 
     let baseSequence = sequence;
     if (needsRebuild) {
@@ -145,6 +152,7 @@ export class KittyTransmitRelay {
 
     const activeOffload = this.pendingChunk?.offload ?? null;
     const shouldOffload = activeOffload ?? this.shouldOffload(mergedParams, parsed.data, transmit.more);
+    const shouldStubEmulator = this.stubEmulator || (this.stubPng && isPng);
     let offloadDims: { width: number; height: number } | null = null;
     let forwardSequence: string | null = null;
     if (shouldOffload) {
@@ -157,22 +165,24 @@ export class KittyTransmitRelay {
           offload,
           filePayload: '',
           mode: 'buffer',
+          controlParams: new Map(parsed.params),
         };
-        return { emuSequence: '', forwardSequence: null };
+      } else {
+        const filePath = this.finishOffload(offload);
+        const payload = Buffer.from(filePath).toString('base64');
+        forwardSequence = buildForwardFileSequence(parsed, payload);
+        if (shouldStubEmulator) {
+          offloadDims = parsePngDimensionsFromFilePath(filePath);
+        }
+        tracePtyEvent('kitty-relay-forward', {
+          ptyId,
+          guestKey,
+          offload: true,
+          filePath,
+          bytesWritten: offload.bytesWritten,
+        });
+        this.scheduleCleanup(filePath);
       }
-
-      const filePath = this.finishOffload(offload);
-      const payload = Buffer.from(filePath).toString('base64');
-      forwardSequence = buildForwardFileSequence(parsed, payload);
-      offloadDims = parsePngDimensionsFromFilePath(filePath);
-      tracePtyEvent('kitty-relay-forward', {
-        ptyId,
-        guestKey,
-        offload: true,
-        filePath,
-        bytesWritten: offload.bytesWritten,
-      });
-      this.scheduleCleanup(filePath);
     } else {
       forwardSequence = baseSequence;
       tracePtyEvent('kitty-relay-forward', {
@@ -183,30 +193,42 @@ export class KittyTransmitRelay {
       });
     }
 
-    if ((medium === 'f' || medium === 't') && transmit.more) {
+    if (this.stubEmulator && (medium === 'f' || medium === 't') && transmit.more) {
       const filePayload = `${this.pendingChunk?.mode === 'buffer' ? this.pendingChunk.filePayload : ''}${parsed.data}`;
+      const controlParams = this.pendingChunk?.mode === 'buffer'
+        ? this.pendingChunk.controlParams
+        : new Map(parsed.params);
       this.pendingChunk = {
         guestKey,
         params: mergedParams,
         offload: this.pendingChunk?.offload ?? null,
         filePayload,
         mode: 'buffer',
+        controlParams,
       };
       return { emuSequence: '', forwardSequence: null };
     }
 
     let parsedForStub = parsed;
+    let combinedSequence: string | null = null;
     if ((medium === 'f' || medium === 't') && this.pendingChunk?.mode === 'buffer') {
       const combinedPayload = `${this.pendingChunk.filePayload}${parsed.data}`;
-      parsedForStub = { ...parsed, data: combinedPayload };
+      const baseParams = this.pendingChunk.controlParams ?? parsed.params;
+      const controlParams = new Map(baseParams);
+      const rebuiltControl = rebuildControl(controlParams);
+      parsedForStub = { ...parsed, data: combinedPayload, params: controlParams, control: rebuiltControl };
       forwardSequence = buildForwardFileSequence(parsedForStub, combinedPayload);
+      const emuParams = new Map(controlParams);
+      emuParams.delete('m');
+      const emuControl = rebuildControl(emuParams);
+      combinedSequence = `${parsed.prefix}${emuControl};${combinedPayload}${parsed.suffix}`;
     }
 
     let emuSequence = baseSequence;
     let stubbed = false;
     let dropEmulator = false;
 
-    if (this.pendingChunk?.mode !== 'pass') {
+    if (shouldStubEmulator && this.pendingChunk?.mode !== 'pass') {
       const stub = this.buildEmulatorSequence(parsedForStub, mergedParams, guestKey, offloadDims);
       if (stub.dropEmulator) {
         emuSequence = '';
@@ -215,6 +237,10 @@ export class KittyTransmitRelay {
         emuSequence = stub.emuSequence;
         stubbed = true;
       }
+    }
+
+    if (!shouldStubEmulator && combinedSequence) {
+      emuSequence = combinedSequence;
     }
 
     if (transmit.more) {
@@ -229,6 +255,7 @@ export class KittyTransmitRelay {
         offload: shouldOffload ? (this.pendingChunk?.offload ?? activeOffload ?? null) : null,
         filePayload: '',
         mode,
+        controlParams: new Map(parsed.params),
       };
     } else if (!this.pendingChunk?.offload || activeOffload) {
       this.pendingChunk = null;

@@ -9,7 +9,7 @@ import { packDirtyUpdate } from '../terminal/cell-serialization';
 import type { ITerminalEmulator, KittyGraphicsImageInfo, KittyGraphicsPlacement } from '../terminal/emulator-interface';
 import { setHostColors as setHostColorsDefault, type TerminalColors } from '../terminal/terminal-colors';
 import { encodeFrame, SHIM_SOCKET_PATH, type ShimHeader } from './protocol';
-import { setKittyTransmitForwarder } from './kitty-forwarder';
+import { setKittyTransmitForwarder, setKittyUpdateForwarder } from './kitty-forwarder';
 import type { ShimServerState } from './server-state';
 import { createRequestHandler } from './server-requests';
 
@@ -188,6 +188,28 @@ export function createServerHandlers(state: ShimServerState, options?: ShimServe
 
     sendEvent(header, payloads);
     emulator.clearKittyImagesDirty?.();
+  };
+
+  const pendingKittyUpdates = new Set<string>();
+  let kittyUpdateScheduled = false;
+  const flushKittyUpdates = () => {
+    kittyUpdateScheduled = false;
+    const pending = Array.from(pendingKittyUpdates);
+    pendingKittyUpdates.clear();
+    for (const id of pending) {
+      const emulator = state.ptyEmulators.get(id);
+      if (emulator) {
+        sendKittyUpdate(id, emulator);
+      }
+    }
+  };
+  const queueKittyUpdate = (ptyId: string) => {
+    if (!state.activeClient) return;
+    pendingKittyUpdates.add(ptyId);
+    if (!kittyUpdateScheduled) {
+      kittyUpdateScheduled = true;
+      queueMicrotask(flushKittyUpdates);
+    }
   };
 
   function registerMapping(sessionId: string, paneId: string, ptyId: string): void {
@@ -391,6 +413,7 @@ export function createServerHandlers(state: ShimServerState, options?: ShimServe
     state.activeClient = socket;
     state.activeClientId = clientId;
     setKittyTransmitForwarder(sendKittyTransmit);
+    setKittyUpdateForwarder(queueKittyUpdate);
     const ptyIds = await subscribeAllPtys();
     await handleLifecycle();
     await handleTitles();
@@ -403,6 +426,7 @@ export function createServerHandlers(state: ShimServerState, options?: ShimServe
     state.activeClient = null;
     state.activeClientId = null;
     setKittyTransmitForwarder(null);
+    setKittyUpdateForwarder(null);
     for (const ptyId of state.ptySubscriptions.keys()) {
       await unsubscribeFromPty(ptyId);
     }

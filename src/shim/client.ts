@@ -11,6 +11,7 @@ import {
   registerEmulatorFactory,
   setPtyState,
   subscribeKittyTransmit,
+  subscribeKittyUpdate,
 } from './client/state';
 
 export async function createPty(options: {
@@ -256,6 +257,7 @@ export {
   getEmulator,
   subscribeExit,
   subscribeKittyTransmit,
+  subscribeKittyUpdate,
   subscribeScroll,
   subscribeState,
   subscribeToAllTitles,

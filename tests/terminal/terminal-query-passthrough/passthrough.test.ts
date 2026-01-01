@@ -65,6 +65,15 @@ describe('TerminalQueryPassthrough', () => {
     expect(passthrough.process(commandNoAction)).toBe(commandNoAction);
   });
 
+  it('allows a kitty sequence handler to rewrite output', () => {
+    const passthrough = new TerminalQueryPassthrough();
+    passthrough.setKittySequenceHandler((sequence) => `${sequence}tail`);
+    const command = `${ESC}_Ga=t,f=24,s=1,v=1;QUJD${ESC}\\`;
+
+    const output = passthrough.process(command);
+    expect(output).toBe(`${command}tail`);
+  });
+
   it('buffers partial kitty response across chunks', () => {
     const passthrough = new TerminalQueryPassthrough();
     const first = passthrough.process(`${ESC}_Gi=1;O`);

@@ -513,28 +513,20 @@ export class TerminalQueryPassthrough {
   }
 
   private findKittyStart(input: string, from: number): number {
-    for (let i = from; i < input.length; i++) {
-      const ch = input[i];
-      if (ch === ESC) {
-        if (input.startsWith(KITTY_APC_PREFIX, i)) return i;
-      } else if (ch === APC_C1) {
-        if (input.startsWith(KITTY_APC_C1_PREFIX, i)) return i;
-      }
-    }
-    return -1;
+    const escIndex = input.indexOf(KITTY_APC_PREFIX, from);
+    const c1Index = input.indexOf(KITTY_APC_C1_PREFIX, from);
+    if (escIndex === -1) return c1Index;
+    if (c1Index === -1) return escIndex;
+    return Math.min(escIndex, c1Index);
   }
 
   private findKittyEnd(input: string, from: number): number {
-    for (let i = from; i < input.length; i++) {
-      const ch = input[i];
-      if (ch === ST_C1) {
-        return i + 1;
-      }
-      if (ch === ESC && i + 1 < input.length && input[i + 1] === '\\') {
-        return i + 2;
-      }
-    }
-    return -1;
+    const escIndex = input.indexOf(`${ESC}\\`, from);
+    const stIndex = input.indexOf(ST_C1, from);
+    if (escIndex === -1 && stIndex === -1) return -1;
+    if (escIndex === -1) return stIndex + 1;
+    if (stIndex === -1) return escIndex + 2;
+    return Math.min(escIndex + 2, stIndex + 1);
   }
 
   private filterKittySequence(sequence: string): string {

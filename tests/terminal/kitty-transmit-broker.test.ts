@@ -18,6 +18,20 @@ vi.mock('../../src/terminal/capabilities', () => ({
 
 const ESC = '\x1b';
 
+function withStubEnv<T>(fn: () => T): T {
+  const prior = process.env.OPENMUX_KITTY_EMULATOR_STUB;
+  process.env.OPENMUX_KITTY_EMULATOR_STUB = '1';
+  try {
+    return fn();
+  } finally {
+    if (prior === undefined) {
+      delete process.env.OPENMUX_KITTY_EMULATOR_STUB;
+    } else {
+      process.env.OPENMUX_KITTY_EMULATOR_STUB = prior;
+    }
+  }
+}
+
 describe('KittyTransmitBroker', () => {
   it('forwards transmit payloads to the host writer', () => {
     const broker = new KittyTransmitBroker();
@@ -70,56 +84,62 @@ describe('KittyTransmitBroker', () => {
   });
 
   it('strips png payloads for emulator sequences', () => {
-    const broker = new KittyTransmitBroker();
-    broker.setWriter(() => {});
+    withStubEnv(() => {
+      const broker = new KittyTransmitBroker();
+      broker.setWriter(() => {});
 
-    const png =
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAF/gL+Xltp8gAAAABJRU5ErkJggg==';
-    const sequence = `${ESC}_Ga=t,f=100;${png}${ESC}\\`;
-    const output = broker.handleSequence('pty-4', sequence);
+      const png =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAF/gL+Xltp8gAAAABJRU5ErkJggg==';
+      const sequence = `${ESC}_Ga=t,f=100;${png}${ESC}\\`;
+      const output = broker.handleSequence('pty-4', sequence);
 
-    expect(output).toContain('f=100');
-    expect(output).toContain('s=1');
-    expect(output).toContain('v=1');
-    expect(output).not.toContain(png);
+      expect(output).toContain('f=100');
+      expect(output).toContain('s=1');
+      expect(output).toContain('v=1');
+      expect(output).not.toContain(png);
+    });
   });
 
   it('stubs file-based png transmissions for emulator parsing', () => {
-    const broker = new KittyTransmitBroker();
-    broker.setWriter(() => {});
+    withStubEnv(() => {
+      const broker = new KittyTransmitBroker();
+      broker.setWriter(() => {});
 
-    const png =
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAF/gL+Xltp8gAAAABJRU5ErkJggg==';
-    const filePath = path.join(os.tmpdir(), `openmux-kitty-broker-${Date.now()}.png`);
-    fs.writeFileSync(filePath, Buffer.from(png, 'base64'));
-    const payload = Buffer.from(filePath).toString('base64');
-    const sequence = `${ESC}_Ga=t,f=100,t=f,i=7;${payload}${ESC}\\`;
-    const output = broker.handleSequence('pty-5', sequence);
+      const png =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAF/gL+Xltp8gAAAABJRU5ErkJggg==';
+      const filePath = path.join(os.tmpdir(), `openmux-kitty-broker-${Date.now()}.png`);
+      fs.writeFileSync(filePath, Buffer.from(png, 'base64'));
+      const payload = Buffer.from(filePath).toString('base64');
+      const sequence = `${ESC}_Ga=t,f=100,t=f,i=7;${payload}${ESC}\\`;
+      const output = broker.handleSequence('pty-5', sequence);
 
-    expect(output).toContain('f=100');
-    expect(output).toContain('s=1');
-    expect(output).toContain('v=1');
-    expect(output).not.toContain(payload);
+      expect(output).toContain('f=100');
+      expect(output).toContain('s=1');
+      expect(output).toContain('v=1');
+      expect(output).not.toContain(payload);
 
-    try {
-      fs.unlinkSync(filePath);
-    } catch {
-      // ignore
-    }
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // ignore
+      }
+    });
   });
 
   it('drops compression flags when stubbing png payloads', () => {
-    const broker = new KittyTransmitBroker();
-    broker.setWriter(() => {});
+    withStubEnv(() => {
+      const broker = new KittyTransmitBroker();
+      broker.setWriter(() => {});
 
-    const png =
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAF/gL+Xltp8gAAAABJRU5ErkJggg==';
-    const sequence = `${ESC}_Ga=t,f=100,o=z;${png}${ESC}\\`;
-    const output = broker.handleSequence('pty-6', sequence);
+      const png =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAF/gL+Xltp8gAAAABJRU5ErkJggg==';
+      const sequence = `${ESC}_Ga=t,f=100,o=z;${png}${ESC}\\`;
+      const output = broker.handleSequence('pty-6', sequence);
 
-    expect(output).toContain('f=100');
-    expect(output).not.toContain('o=');
-    expect(output).not.toContain(png);
+      expect(output).toContain('f=100');
+      expect(output).not.toContain('o=');
+      expect(output).not.toContain(png);
+    });
   });
 
   it('treats i=0 as implicit and injects a synthetic id', () => {

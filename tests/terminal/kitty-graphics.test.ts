@@ -1,10 +1,14 @@
-import { describe, expect, it, beforeAll, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ITerminalEmulator } from '../../src/terminal/emulator-interface';
 import {
   KittyGraphicsCompression,
   KittyGraphicsFormat,
   KittyGraphicsPlacementTag,
 } from '../../src/terminal/emulator-interface';
+import {
+  KittyTransmitBroker,
+  setKittyTransmitBroker,
+} from '../../src/terminal/kitty-graphics';
 
 vi.mock('../../src/terminal/capabilities', () => ({
   getHostCapabilities: () => ({
@@ -25,7 +29,14 @@ beforeAll(async () => {
 });
 
 describe('KittyGraphicsRenderer', () => {
-  it('litmus: transmits and displays kitty graphics', () => {
+  afterEach(() => {
+    setKittyTransmitBroker(null);
+  });
+
+  it('litmus: renders kitty placements when broker provides ids', () => {
+    const broker = new KittyTransmitBroker();
+    broker.setWriter(() => {});
+    setKittyTransmitBroker(broker);
     const renderer = new KittyGraphicsRenderer();
     const output: string[] = [];
     const renderTarget = {
@@ -74,6 +85,10 @@ describe('KittyGraphicsRenderer', () => {
       getKittyPlacements: () => [placement],
     } as ITerminalEmulator;
 
+    const ESC = '\x1b';
+    const payload = Buffer.from([255, 0, 0]).toString('base64');
+    broker.handleSequence('pty-1', `${ESC}_Ga=t,f=24,i=1;${payload}${ESC}\\`);
+
     renderer.updatePane('pane-1', {
       ptyId: 'pty-1',
       emulator,
@@ -91,7 +106,6 @@ describe('KittyGraphicsRenderer', () => {
     renderer.flush(renderTarget);
 
     const joined = output.join('');
-    expect(joined).toContain('\x1b_Ga=t');
     expect(joined).toContain('\x1b_Ga=p');
     expect(dirty).toBe(false);
   });

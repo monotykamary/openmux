@@ -52,7 +52,14 @@ async function main() {
 
   try {
     // Prime host capabilities (including color query) before the renderer takes over stdin
-    await detectHostCapabilities();
+    const hostCaps = await detectHostCapabilities();
+    const useThreadEnv = (process.env.OPENMUX_RENDER_USE_THREAD ?? '').toLowerCase();
+    const useThread =
+      useThreadEnv === '1' || useThreadEnv === 'true'
+        ? true
+        : useThreadEnv === '0' || useThreadEnv === 'false'
+          ? false
+          : !hostCaps.kittyGraphics;
 
     // Create paste-intercepting stdin wrapper
     // This intercepts bracketed paste sequences at the raw Buffer level (before UTF-8 encoding)
@@ -81,6 +88,7 @@ async function main() {
       enableMouseMovement: true, // Track mouse movement for drag and hover events
       useConsole: true, // Enable debug console (toggle with prefix + `)
       useKittyKeyboard: { events: true },
+      useThread,
       consoleOptions: {
         position: ConsolePosition.BOTTOM,
         sizePercent: 30,

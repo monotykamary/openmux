@@ -140,13 +140,17 @@ export class KittyGraphicsRenderer {
   flush(renderer: RendererLike): void {
     if (!this.enabled) return;
 
-    const metrics = this.getCellMetrics(renderer);
-    if (!metrics) return;
-
     const writeOut = this.getWriter(renderer);
     if (!writeOut) return;
 
     const broker = getKittyTransmitBroker();
+    const flushedBroker = broker?.flushPending(writeOut) ?? false;
+
+    const metrics = this.getCellMetrics(renderer);
+    if (!metrics) {
+      if (flushedBroker) return;
+      return;
+    }
 
     const output: string[] = [];
     const activePtys = new Set<string>();
@@ -185,8 +189,6 @@ export class KittyGraphicsRenderer {
 
       this.updatePtyState(pane.ptyId, pane.emulator, pane.isAlternateScreen, output);
     }
-
-    const flushedBroker = broker?.flushPending(writeOut) ?? false;
 
     for (const [paneKey, pane] of this.panes) {
       if (pane.removed || !pane.ptyId || !pane.emulator) {

@@ -37,6 +37,7 @@ export type LifecycleEvent = { type: 'created' | 'destroyed'; ptyId: string };
 export type TitleEvent = { ptyId: string; title: string };
 
 export type KittyTransmitEvent = { ptyId: string; sequence: string };
+export type KittyUpdateEvent = { ptyId: string };
 
 type UnifiedSubscriber = (update: UnifiedTerminalUpdate) => void;
 
@@ -48,6 +49,7 @@ const titleSubscribers = new Map<string, Set<(title: string) => void>>();
 const globalTitleSubscribers = new Set<(event: TitleEvent) => void>();
 const lifecycleSubscribers = new Set<(event: LifecycleEvent) => void>();
 const kittyTransmitSubscribers = new Set<(event: KittyTransmitEvent) => void>();
+const kittyUpdateSubscribers = new Set<(event: KittyUpdateEvent) => void>();
 
 const ptyStates = new Map<string, PtyState>();
 const emulatorCache = new Map<string, ScrollbackAwareEmulator>();
@@ -168,6 +170,10 @@ export function handlePtyKittyUpdate(
     placements: update.placements,
     dirty: true,
   });
+
+  for (const callback of kittyUpdateSubscribers) {
+    callback({ ptyId });
+  }
 }
 
 export function handlePtyKittyTransmit(ptyId: string, sequence: string): void {
@@ -297,6 +303,13 @@ export function subscribeKittyTransmit(callback: (event: KittyTransmitEvent) => 
   kittyTransmitSubscribers.add(callback);
   return () => {
     kittyTransmitSubscribers.delete(callback);
+  };
+}
+
+export function subscribeKittyUpdate(callback: (event: KittyUpdateEvent) => void): () => void {
+  kittyUpdateSubscribers.add(callback);
+  return () => {
+    kittyUpdateSubscribers.delete(callback);
   };
 }
 

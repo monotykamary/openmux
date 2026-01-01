@@ -8,7 +8,7 @@ import type { TerminalQueryPassthrough } from "../../../terminal/terminal-query-
 import { tracePtyChunk, tracePtyEvent } from "../../../terminal/pty-trace"
 import { getKittyTransmitBroker, KittyTransmitRelay } from "../../../terminal/kitty-graphics"
 import { isShimProcess } from "../../../shim/mode"
-import { getKittyTransmitForwarder } from "../../../shim/kitty-forwarder"
+import { getKittyTransmitForwarder, getKittyUpdateForwarder } from "../../../shim/kitty-forwarder"
 
 interface QuerySetupOptions {
   queryPassthrough: TerminalQueryPassthrough
@@ -80,12 +80,16 @@ export function setupQueryPassthrough(options: QuerySetupOptions): (() => void) 
   let relayCleanup: (() => void) | null = null
   if (ptyId) {
     if (isShimProcess()) {
-      const relay = new KittyTransmitRelay()
+      const relay = new KittyTransmitRelay({ stubPng: true })
       queryPassthrough.setKittySequenceHandler((sequence) => {
         const result = relay.handleSequence(String(ptyId), sequence)
         const forwarder = getKittyTransmitForwarder()
         if (forwarder && result.forwardSequence) {
           forwarder(String(ptyId), result.forwardSequence)
+        }
+        const updateForwarder = getKittyUpdateForwarder()
+        if (updateForwarder) {
+          queueMicrotask(() => updateForwarder(String(ptyId)))
         }
         return result.emuSequence
       })

@@ -63,14 +63,19 @@ export class KittyTransmitBroker {
   private tempFileCounter = 0;
   private pendingWrites: string[] = [];
   private autoFlush = true;
+  private flushScheduled = false;
+  private flushScheduler: (() => void) | null = null;
+  private stubEmulator = false;
 
   constructor() {
     const thresholdEnv = Number(process.env.OPENMUX_KITTY_OFFLOAD_THRESHOLD ?? '');
     this.offloadThresholdBytes = Number.isFinite(thresholdEnv) && thresholdEnv >= 0
       ? thresholdEnv
-      : 0;
+      : 512 * 1024;
     const cleanupEnv = Number(process.env.OPENMUX_KITTY_OFFLOAD_CLEANUP_MS ?? '');
     this.offloadCleanupDelayMs = Number.isFinite(cleanupEnv) && cleanupEnv >= 0 ? cleanupEnv : 5000;
+    const stubEnv = (process.env.OPENMUX_KITTY_EMULATOR_STUB ?? '').toLowerCase();
+    this.stubEmulator = stubEnv === '1' || stubEnv === 'true';
   }
 
   setWriter(writer: ((chunk: string) => void) | null): void {
@@ -81,11 +86,19 @@ export class KittyTransmitBroker {
     this.autoFlush = enabled;
   }
 
+  setFlushScheduler(scheduler: (() => void) | null): void {
+    this.flushScheduler = scheduler;
+  }
+
   flushPending(writerOverride?: (chunk: string) => void): boolean {
     const writer = writerOverride ?? this.writer;
-    if (!writer || this.pendingWrites.length === 0) return false;
+    if (!writer || this.pendingWrites.length === 0) {
+      this.flushScheduled = false;
+      return false;
+    }
     const payload = this.pendingWrites.join('');
     this.pendingWrites = [];
+    this.flushScheduled = false;
     writer(payload);
     return true;
   }
@@ -110,6 +123,8 @@ export class KittyTransmitBroker {
     this.stateByPty.clear();
     this.writer = null;
     this.pendingWrites = [];
+    this.flushScheduled = false;
+    this.flushScheduler = null;
     for (const timer of this.cleanupTimers) {
       clearTimeout(timer);
     }
@@ -244,13 +259,6 @@ export class KittyTransmitBroker {
       parsed.params.set('i', injectedGuestId);
     }
 
-    const { emuSequence, dropEmulator } = buildEmulatorSequence(
-      parsed,
-      mergedParams,
-      guestKey,
-      state.stubbedGuestKeys
-    );
-
     if (transmit.more) {
       if (!state.pendingChunk) {
         state.pendingChunk = { guestKey, hostId, params: mergedParams, offload: null };
@@ -262,6 +270,23 @@ export class KittyTransmitBroker {
     } else if (!state.pendingChunk?.offload || activeOffload) {
       state.pendingChunk = null;
     }
+
+    let rebuiltSequence: string | null = null;
+    if (shouldInjectId && injectedGuestId) {
+      const rebuiltControl = rebuildControl(parsed.params);
+      rebuiltSequence = `${parsed.prefix}${rebuiltControl};${parsed.data}${parsed.suffix}`;
+    }
+
+    if (!this.stubEmulator) {
+      return rebuiltSequence ?? sequence;
+    }
+
+    const { emuSequence, dropEmulator } = buildEmulatorSequence(
+      parsed,
+      mergedParams,
+      guestKey,
+      state.stubbedGuestKeys
+    );
 
     if (dropEmulator) {
       tracePtyEvent('kitty-broker-emu', {
@@ -281,12 +306,7 @@ export class KittyTransmitBroker {
       return emuSequence;
     }
 
-    if (shouldInjectId && injectedGuestId) {
-      const rebuiltControl = rebuildControl(parsed.params);
-      return `${parsed.prefix}${rebuiltControl};${parsed.data}${parsed.suffix}`;
-    }
-
-    return sequence;
+    return rebuiltSequence ?? sequence;
   }
 
   private getState(ptyId: string): PtyBrokerState {
@@ -386,6 +406,10 @@ export class KittyTransmitBroker {
       return;
     }
     this.pendingWrites.push(chunk);
+    if (!this.flushScheduled) {
+      this.flushScheduled = true;
+      this.flushScheduler?.();
+    }
   }
 }
 
