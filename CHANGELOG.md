@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.79](https://github.com/monotykamary/openmux/compare/v0.2.78...v0.2.79) (2026-01-02)
+
+
+### Features
+
+* **kitty:** add graphics passthrough and pixel sizing ([a09f0ee](https://github.com/monotykamary/openmux/commit/a09f0ee506b9482d367621e54785933f20037aad))
+* **kitty:** clip graphics under overlays ([2bc9acc](https://github.com/monotykamary/openmux/commit/2bc9accf24b0bc66b0c6f88c5b21f58e087acc0a))
+* **kitty:** make offload ssh-aware ([6527c24](https://github.com/monotykamary/openmux/commit/6527c24d4de86b576a885864207b0e3dd6df32b9))
+
+
+### Bug Fixes
+
+* address lint/typecheck and ghostty-vt deps ([2662fae](https://github.com/monotykamary/openmux/commit/2662fae10e39e45578feebafbbc421f7f9bc9252))
+* **kitty:** flush shim updates and stub png relay ([6f09178](https://github.com/monotykamary/openmux/commit/6f09178cb1867d605e645f22b0f2291d2798be20))
+* **kitty:** keep images across pane reshapes ([fb8bc4a](https://github.com/monotykamary/openmux/commit/fb8bc4a671d16d44a2dfe8a80244d005a1d78647))
+* **kitty:** keep images across screen switches ([8c53e20](https://github.com/monotykamary/openmux/commit/8c53e20246d06d4671dc8bed7b21b23b924625fb))
+* **kitty:** relay transmit sequences across shim ([f88c00d](https://github.com/monotykamary/openmux/commit/f88c00dcdb8f6b8b2d358fcfc898a72001d9c462))
+* prevent session overwrite on shutdown ([0ce3f52](https://github.com/monotykamary/openmux/commit/0ce3f52383b4f4333adfb2771333bbb4671ea45b))
+* **pty:** harden query handling and add trace logging ([5ac9b61](https://github.com/monotykamary/openmux/commit/5ac9b613b5872e49bedae04a5812b21ed27751fb))
+
+
+### Performance
+
+* **kitty:** cache transmit sequences for reuse ([aef3e20](https://github.com/monotykamary/openmux/commit/aef3e204fd8e921ff6720cca6db5b210d97aa14d))
+* **kitty:** queue transmit writes ([5214501](https://github.com/monotykamary/openmux/commit/5214501c882441bc1f3556487de6328dad50d9de))
+
+
+### Refactoring
+
+* modularize kitty graphics and shim handlers ([adfd5a3](https://github.com/monotykamary/openmux/commit/adfd5a30513540a50ee896bb5572b3b2a59b99b2))
+* **terminal:** stabilize kitty graphics rendering ([036633c](https://github.com/monotykamary/openmux/commit/036633c7e555e76d5d99d37655f62a092a790c98))
+
+
+### Build System
+
+* **ghostty:** refresh vt patch ([a2bcd06](https://github.com/monotykamary/openmux/commit/a2bcd06354ec46117b81e2d6895c79dab3a89b2c))
+* move patch files to patches directory ([a819927](https://github.com/monotykamary/openmux/commit/a81992735d9ec6e7b8e3cc80ec54603a46b9099f))
+
 ### [0.2.78](https://github.com/monotykamary/openmux/compare/v0.2.77...v0.2.78) (2025-12-30)
 
 
