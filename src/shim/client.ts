@@ -27,6 +27,10 @@ export async function writePty(ptyId: string, data: string): Promise<void> {
   await sendRequest('write', { ptyId, data });
 }
 
+export async function sendFocusEvent(ptyId: string, focused: boolean): Promise<void> {
+  await sendRequest('sendFocusEvent', { ptyId, focused });
+}
+
 export async function resizePty(
   ptyId: string,
   cols: number,

@@ -10,6 +10,10 @@ import { PtySession } from "../../models"
 import type { InternalPtySession } from "./types"
 import { notifySubscribers, notifyScrollSubscribers } from "./notification"
 import type { SubscriptionRegistry } from "./subscription-manager"
+import { tracePtyEvent, tracePtyChunk } from "../../../terminal/pty-trace"
+
+const FOCUS_IN_SEQUENCE = "\x1b[I"
+const FOCUS_OUT_SEQUENCE = "\x1b[O"
 
 export interface OperationsDeps {
   sessionsRef: Ref.Ref<HashMap.HashMap<PtyId, InternalPtySession>>
@@ -31,6 +35,23 @@ export function createOperations(deps: OperationsDeps) {
     }
 
     session.pty.write(data)
+  })
+
+  const sendFocusEvent = Effect.fn("Pty.sendFocusEvent")(function* (
+    id: PtyId,
+    focused: boolean
+  ) {
+    const session = yield* getSessionOrFail(id)
+    session.focusState = focused
+    const sequence = focused ? FOCUS_IN_SEQUENCE : FOCUS_OUT_SEQUENCE
+    tracePtyEvent("pty-focus-send", {
+      ptyId: id,
+      focused,
+      trackingEnabled: session.focusTrackingEnabled,
+    })
+    tracePtyChunk("pty-focus-seq", sequence, { ptyId: id })
+    if (!session.focusTrackingEnabled) return
+    session.pty.write(sequence)
   })
 
   const resize = Effect.fn("Pty.resize")(function* (
@@ -198,6 +219,7 @@ export function createOperations(deps: OperationsDeps) {
 
   return {
     write,
+    sendFocusEvent,
     resize,
     getCwd,
     destroy,

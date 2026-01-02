@@ -41,6 +41,9 @@ export class Pty extends Context.Tag("@openmux/Pty")<
     /** Write data to a PTY */
     readonly write: (id: PtyId, data: string) => Effect.Effect<void, PtyNotFoundError>
 
+    /** Send focus event if focus tracking is enabled */
+    readonly sendFocusEvent: (id: PtyId, focused: boolean) => Effect.Effect<void, PtyNotFoundError>
+
     /** Resize a PTY */
     readonly resize: (
       id: PtyId,
@@ -235,6 +238,7 @@ export class Pty extends Context.Tag("@openmux/Pty")<
       return Pty.of({
         create,
         write: operations.write,
+        sendFocusEvent: operations.sendFocusEvent,
         resize: operations.resize,
         getCwd: operations.getCwd,
         destroy: operations.destroy,
@@ -283,6 +287,8 @@ export class Pty extends Context.Tag("@openmux/Pty")<
           }),
         write: (id, data) =>
           Effect.promise(() => ShimClient.writePty(String(id), data)),
+        sendFocusEvent: (id, focused) =>
+          Effect.promise(() => ShimClient.sendFocusEvent(String(id), focused)),
         resize: (id, cols, rows, pixelWidth, pixelHeight) =>
           Effect.promise(() => ShimClient.resizePty(
             String(id),
@@ -381,6 +387,7 @@ export class Pty extends Context.Tag("@openmux/Pty")<
   static readonly testLayer = Layer.succeed(Pty, {
     create: () => Effect.succeed(makePtyId()),
     write: () => Effect.void,
+    sendFocusEvent: () => Effect.void,
     resize: () => Effect.void,
     getCwd: () => Effect.succeed("/test/cwd"),
     destroy: () => Effect.void,

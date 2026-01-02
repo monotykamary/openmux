@@ -21,7 +21,59 @@ import { prepareShellIntegration } from "./shell-integration"
 
 const DEFAULT_CELL_WIDTH = 8
 const DEFAULT_CELL_HEIGHT = 16
+const DESKTOP_NOTIFICATIONS_ENV = "OPENMUX_DESKTOP_NOTIFICATIONS"
+const DESKTOP_NOTIFICATION_SOUND_ENV = "OPENMUX_NOTIFICATION_SOUND"
+const DEFAULT_NOTIFICATION_TITLE = "openmux"
 
+const APPLE_NOTIFICATION_SCRIPT = `on run argv
+  set theTitle to item 1 of argv
+  set theSubtitle to item 2 of argv
+  set theBody to item 3 of argv
+  set theSound to item 4 of argv
+
+  if theSubtitle is "" then
+    if theSound is "" then
+      display notification theBody with title theTitle
+    else
+      display notification theBody with title theTitle sound name theSound
+    end if
+  else
+    if theSound is "" then
+      display notification theBody with title theTitle subtitle theSubtitle
+    else
+      display notification theBody with title theTitle subtitle theSubtitle sound name theSound
+    end if
+  end if
+end run`
+
+function desktopNotificationsEnabled(): boolean {
+  if (process.platform !== "darwin") return false
+  const raw = (process.env[DESKTOP_NOTIFICATIONS_ENV] ?? "").toLowerCase()
+  if (raw === "0" || raw === "false" || raw === "off") return false
+  return true
+}
+
+function sendMacOsNotification(params: { title: string; subtitle?: string; body: string }): void {
+  if (!desktopNotificationsEnabled()) return
+  if (typeof Bun === "undefined" || typeof Bun.spawn !== "function") return
+
+  const title = params.title.trim() || DEFAULT_NOTIFICATION_TITLE
+  const body = params.body.trim()
+  if (!body) return
+
+  const subtitle = params.subtitle?.trim() ?? ""
+  const sound = (process.env[DESKTOP_NOTIFICATION_SOUND_ENV] ?? "").trim()
+
+  try {
+    const proc = Bun.spawn(
+      ["osascript", "-e", APPLE_NOTIFICATION_SCRIPT, "--", title, subtitle, body, sound],
+      { stdout: "ignore", stderr: "ignore" }
+    )
+    proc.exited.catch(() => {})
+  } catch {
+    // Ignore notification failures (e.g., missing osascript)
+  }
+}
 
 export interface SessionFactoryDeps {
   colors: TerminalColors
@@ -132,6 +184,8 @@ export function createSession(
       exitCallbacks: new Set(),
       titleSubscribers: new Set(),
       lastCommand: null,
+      focusTrackingEnabled: false,
+      focusState: false,
       pendingNotify: false,
       scrollState: { viewportOffset: 0, lastScrollbackLength: 0 },
     }
@@ -178,6 +232,14 @@ export function createSession(
       shellName,
       onCommand: (command: string) => {
         session.lastCommand = command
+      },
+      onNotification: (notification) => {
+        const subtitle = session.emulator.getTitle() || session.lastCommand || ""
+        sendMacOsNotification({
+          title: notification.title,
+          subtitle,
+          body: notification.body,
+        })
       },
     })
 

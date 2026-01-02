@@ -21,13 +21,22 @@ async function main() {
   const { ConsolePosition } = await import('@opentui/core');
   const { App } = await import('./App');
   const { detectHostCapabilities } = await import('./terminal');
-  const { onMount } = await import('solid-js');
+  const { onMount, onCleanup } = await import('solid-js');
   const { createPasteInterceptingStdin } = await import('./terminal/paste-intercepting-stdin');
   const { triggerClipboardPaste } = await import('./terminal/focused-pty-registry');
 
   // Wrapper component that handles kitty keyboard setup after render
   function AppWithSetup() {
     const renderer = useRenderer();
+
+    const writeHostSequence = (sequence: string) => {
+      const stdout = (renderer as any).stdout ?? process.stdout;
+      const writeOut = (renderer as any).realStdoutWrite ?? stdout.write.bind(stdout);
+      writeOut.call(stdout, sequence);
+      if (stdout.isTTY) {
+        (stdout as any)._handle?.flush?.();
+      }
+    };
 
     onMount(() => {
       // Enable kitty keyboard protocol AFTER renderer setup
@@ -38,13 +47,14 @@ async function main() {
       // See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
       renderer.enableKittyKeyboard(3);
       // Use set mode to ensure report_events is enabled in Ghostty.
-      const stdout = (renderer as any).stdout ?? process.stdout;
-      const writeOut = (renderer as any).realStdoutWrite ?? stdout.write.bind(stdout);
-      writeOut.call(stdout, '\x1b[=3;1u');
-      // Force flush
-      if (stdout.isTTY) {
-        (stdout as any)._handle?.flush?.();
-      }
+      writeHostSequence('\x1b[=3;1u');
+      // Enable focus-in/out events from the host terminal.
+      writeHostSequence('\x1b[?1004h');
+    });
+
+    onCleanup(() => {
+      // Disable focus tracking so we don't pollute the parent shell.
+      writeHostSequence('\x1b[?1004l');
     });
 
     return <App />;

@@ -5,7 +5,7 @@
 import type { SyncModeParser } from "../../../terminal/sync-mode-parser"
 import type { InternalPtySession } from "./types"
 import { deferMacrotask } from "../../../core/scheduling"
-import { tracePtyChunk } from "../../../terminal/pty-trace"
+import { tracePtyChunk, tracePtyEvent } from "../../../terminal/pty-trace"
 
 interface DataHandlerOptions {
   session: InternalPtySession
@@ -24,6 +24,13 @@ interface DataHandlerState {
 
 const ESC = "\x1b"
 const APC_C1 = "\x9f"
+const FOCUS_TRACKING_ENABLE = "\x1b[?1004h"
+const FOCUS_TRACKING_DISABLE = "\x1b[?1004l"
+const FOCUS_TRACKING_ENABLE_C1 = "\x9b?1004h"
+const FOCUS_TRACKING_DISABLE_C1 = "\x9b?1004l"
+const FOCUS_IN_SEQUENCE = "\x1b[I"
+const FOCUS_OUT_SEQUENCE = "\x1b[O"
+const FOCUS_TRACKING_PROBE_LEN = 16
 
 /**
  * Creates the PTY data handler that processes incoming data
@@ -44,6 +51,7 @@ export function createDataHandler(options: DataHandlerOptions) {
     processedCounter: 0,
   }
   let kittyProbeBuffer = ""
+  let focusProbeBuffer = ""
 
   const analyzeKitty = (data: string): { hasKittyApc: boolean; hasKittyQuery: boolean } => {
     if (data.length === 0) return { hasKittyApc: false, hasKittyQuery: false }
@@ -52,6 +60,42 @@ export function createDataHandler(options: DataHandlerOptions) {
     const hasKittyApc = combined.includes(`${ESC}_G`) || combined.includes(`${APC_C1}G`)
     const hasKittyQuery = hasKittyApc && combined.includes("a=q")
     return { hasKittyApc, hasKittyQuery }
+  }
+
+  const updateFocusTracking = (data: string) => {
+    if (data.length === 0) return
+    const combined = focusProbeBuffer + data
+
+    const lastEnable = Math.max(
+      combined.lastIndexOf(FOCUS_TRACKING_ENABLE),
+      combined.lastIndexOf(FOCUS_TRACKING_ENABLE_C1)
+    )
+    const lastDisable = Math.max(
+      combined.lastIndexOf(FOCUS_TRACKING_DISABLE),
+      combined.lastIndexOf(FOCUS_TRACKING_DISABLE_C1)
+    )
+
+    if (lastEnable !== -1 || lastDisable !== -1) {
+      const wasEnabled = session.focusTrackingEnabled
+      session.focusTrackingEnabled = lastEnable > lastDisable
+
+      if (session.focusTrackingEnabled !== wasEnabled) {
+        tracePtyEvent("pty-focus-tracking", {
+          ptyId: session.id,
+          enabled: session.focusTrackingEnabled,
+        })
+      }
+
+      if (!wasEnabled && session.focusTrackingEnabled) {
+        tracePtyEvent("pty-focus-sync", {
+          ptyId: session.id,
+          focused: session.focusState,
+        })
+        session.pty.write(session.focusState ? FOCUS_IN_SEQUENCE : FOCUS_OUT_SEQUENCE)
+      }
+    }
+
+    focusProbeBuffer = combined.slice(-FOCUS_TRACKING_PROBE_LEN)
   }
 
   const flushPendingResponses = () => {
@@ -156,6 +200,7 @@ export function createDataHandler(options: DataHandlerOptions) {
   // The data handler function
   const handleData = (data: string) => {
     tracePtyChunk("pty-in", data, { ptyId: session.id })
+    updateFocusTracking(data)
     const kittySignals = analyzeKitty(data)
     const hasKittyQuery = kittySignals.hasKittyQuery
     let textData: string

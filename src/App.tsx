@@ -2,7 +2,7 @@
  * Main App component for openmux
  */
 
-import { createSignal, createEffect, onCleanup, on } from 'solid-js';
+import { createSignal, createEffect, onCleanup, on, onMount } from 'solid-js';
 import { useTerminalDimensions, useRenderer } from '@opentui/solid';
 import {
   ConfigProvider,
@@ -34,7 +34,7 @@ import {
   createPasteHandler,
 } from './components/app';
 import { setFocusedPty, setClipboardPasteHandler } from './terminal/focused-pty-registry';
-import { readFromClipboard } from './effect/bridge';
+import { readFromClipboard, sendPtyFocusEvent } from './effect/bridge';
 import { handleNormalModeAction } from './contexts/keyboard/handlers';
 import { createCommandPaletteState } from './components/app/command-palette-state';
 import { deferNextTick } from './core/scheduling';
@@ -65,7 +65,14 @@ function AppContent() {
   const { setViewport, newPane, closePane } = layout;
   // Don't destructure isInitialized - it's a reactive getter that loses reactivity when destructured
   const terminal = useTerminal();
-  const { destroyPTY, resizePTY, writeToFocused, writeToPTY, pasteToFocused, getFocusedEmulator } = terminal;
+  const {
+    destroyPTY,
+    resizePTY,
+    writeToFocused,
+    writeToPTY,
+    pasteToFocused,
+    getFocusedEmulator,
+  } = terminal;
   const session = useSession();
   const { togglePicker, toggleTemplateOverlay, state: sessionState, saveSession, suspendPersistence } = session;
   // Keep selection/search contexts to access reactive getters
@@ -77,6 +84,15 @@ function AppContent() {
   const keyboardState = useKeyboardState();
   const { enterConfirmMode, exitConfirmMode, exitSearchMode: keyboardExitSearchMode } = keyboardState;
   const renderer = useRenderer();
+
+  const [isHostFocused, setIsHostFocused] = createSignal(true);
+
+  const FOCUS_IN_SEQUENCE = '\x1b[I';
+  const FOCUS_OUT_SEQUENCE = '\x1b[O';
+
+  const sendFocusEvent = (ptyId: string, focused: boolean) => {
+    void sendPtyFocusEvent(ptyId, focused);
+  };
 
   const { commandPaletteState, setCommandPaletteState, toggleCommandPalette } = createCommandPaletteState();
 
@@ -188,10 +204,54 @@ function AppContent() {
     handleShimDetached: exitHandlers.handleShimDetached,
   });
 
+  onMount(() => {
+    const handleFocusSequence = (sequence: string) => {
+      if (sequence === FOCUS_IN_SEQUENCE) {
+        setIsHostFocused(true);
+        return true;
+      }
+      if (sequence === FOCUS_OUT_SEQUENCE) {
+        setIsHostFocused(false);
+        return true;
+      }
+      return false;
+    };
+
+    const rendererAny = renderer as any;
+    if (typeof rendererAny.prependInputHandler === 'function') {
+      rendererAny.prependInputHandler(handleFocusSequence);
+    }
+
+    onCleanup(() => {
+      if (typeof rendererAny.removeInputHandler === 'function') {
+        rendererAny.removeInputHandler(handleFocusSequence);
+      }
+    });
+  });
+
   // Keep the focused PTY registry in sync with the current workspace focus
   createEffect(() => {
     const focusedPtyId = getFocusedPtyId(layout.activeWorkspace);
     setFocusedPty(focusedPtyId ?? null);
+  });
+
+  let lastEffectiveFocusedPtyId: string | undefined;
+  createEffect(() => {
+    const focusedPtyId = getFocusedPtyId(layout.activeWorkspace);
+    const effectiveFocusedPtyId = isHostFocused() ? focusedPtyId : undefined;
+
+    if (effectiveFocusedPtyId === lastEffectiveFocusedPtyId) {
+      return;
+    }
+
+    if (lastEffectiveFocusedPtyId) {
+      sendFocusEvent(lastEffectiveFocusedPtyId, false);
+    }
+    if (effectiveFocusedPtyId) {
+      sendFocusEvent(effectiveFocusedPtyId, true);
+    }
+
+    lastEffectiveFocusedPtyId = effectiveFocusedPtyId;
   });
 
   const { handleNewPane, handleSplitPane } = usePtyCreation({

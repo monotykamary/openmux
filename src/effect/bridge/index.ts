@@ -13,6 +13,7 @@ export { copyToClipboard, readFromClipboard } from "./clipboard-bridge"
 export {
   createPtySession,
   writeToPty,
+  sendPtyFocusEvent,
   resizePty,
   getPtyCwd,
   getPtyForegroundProcess,

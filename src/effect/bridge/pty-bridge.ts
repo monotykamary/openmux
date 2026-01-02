@@ -49,6 +49,18 @@ export async function writeToPty(ptyId: string, data: string): Promise<void> {
 }
 
 /**
+ * Send focus event to a PTY if enabled.
+ */
+export async function sendPtyFocusEvent(ptyId: string, focused: boolean): Promise<void> {
+  await runEffectIgnore(
+    Effect.gen(function* () {
+      const pty = yield* Pty
+      yield* pty.sendFocusEvent(PtyId.make(ptyId), focused)
+    })
+  )
+}
+
+/**
  * Resize a PTY session.
  */
 export async function resizePty(

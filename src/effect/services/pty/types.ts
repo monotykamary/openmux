@@ -35,6 +35,10 @@ export interface InternalPtySession {
   titleSubscribers: Set<(title: string) => void>
   /** Last command captured from shell hooks (OSC 777) */
   lastCommand: string | null
+  /** Whether focus tracking (DECSET 1004) is enabled for this PTY */
+  focusTrackingEnabled: boolean
+  /** Last focus state requested by the UI */
+  focusState: boolean
   pendingNotify: boolean
   scrollState: {
     viewportOffset: number

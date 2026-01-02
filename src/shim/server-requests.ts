@@ -85,6 +85,14 @@ export function createRequestHandler(params: {
           params.sendResponse(socket, requestId);
           return;
 
+        case 'sendFocusEvent':
+          await params.withPty((pty) => pty.sendFocusEvent(
+            PtyId.make(requestParams.ptyId as string),
+            Boolean(requestParams.focused)
+          ));
+          params.sendResponse(socket, requestId);
+          return;
+
         case 'resize':
           await params.withPty((pty) => pty.resize(
             PtyId.make(requestParams.ptyId as string),

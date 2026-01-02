@@ -66,3 +66,4 @@ export function triggerClipboardPaste(): boolean {
 export function getFocusedPtyId(): string | null {
   return focusedPtyId;
 }
+
