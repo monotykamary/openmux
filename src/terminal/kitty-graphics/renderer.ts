@@ -1,29 +1,29 @@
 import { getHostCapabilities } from '../capabilities';
-import type { ITerminalEmulator, KittyGraphicsImageInfo } from '../emulator-interface';
+import type { ITerminalEmulator } from '../emulator-interface';
 import { buildDeleteImage, buildDeletePlacement, buildDisplay, buildTransmitImage } from './commands';
 import { applyClipRects, computePlacementRender } from './geometry';
 import { getKittyTransmitBroker } from './transmit-broker';
 import { tracePtyEvent } from '../pty-trace';
+import {
+  buildScreenKey,
+  getCellMetrics,
+  getScreenKeys,
+  getWriter,
+  isSameImage,
+  isSameRender,
+} from './renderer-helpers';
 import type {
   ClipRect,
+  CellMetrics,
   KittyPaneLayer,
   PaneState,
   PlacementRender,
   PtyKittyState,
   RendererLike,
   ImageCache,
-  CellMetrics,
 } from './types';
 
 let activeKittyRenderer: KittyGraphicsRenderer | null = null;
-
-const buildScreenKey = (ptyId: string, isAlternateScreen: boolean): string =>
-  `${ptyId}:${isAlternateScreen ? 'alt' : 'main'}`;
-
-const getScreenKeys = (ptyId: string): string[] => [
-  buildScreenKey(ptyId, false),
-  buildScreenKey(ptyId, true),
-];
 
 export function getKittyGraphicsRenderer(): KittyGraphicsRenderer | null {
   return activeKittyRenderer;
@@ -167,13 +167,13 @@ export class KittyGraphicsRenderer {
   flush(renderer: RendererLike): void {
     if (!this.enabled) return;
 
-    const writeOut = this.getWriter(renderer);
+    const writeOut = getWriter(renderer);
     if (!writeOut) return;
 
     const broker = getKittyTransmitBroker();
     const flushedBroker = broker?.flushPending(writeOut) ?? false;
 
-    const metrics = this.getCellMetrics(renderer);
+    const metrics = getCellMetrics(renderer);
     if (!metrics) {
       if (flushedBroker) return;
       return;
@@ -288,31 +288,6 @@ export class KittyGraphicsRenderer {
     writeOut(output.join(''));
   }
 
-  private getCellMetrics(renderer: RendererLike): CellMetrics | null {
-    const resolution = renderer.resolution ?? null;
-    const terminalWidth = renderer.width || renderer.terminalWidth || 0;
-    const terminalHeight = renderer.height || renderer.terminalHeight || 0;
-    if (!resolution || terminalWidth <= 0 || terminalHeight <= 0) return null;
-
-    const cellWidth = Math.max(1, Math.floor(resolution.width / terminalWidth));
-    const cellHeight = Math.max(1, Math.floor(resolution.height / terminalHeight));
-    return { cellWidth, cellHeight };
-  }
-
-  private getWriter(renderer: RendererLike): ((chunk: string) => void) | null {
-    if (typeof renderer.writeOut === 'function') {
-      return renderer.writeOut.bind(renderer);
-    }
-
-    const stdout = renderer.stdout ?? process.stdout;
-    const writer = renderer.realStdoutWrite ?? stdout.write.bind(stdout);
-    if (!writer) return null;
-
-    return (chunk: string) => {
-      writer.call(stdout, chunk);
-    };
-  }
-
   private getScreenState(screenKey: string): PtyKittyState {
     let state = this.screenStates.get(screenKey);
     if (!state) {
@@ -369,8 +344,8 @@ export class KittyGraphicsRenderer {
       const previous = registry.get(id);
       const brokerHostId = broker?.resolveHostId(ptyId, info) ?? null;
       const hostId = brokerHostId ?? previous?.hostId ?? this.nextHostImageId++;
-      const changed = !previous || !this.isSameImage(previous.info, info);
-      if (!previousScreen || !this.isSameImage(previousScreen.info, info)) {
+      const changed = !previous || !isSameImage(previous.info, info);
+      if (!previousScreen || !isSameImage(previousScreen.info, info)) {
         imagesChanged = true;
       }
 
@@ -438,17 +413,6 @@ export class KittyGraphicsRenderer {
     }
   }
 
-  private isSameImage(a: KittyGraphicsImageInfo, b: KittyGraphicsImageInfo): boolean {
-    return (
-      a.transmitTime === b.transmitTime &&
-      a.dataLength === b.dataLength &&
-      a.width === b.width &&
-      a.height === b.height &&
-      a.format === b.format &&
-      a.compression === b.compression
-    );
-  }
-
   private deletePlacementsForImage(imageId: number, output: string[]): void {
     for (const [paneKey, placements] of this.placementsByPane) {
       for (const [key, placement] of placements) {
@@ -507,7 +471,7 @@ export class KittyGraphicsRenderer {
         const renderState: PlacementRender = { ...render, hostImageId: image.hostId, hostPlacementId };
 
         nextPlacements.set(render.key, renderState);
-        if (!existing || !this.isSameRender(existing, renderState)) {
+        if (!existing || !isSameRender(existing, renderState)) {
           output.push(buildDisplay(renderState));
         }
       }
@@ -534,20 +498,4 @@ export class KittyGraphicsRenderer {
     }
   }
 
-  private isSameRender(a: PlacementRender, b: PlacementRender): boolean {
-    return (
-      a.globalRow === b.globalRow &&
-      a.globalCol === b.globalCol &&
-      a.columns === b.columns &&
-      a.rows === b.rows &&
-      a.xOffset === b.xOffset &&
-      a.yOffset === b.yOffset &&
-      a.sourceX === b.sourceX &&
-      a.sourceY === b.sourceY &&
-      a.sourceWidth === b.sourceWidth &&
-      a.sourceHeight === b.sourceHeight &&
-      a.z === b.z &&
-      a.hostImageId === b.hostImageId
-    );
-  }
 }

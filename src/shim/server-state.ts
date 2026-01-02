@@ -19,6 +19,7 @@ export type ShimServerState = {
   kittyImages: Map<string, KittyScreenImages>;
   kittyTransmitCache: Map<string, Map<string, string[]>>;
   kittyTransmitPending: Map<string, Map<string, string[]>>;
+  kittyTransmitInvalidated: Map<string, { all: boolean; keys: Set<string> }>;
   lifecycleUnsub: (() => void) | null;
   titleUnsub: (() => void) | null;
   activeClient: net.Socket | null;
@@ -37,6 +38,7 @@ export function createShimServerState(): ShimServerState {
     kittyImages: new Map(),
     kittyTransmitCache: new Map(),
     kittyTransmitPending: new Map(),
+    kittyTransmitInvalidated: new Map(),
     lifecycleUnsub: null,
     titleUnsub: null,
     activeClient: null,
@@ -55,6 +57,7 @@ export function resetShimServerState(state: ShimServerState): void {
   state.kittyImages.clear();
   state.kittyTransmitCache.clear();
   state.kittyTransmitPending.clear();
+  state.kittyTransmitInvalidated.clear();
   state.lifecycleUnsub = null;
   state.titleUnsub = null;
   state.activeClient = null;

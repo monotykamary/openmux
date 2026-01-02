@@ -36,28 +36,7 @@ import type { TerminalQuery } from './types';
 import { parseTerminalQueries } from './parser';
 import { tracePtyEvent } from '../pty-trace';
 import { findIncompleteSequenceStart, stripKittyResponses } from './utils';
-import { KNOWN_CAPABILITIES, KNOWN_MODES, DEFAULT_PALETTE } from './constants';
-import {
-  hexToString,
-  generateCprResponse,
-  generateDecxcprResponse,
-  generateStatusOkResponse,
-  generateDa1Response,
-  generateDa2Response,
-  generateDa3Response,
-  generateOscFgResponse,
-  generateOscBgResponse,
-  generateOscCursorResponse,
-  generateOscPaletteResponse,
-  generateDecrpmResponse,
-  generateXtgettcapResponse,
-  generateXtwinopsResponse,
-  generateXtversionResponse,
-  generateKittyKeyboardResponse,
-  generateDecrqssValidResponse,
-  generateDecrqssInvalidResponse,
-  generateOscClipboardEmptyResponse,
-} from './responses';
+import { handleTerminalQuery } from './query-handlers';
 
 const ESC = '\x1b';
 const APC_C1 = '\x9f';
@@ -256,210 +235,18 @@ export class TerminalQueryPassthrough {
    */
   private handleQuery(query: TerminalQuery): void {
     if (!this.ptyWriter) return;
-
-    tracePtyEvent('query-handle', {
-      queryType: query.type,
-      mode: query.type === 'decrqm' ? query.mode : undefined,
-      winop: query.type === 'xtwinops' ? query.winop : undefined,
+    handleTerminalQuery(query, {
+      write: this.ptyWriter,
+      cursorGetter: this.cursorGetter,
+      colorsGetter: this.colorsGetter,
+      modeGetter: this.modeGetter,
+      paletteGetter: this.paletteGetter,
+      sizeGetter: this.sizeGetter,
+      kittyKeyboardFlags: this.kittyKeyboardFlags,
+      kittyKeyboardFlagsGetter: this.kittyKeyboardFlagsGetter,
+      terminalVersion: this.terminalVersion,
+      cursorColor: this.cursorColor,
     });
-
-    if (query.type === 'cpr') {
-      // Get cursor position from emulator
-      const cursor = this.cursorGetter?.() ?? { x: 0, y: 0 };
-      const response = generateCprResponse(cursor.y, cursor.x);
-      this.ptyWriter(response);
-    } else if (query.type === 'decxcpr') {
-      // Extended cursor position report
-      const cursor = this.cursorGetter?.() ?? { x: 0, y: 0 };
-      const response = generateDecxcprResponse(cursor.y, cursor.x);
-      this.ptyWriter(response);
-    } else if (query.type === 'status') {
-      // Device is OK
-      const response = generateStatusOkResponse();
-      this.ptyWriter(response);
-    } else if (query.type === 'osc-fg') {
-      // Get foreground color
-      const colors = this.colorsGetter?.() ?? { foreground: 0xFFFFFF, background: 0x000000 };
-      const r = (colors.foreground >> 16) & 0xFF;
-      const g = (colors.foreground >> 8) & 0xFF;
-      const b = colors.foreground & 0xFF;
-      const response = generateOscFgResponse(r, g, b);
-      this.ptyWriter(response);
-    } else if (query.type === 'da1') {
-      // Primary Device Attributes - report VT220 capabilities
-      const response = generateDa1Response();
-      this.ptyWriter(response);
-    } else if (query.type === 'da2') {
-      // Secondary Device Attributes - report VT500 type
-      const response = generateDa2Response();
-      this.ptyWriter(response);
-    } else if (query.type === 'da3') {
-      // Tertiary Device Attributes - report unit ID
-      const response = generateDa3Response();
-      this.ptyWriter(response);
-    } else if (query.type === 'xtversion') {
-      // Terminal version query
-      const response = generateXtversionResponse('openmux', this.terminalVersion);
-      this.ptyWriter(response);
-    } else if (query.type === 'decrqm') {
-      // Request DEC private mode
-      const mode = query.mode ?? 0;
-      let value: 0 | 1 | 2 | 3 | 4 = 0; // Default to "not recognized"
-
-      // First check if we have a mode getter that can provide live state
-      if (this.modeGetter) {
-        const state = this.modeGetter(mode);
-        if (state !== null) {
-          value = state ? 1 : 2; // 1 = set, 2 = reset
-        } else if (mode in KNOWN_MODES) {
-          value = KNOWN_MODES[mode];
-        }
-      } else if (mode in KNOWN_MODES) {
-        value = KNOWN_MODES[mode];
-      }
-
-      const response = generateDecrpmResponse(mode, value);
-      this.ptyWriter(response);
-    } else if (query.type === 'xtgettcap') {
-      // Termcap/terminfo query
-      const caps = new Map<string, string | null>();
-      for (const hexName of query.capabilities ?? []) {
-        const name = hexToString(hexName);
-        if (name in KNOWN_CAPABILITIES) {
-          caps.set(name, KNOWN_CAPABILITIES[name]);
-        } else {
-          caps.set(name, null); // Unknown capability
-        }
-      }
-      const response = generateXtgettcapResponse(caps);
-      this.ptyWriter(response);
-    } else if (query.type === 'kitty-keyboard') {
-      // Kitty keyboard protocol query
-      const flags = this.kittyKeyboardFlagsGetter
-        ? this.kittyKeyboardFlagsGetter()
-        : this.kittyKeyboardFlags;
-      const response = generateKittyKeyboardResponse(flags);
-      this.ptyWriter(response);
-    } else if (query.type === 'osc-bg') {
-      // Get background color
-      const colors = this.colorsGetter?.() ?? { foreground: 0xFFFFFF, background: 0x000000 };
-      const r = (colors.background >> 16) & 0xFF;
-      const g = (colors.background >> 8) & 0xFF;
-      const b = colors.background & 0xFF;
-      const response = generateOscBgResponse(r, g, b);
-      this.ptyWriter(response);
-    } else if (query.type === 'osc-cursor') {
-      // Get cursor color
-      const r = (this.cursorColor >> 16) & 0xFF;
-      const g = (this.cursorColor >> 8) & 0xFF;
-      const b = this.cursorColor & 0xFF;
-      const response = generateOscCursorResponse(r, g, b);
-      this.ptyWriter(response);
-    } else if (query.type === 'osc-palette') {
-      // Get palette color by index
-      const index = query.colorIndex ?? 0;
-      let color: number;
-      if (this.paletteGetter) {
-        const customColor = this.paletteGetter(index);
-        color = customColor ?? (DEFAULT_PALETTE[index] ?? 0);
-      } else {
-        color = DEFAULT_PALETTE[index] ?? 0;
-      }
-      const r = (color >> 16) & 0xFF;
-      const g = (color >> 8) & 0xFF;
-      const b = color & 0xFF;
-      const response = generateOscPaletteResponse(index, r, g, b);
-      this.ptyWriter(response);
-    } else if (query.type === 'xtwinops') {
-      // Window size queries
-      const winop = query.winop ?? 18;
-      tracePtyEvent('xtwinops-start', { winop });
-      try {
-        if (this.sizeGetter) {
-          const size = this.sizeGetter();
-          tracePtyEvent('xtwinops-size', {
-            winop,
-            cols: size.cols,
-            rows: size.rows,
-            pixelWidth: size.pixelWidth,
-            pixelHeight: size.pixelHeight,
-            cellWidth: size.cellWidth,
-            cellHeight: size.cellHeight,
-          });
-          let height: number, width: number;
-          switch (winop) {
-            case 14: // Window size in pixels
-              height = size.pixelHeight;
-              width = size.pixelWidth;
-              break;
-            case 16: // Cell size in pixels
-              height = size.cellHeight;
-              width = size.cellWidth;
-              break;
-            case 18: // Text area in characters
-            default:
-              height = size.rows;
-              width = size.cols;
-              break;
-          }
-          const response = generateXtwinopsResponse(winop, height, width);
-          tracePtyEvent('xtwinops-response', { winop, height, width, len: response.length });
-          this.ptyWriter(response);
-          tracePtyEvent('xtwinops-response-written', { winop, len: response.length });
-        } else {
-          // Fallback to default sizes
-          const response = generateXtwinopsResponse(winop, 24, 80);
-          tracePtyEvent('xtwinops-response', { winop, height: 24, width: 80, len: response.length });
-          this.ptyWriter(response);
-          tracePtyEvent('xtwinops-response-written', { winop, len: response.length });
-        }
-      } catch (err) {
-        tracePtyEvent('xtwinops-error', { winop, error: err });
-      }
-    } else if (query.type === 'osc-clipboard') {
-      // Clipboard query - respond with empty for security
-      // Apps should not be able to read clipboard through terminal queries
-      const selection = query.clipboardSelection ?? 'c';
-      const response = generateOscClipboardEmptyResponse(selection);
-      this.ptyWriter(response);
-    } else if (query.type === 'decrqss') {
-      // Request status string - respond based on status type
-      const statusType = query.statusType ?? '';
-      let response: string;
-
-      switch (statusType) {
-        case 'm':
-          // SGR (Select Graphic Rendition) - return reset state
-          response = generateDecrqssValidResponse('0m');
-          break;
-        case ' q':
-          // DECSCUSR (Cursor Style) - return blinking block (default)
-          response = generateDecrqssValidResponse('1 q');
-          break;
-        case '"q':
-          // DECSCA (Select Character Attribute) - return not protected
-          response = generateDecrqssValidResponse('0"q');
-          break;
-        case 'r':
-          // DECSTBM (Top and Bottom Margins) - return full screen
-          if (this.sizeGetter) {
-            const size = this.sizeGetter();
-            response = generateDecrqssValidResponse(`1;${size.rows}r`);
-          } else {
-            response = generateDecrqssValidResponse('1;24r');
-          }
-          break;
-        case '"p':
-          // DECSCL (Conformance Level) - return VT220
-          response = generateDecrqssValidResponse('62;1"p');
-          break;
-        default:
-          // Unknown status type
-          response = generateDecrqssInvalidResponse();
-          break;
-      }
-      this.ptyWriter(response);
-    }
   }
 
   /**
