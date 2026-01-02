@@ -4,8 +4,8 @@
 
 import { ghostty } from "./ffi";
 import type { Pointer } from "bun:ffi";
-import { DirtyState } from "./types";
 import type {
+  DirtyState,
   GhosttyCell,
   GhosttyTerminalConfig,
   GhosttyKittyImageInfo,

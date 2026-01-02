@@ -101,11 +101,14 @@ export function createSession(
     })
 
     if (hasPixels && "resizeWithPixels" in pty) {
-      try {
-        pty.resizeWithPixels(cols, rows, pixelWidth!, pixelHeight!)
-      } catch {
-        // Ignore failures; we will fall back to default sizing.
-      }
+      yield* Effect.try({
+        try: () => {
+          pty.resizeWithPixels(cols, rows, pixelWidth!, pixelHeight!)
+        },
+        catch: () => new Error("resizeWithPixels failed"),
+      }).pipe(
+        Effect.catchAll(() => Effect.void)
+      )
     }
 
     const session: InternalPtySession = {

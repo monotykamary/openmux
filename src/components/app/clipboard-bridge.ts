@@ -3,7 +3,7 @@ import { onCleanup, onMount } from 'solid-js';
 export function setupClipboardAndShimBridge(params: {
   setClipboardPasteHandler: (handler: (ptyId: string) => void) => void;
   readFromClipboard: () => Promise<string | null>;
-  writeToPTY: (ptyId: string, data: string) => Promise<void>;
+  writeToPTY: (ptyId: string, data: string) => void | Promise<void>;
   onShimDetached: (handler: () => void) => () => void;
   handleShimDetached: () => void;
 }) {
@@ -32,7 +32,7 @@ export function setupClipboardAndShimBridge(params: {
         // Send complete paste atomically with brackets
         // Apps with bracketed paste mode expect the entire paste between markers
         const fullPaste = PASTE_START + clipboardText + PASTE_END;
-        await writeToPTY(ptyId, fullPaste);
+        await Promise.resolve(writeToPTY(ptyId, fullPaste));
       } catch (err) {
         console.error('Clipboard paste error:', err);
       }

@@ -209,8 +209,11 @@ export function createServerHandlers(state: ShimServerState, options?: ShimServe
     a.compression === b.compression
   );
 
-  const toArrayBuffer = (data: Uint8Array): ArrayBuffer =>
-    data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+  const toArrayBuffer = (data: Uint8Array): ArrayBuffer => {
+    const copy = new Uint8Array(data.byteLength);
+    copy.set(data);
+    return copy.buffer;
+  };
 
   const sendKittyTransmit = (ptyId: string, sequence: string): void => {
     if (!state.activeClient) return;

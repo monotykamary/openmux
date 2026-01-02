@@ -10,8 +10,6 @@
 
 import { queryHostColors, type TerminalColors } from './terminal-colors';
 
-const ESC = '\x1b';
-
 export interface TerminalCapabilities {
   /** Host terminal name (e.g., "ghostty", "kitty", "iterm2") */
   terminalName: string | null;

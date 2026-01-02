@@ -251,10 +251,15 @@ export class KittyTransmitBroker {
       shouldInjectId = true;
     }
 
-    let hostId = state.hostIdByGuestKey.get(guestKey);
+    if (!guestKey) {
+      return sequence;
+    }
+
+    const resolvedGuestKey = guestKey;
+    let hostId = state.hostIdByGuestKey.get(resolvedGuestKey);
     if (!hostId) {
       hostId = this.nextHostImageId++;
-      state.hostIdByGuestKey.set(guestKey, hostId);
+      state.hostIdByGuestKey.set(resolvedGuestKey, hostId);
     }
 
     const mergedParams = mergeTransmitParams(state.pendingChunk?.params ?? null, transmit);
@@ -272,17 +277,17 @@ export class KittyTransmitBroker {
         if (hostSequence.length > 0) {
           this.enqueue(hostSequence);
         }
-        const hostControl = process.env.OPENMUX_PTY_TRACE
-          ? parseKittySequence(hostSequence)?.control ?? ''
-          : '';
-        tracePtyEvent('kitty-broker-host', {
-          ptyId,
-          hostId,
-          guestKey,
-          offload: true,
-          filePath,
-          bytesWritten: offload.bytesWritten,
-          control: hostControl,
+      const hostControl = process.env.OPENMUX_PTY_TRACE
+        ? parseKittySequence(hostSequence)?.control ?? ''
+        : '';
+      tracePtyEvent('kitty-broker-host', {
+        ptyId,
+        hostId,
+        guestKey: resolvedGuestKey,
+        offload: true,
+        filePath,
+        bytesWritten: offload.bytesWritten,
+        control: hostControl,
         });
         this.scheduleCleanup(filePath);
       }
@@ -297,7 +302,7 @@ export class KittyTransmitBroker {
       tracePtyEvent('kitty-broker-host', {
         ptyId,
         hostId,
-        guestKey,
+        guestKey: resolvedGuestKey,
         offload: false,
         dataLen: parsed.data.length,
         control: hostControl,
@@ -310,9 +315,9 @@ export class KittyTransmitBroker {
 
     if (transmit.more) {
       if (!state.pendingChunk) {
-        state.pendingChunk = { guestKey, hostId, params: mergedParams, offload: null };
+        state.pendingChunk = { guestKey: resolvedGuestKey, hostId, params: mergedParams, offload: null };
       } else {
-        state.pendingChunk.guestKey = guestKey;
+        state.pendingChunk.guestKey = resolvedGuestKey;
         state.pendingChunk.hostId = hostId;
         state.pendingChunk.params = mergedParams;
       }
@@ -334,7 +339,7 @@ export class KittyTransmitBroker {
     const { emuSequence, dropEmulator } = buildEmulatorSequence(
       parsed,
       mergedParams,
-      guestKey,
+      resolvedGuestKey,
       state.stubbedGuestKeys,
       shouldStubSharedMemory
     );
@@ -342,7 +347,7 @@ export class KittyTransmitBroker {
     if (dropEmulator) {
       tracePtyEvent('kitty-broker-emu', {
         ptyId,
-        guestKey,
+        guestKey: resolvedGuestKey,
         drop: true,
       });
       return '';
@@ -351,7 +356,7 @@ export class KittyTransmitBroker {
     if (emuSequence) {
       tracePtyEvent('kitty-broker-emu', {
         ptyId,
-        guestKey,
+        guestKey: resolvedGuestKey,
         stubbed: true,
       });
       return emuSequence;

@@ -31,7 +31,9 @@ export function buildTransmitImage(hostId: number, info: KittyGraphicsImageInfo,
   for (let offset = 0; offset < encoded.length; offset += BASE64_CHUNK_SIZE) {
     const chunk = encoded.slice(offset, offset + BASE64_CHUNK_SIZE);
     const more = offset + BASE64_CHUNK_SIZE < encoded.length;
-    const chunkParams = more ? [...params, ['m', 1]] : params;
+    const chunkParams: Array<[string, string | number]> = more
+      ? [...params, ['m', 1] as [string, number]]
+      : params;
     chunks.push(buildKittyCommand(chunkParams, chunk));
   }
 

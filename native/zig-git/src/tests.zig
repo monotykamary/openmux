@@ -1,10 +1,7 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("git2.h");
-});
-
 const constants = @import("constants.zig");
 const helpers = @import("test_helpers.zig");
+const c = helpers.c;
 const api = @import("api.zig");
 
 test "repo info marks dirty with untracked files" {
@@ -18,7 +15,7 @@ test "repo info marks dirty with untracked files" {
     defer allocator.free(repo_path);
 
     const repo = try helpers.initRepo(allocator, repo_path);
-    defer c.git_repository_free(repo);
+    defer c.git_repository_free(@as(?*c.git_repository, repo));
 
     try tmp.dir.writeFile(.{ .sub_path = "untracked.txt", .data = "one\ntwo\n" });
 
@@ -56,7 +53,7 @@ test "repo status counts untracked changes" {
     defer allocator.free(repo_path);
 
     const repo = try helpers.initRepo(allocator, repo_path);
-    defer c.git_repository_free(repo);
+    defer c.git_repository_free(@as(?*c.git_repository, repo));
 
     try tmp.dir.writeFile(.{ .sub_path = "untracked.txt", .data = "one\ntwo\n" });
 
@@ -115,7 +112,7 @@ test "status async reports branch after commit" {
     defer allocator.free(repo_path);
 
     const repo = try helpers.initRepo(allocator, repo_path);
-    defer c.git_repository_free(repo);
+    defer c.git_repository_free(@as(?*c.git_repository, repo));
 
     try helpers.commitFile(allocator, repo, tmp.dir, "tracked.txt", "first\n");
 
@@ -183,7 +180,7 @@ test "diff stats include tracked changes" {
     defer allocator.free(repo_path);
 
     const repo = try helpers.initRepo(allocator, repo_path);
-    defer c.git_repository_free(repo);
+    defer c.git_repository_free(@as(?*c.git_repository, repo));
 
     try helpers.commitFile(allocator, repo, tmp.dir, "tracked.txt", "a\nb\n");
     try tmp.dir.writeFile(.{ .sub_path = "tracked.txt", .data = "a\nb\nc\n" });
@@ -223,7 +220,7 @@ test "diff stats include untracked changes" {
     defer allocator.free(repo_path);
 
     const repo = try helpers.initRepo(allocator, repo_path);
-    defer c.git_repository_free(repo);
+    defer c.git_repository_free(@as(?*c.git_repository, repo));
 
     try helpers.commitFile(allocator, repo, tmp.dir, "tracked.txt", "first\n");
     try tmp.dir.writeFile(.{ .sub_path = "untracked.txt", .data = "one\ntwo\nthree\n" });
@@ -267,7 +264,7 @@ test "diff stats count binary changes separately" {
     defer allocator.free(repo_path);
 
     const repo = try helpers.initRepo(allocator, repo_path);
-    defer c.git_repository_free(repo);
+    defer c.git_repository_free(@as(?*c.git_repository, repo));
 
     try helpers.commitFile(allocator, repo, tmp.dir, "tracked.txt", "a\n");
 
@@ -313,7 +310,7 @@ test "repo info returns branch after commit" {
     defer allocator.free(repo_path);
 
     const repo = try helpers.initRepo(allocator, repo_path);
-    defer c.git_repository_free(repo);
+    defer c.git_repository_free(@as(?*c.git_repository, repo));
 
     try helpers.commitFile(allocator, repo, tmp.dir, "tracked.txt", "first\n");
 

@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @cImport({
+pub const c = @cImport({
     @cInclude("git2.h");
 });
 

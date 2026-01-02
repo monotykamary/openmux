@@ -10,8 +10,6 @@ import {
   getPtyState,
   registerEmulatorFactory,
   setPtyState,
-  subscribeKittyTransmit,
-  subscribeKittyUpdate,
 } from './client/state';
 
 export async function createPty(options: {

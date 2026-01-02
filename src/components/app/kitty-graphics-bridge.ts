@@ -9,14 +9,8 @@ import {
 import { isShimClient } from '../../shim/mode';
 import { subscribeKittyTransmit, subscribeKittyUpdate } from '../../shim/client';
 
-type RendererLike = {
-  renderNative?: () => void;
-  prependInputHandler?: (handler: (sequence: string) => boolean) => void;
-  removeInputHandler?: (handler: (sequence: string) => boolean) => void;
-};
-
 export function createKittyGraphicsBridge(params: {
-  renderer: RendererLike;
+  renderer: unknown;
   ensurePixelResize: () => void;
   stopPixelResizePoll: () => void;
 }): KittyGraphicsRenderer {

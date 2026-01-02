@@ -1,4 +1,5 @@
 import { useKeyboard } from '@opentui/solid';
+import type { KeyboardEvent } from '../../core/keyboard-event';
 import type { OpenTuiKeyEvent } from './keyboard-utils';
 import { normalizeKeyEvent } from './keyboard-utils';
 import { handleSearchKeyboard } from './search-keyboard';
@@ -12,15 +13,7 @@ export function setupKeyboardRouting(params: {
   config: { keybindings: () => { search: ResolvedKeybindingMap } };
   keyboardHandler: {
     mode: string;
-    handleKeyDown: (event: {
-      key: string;
-      ctrl: boolean;
-      shift: boolean;
-      alt: boolean;
-      meta: boolean;
-      eventType: string;
-      repeated: boolean;
-    }) => boolean;
+    handleKeyDown: (event: KeyboardEvent) => boolean;
   };
   keyboardExitSearchMode: () => void;
   exitSearchMode: () => void;

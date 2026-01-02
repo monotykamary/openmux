@@ -7,6 +7,26 @@ index e521f8851..5caea8e86 100644
  
  vgcore.*
 +node_modules/
+diff --git a/build.zig b/build.zig
+index fa68b91b4..64f5eb712 100644
+--- a/build.zig
++++ b/build.zig
+@@ -260,6 +260,7 @@ pub fn build(b: *std.Build) !void {
+             .root_module = mod.vt,
+             .filters = test_filters,
+         });
++        buildpkg.SharedDeps.addVtDeps(b, mod_vt_test);
+         const mod_vt_test_run = b.addRunArtifact(mod_vt_test);
+         test_lib_vt_step.dependOn(&mod_vt_test_run.step);
+ 
+@@ -267,6 +268,7 @@ pub fn build(b: *std.Build) !void {
+             .root_module = mod.vt_c,
+             .filters = test_filters,
+         });
++        buildpkg.SharedDeps.addVtDeps(b, mod_vt_c_test);
+         const mod_vt_c_test_run = b.addRunArtifact(mod_vt_c_test);
+         test_lib_vt_step.dependOn(&mod_vt_c_test_run.step);
+     }
 diff --git a/include/ghostty/vt.h b/include/ghostty/vt.h
 index 4f8fef88e..ca9fb1d4d 100644
 --- a/include/ghostty/vt.h
@@ -40,11 +60,14 @@ index 3a8a4e0c7..edc4cfa53 100644
              .Debug => true,
              .ReleaseSafe,
 diff --git a/src/build/GhosttyLibVt.zig b/src/build/GhosttyLibVt.zig
-index aae8ace19..bd16efa0b 100644
+index aae8ace19..1ebea6af3 100644
 --- a/src/build/GhosttyLibVt.zig
 +++ b/src/build/GhosttyLibVt.zig
-@@ -5,6 +5,36 @@ const assert = std.debug.assert;
+@@ -3,8 +3,15 @@ const GhosttyLibVt = @This();
+ const std = @import("std");
+ const assert = std.debug.assert;
  const RunStep = std.Build.Step.Run;
++const SharedDeps = @import("SharedDeps.zig");
  const GhosttyZig = @import("GhosttyZig.zig");
  
 +// For dynamic linking, prefer dynamic and search by mode first.
@@ -53,46 +76,22 @@ index aae8ace19..bd16efa0b 100644
 +    .search_strategy = .mode_first,
 +};
 +
-+fn addVtDeps(b: *std.Build, lib: *std.Build.Step.Compile) void {
-+    const target = lib.root_module.resolved_target orelse return;
-+    const optimize = lib.root_module.optimize orelse return;
-+
-+    if (b.lazyDependency("wuffs", .{
-+        .target = target,
-+        .optimize = optimize,
-+    })) |dep| {
-+        lib.root_module.addImport("wuffs", dep.module("wuffs"));
-+    }
-+
-+    if (b.lazyDependency("oniguruma", .{
-+        .target = target,
-+        .optimize = optimize,
-+    })) |dep| {
-+        lib.root_module.addImport("oniguruma", dep.module("oniguruma"));
-+        if (b.systemIntegrationOption("oniguruma", .{})) {
-+            lib.linkSystemLibrary2("oniguruma", dynamic_link_opts);
-+        } else {
-+            lib.linkLibrary(dep.artifact("oniguruma"));
-+        }
-+    }
-+}
-+
  /// The step that generates the file.
  step: *std.Build.Step,
  
-@@ -34,6 +64,7 @@ pub fn initWasm(
+@@ -34,6 +41,7 @@ pub fn initWasm(
  
      // There is no entrypoint for this wasm module.
      exe.entry = .disabled;
-+    addVtDeps(b, exe);
++    SharedDeps.addVtDeps(b, exe);
  
      return .{
          .step = &exe.step,
-@@ -55,6 +86,7 @@ pub fn initShared(
+@@ -55,6 +63,7 @@ pub fn initShared(
          .root_module = zig.vt_c,
          .version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 },
      });
-+    addVtDeps(b, lib);
++    SharedDeps.addVtDeps(b, lib);
      lib.installHeadersDirectory(
          b.path("include/ghostty"),
          "ghostty",
@@ -114,6 +113,42 @@ index a8d2726bc..82b9d0884 100644
  
      return .{
          .vt = try initVt(
+diff --git a/src/build/SharedDeps.zig b/src/build/SharedDeps.zig
+index 5e2cd40b9..534a19d3c 100644
+--- a/src/build/SharedDeps.zig
++++ b/src/build/SharedDeps.zig
+@@ -77,6 +77,31 @@ pub fn changeEntrypoint(
+     return result;
+ }
+ 
++/// Add the minimal dependencies required for libghostty-vt modules.
++pub fn addVtDeps(b: *std.Build, step: *std.Build.Step.Compile) void {
++    const target = step.root_module.resolved_target orelse return;
++    const optimize = step.root_module.optimize orelse return;
++
++    if (b.lazyDependency("wuffs", .{
++        .target = target,
++        .optimize = optimize,
++    })) |dep| {
++        step.root_module.addImport("wuffs", dep.module("wuffs"));
++    }
++
++    if (b.lazyDependency("oniguruma", .{
++        .target = target,
++        .optimize = optimize,
++    })) |dep| {
++        step.root_module.addImport("oniguruma", dep.module("oniguruma"));
++        if (b.systemIntegrationOption("oniguruma", .{})) {
++            step.linkSystemLibrary2("oniguruma", dynamic_link_opts);
++        } else {
++            step.linkLibrary(dep.artifact("oniguruma"));
++        }
++    }
++}
++
+ fn initTarget(
+     self: *SharedDeps,
+     b: *std.Build,
 diff --git a/src/lib_vt.zig b/src/lib_vt.zig
 index 03a883e20..23def191a 100644
 --- a/src/lib_vt.zig
@@ -284,7 +319,7 @@ index 5b3ab915d..e49492f45 100644
      var loading = LoadingImage.init(alloc, cmd) catch |err| {
          encodeError(&result, err);
 diff --git a/src/terminal/kitty/graphics_image.zig b/src/terminal/kitty/graphics_image.zig
-index d2877cfc2..c3c14799d 100644
+index d2877cfc2..7cf19244d 100644
 --- a/src/terminal/kitty/graphics_image.zig
 +++ b/src/terminal/kitty/graphics_image.zig
 @@ -9,6 +9,7 @@ const fastmem = @import("../../fastmem.zig");
@@ -316,8 +351,8 @@ index d2877cfc2..c3c14799d 100644
 +                };
 +
 +                var result = self.image;
-+                result.data = "";
-+                self.data.deinit(alloc);
++                const raw = try self.data.toOwnedSlice(alloc);
++                result.data = raw;
 +                self.data = .{};
 +                self.image = .{};
 +                return result;
@@ -349,6 +384,18 @@ index d2877cfc2..c3c14799d 100644
  /// The rect taken up by some image placement, in grid cells. This will
  /// be rounded up to the nearest grid cell since we can't place images
  /// in partial grid cells.
+@@ -830,6 +871,10 @@ test "image load: png, not compressed, regular file" {
+     var img = try loading.complete(alloc);
+     defer img.deinit(alloc);
+     try testing.expect(img.compression == .none);
+-    try testing.expect(img.format == .rgba);
++    if (comptime build_options.kitty_graphics_passthrough) {
++        try testing.expect(img.format == .png);
++    } else {
++        try testing.expect(img.format == .rgba);
++    }
+     try tmp_dir.dir.access(path, .{});
+ }
 diff --git a/src/terminal/render.zig b/src/terminal/render.zig
 index 9d75fe4b7..b671c52d1 100644
 --- a/src/terminal/render.zig
