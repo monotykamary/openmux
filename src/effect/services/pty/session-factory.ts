@@ -62,7 +62,7 @@ function sendMacOsNotification(params: { title: string; subtitle?: string; body:
   if (!body) return
 
   const subtitle = params.subtitle?.trim() ?? ""
-  const sound = (process.env[DESKTOP_NOTIFICATION_SOUND_ENV] ?? "").trim()
+  const sound = (process.env[DESKTOP_NOTIFICATION_SOUND_ENV] ?? "Glass").trim()
 
   try {
     const proc = Bun.spawn(
