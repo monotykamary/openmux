@@ -50,10 +50,14 @@ function serializeLayoutNode(
     })
   }
 
+  const pane = node as WorkspacePaneNode & { cwd?: string }
+  const ptyCwd = pane.ptyId ? cwdMap.get(pane.ptyId) : undefined
+  const resolvedCwd = ptyCwd ?? pane.cwd ?? fallbackCwd
+
   return SerializedPaneData.make({
-    id: node.id,
-    title: node.title,
-    cwd: node.ptyId ? cwdMap.get(node.ptyId) ?? fallbackCwd : fallbackCwd,
+    id: pane.id,
+    title: pane.title,
+    cwd: resolvedCwd,
   })
 }
 
@@ -85,6 +89,7 @@ export function collectCwdMap(
 ): Effect.Effect<Map<string, string>, never> {
   return Effect.gen(function* () {
     const cwdMap = new Map<string, string>()
+    const fallbackCwd = process.env.OPENMUX_ORIGINAL_CWD ?? process.cwd()
 
     for (const workspace of workspaces.values()) {
       const panes: WorkspacePaneNode[] = []
@@ -96,7 +101,7 @@ export function collectCwdMap(
       for (const pane of panes) {
         if (!pane.ptyId) continue
         const cwd = yield* Effect.promise(() =>
-          getCwd(pane.ptyId!).catch(() => process.cwd())
+          getCwd(pane.ptyId!).catch(() => fallbackCwd)
         )
         cwdMap.set(pane.ptyId, cwd)
       }

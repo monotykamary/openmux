@@ -67,7 +67,7 @@ function AppContent() {
   const terminal = useTerminal();
   const { destroyPTY, resizePTY, writeToFocused, writeToPTY, pasteToFocused, getFocusedEmulator } = terminal;
   const session = useSession();
-  const { togglePicker, toggleTemplateOverlay, state: sessionState, saveSession } = session;
+  const { togglePicker, toggleTemplateOverlay, state: sessionState, saveSession, suspendPersistence } = session;
   // Keep selection/search contexts to access reactive getters
   const selection = useSelection();
   const { clearAllSelections } = selection;
@@ -103,6 +103,7 @@ function AppContent() {
 
   const exitHandlers = createExitHandlers({
     saveSession,
+    suspendSessionPersistence: suspendPersistence,
     shutdownShim,
     disposeRuntime,
     renderer,

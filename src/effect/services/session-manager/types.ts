@@ -33,6 +33,7 @@ export type WorkspaceLayoutNode =
       id: string
       ptyId?: string
       title?: string
+      cwd?: string
     }
 
 export interface WorkspaceState {

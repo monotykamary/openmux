@@ -29,6 +29,7 @@ export interface PaneData {
   id: NodeId;
   ptyId?: string;
   title?: string;
+  cwd?: string;
   rectangle?: Rectangle;
 }
 

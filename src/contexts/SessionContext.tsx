@@ -109,6 +109,8 @@ interface SessionContextValue {
   deleteTemplate: (templateId: string) => Promise<void>;
   /** Check if current layout is empty */
   isLayoutEmpty: () => boolean;
+  /** Suspend session persistence (used during shutdown) */
+  suspendPersistence: () => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -151,6 +153,7 @@ export function SessionProvider(props: SessionProviderProps) {
   const [state, setState] = createStore<SessionState>(createInitialState());
   const [showTemplateOverlay, setShowTemplateOverlay] = createSignal(false);
   const [templates, setTemplates] = createSignal<TemplateSession[]>([]);
+  const [persistenceEnabled, setPersistenceEnabled] = createSignal(true);
   const config = useConfig();
 
   // Helper to dispatch actions through the reducer
@@ -167,7 +170,7 @@ export function SessionProvider(props: SessionProviderProps) {
     );
 
   const shouldPersistSession = (workspaces: Workspaces): boolean =>
-    state.initialized && !state.switching && !!state.activeSession && hasAnyPanes(workspaces);
+    persistenceEnabled() && state.initialized && !state.switching && !!state.activeSession && hasAnyPanes(workspaces);
 
   // Picker actions
   const {
@@ -414,6 +417,7 @@ export function SessionProvider(props: SessionProviderProps) {
     saveTemplate,
     deleteTemplate: deleteTemplateById,
     isLayoutEmpty,
+    suspendPersistence: () => setPersistenceEnabled(false),
   };
 
   return (

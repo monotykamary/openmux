@@ -259,10 +259,11 @@ function deserializeLayoutNode(serialized: SerializedLayoutNode): LayoutNode {
     }
   }
 
-  const pane = serialized as SerializedLayoutNode & { id: string; title?: string }
+  const pane = serialized as SerializedLayoutNode & { id: string; title?: string; cwd?: string }
   return {
     id: pane.id,
     title: pane.title,
+    cwd: pane.cwd,
   } satisfies PaneData
 }
 

@@ -1,16 +1,18 @@
 export function createExitHandlers(params: {
   saveSession: () => Promise<void>;
+  suspendSessionPersistence: () => void;
   shutdownShim: () => Promise<void>;
   disposeRuntime: () => Promise<void>;
   renderer: { destroy: () => void };
 }) {
-  const { saveSession, shutdownShim, disposeRuntime, renderer } = params;
+  const { saveSession, suspendSessionPersistence, shutdownShim, disposeRuntime, renderer } = params;
   let detaching = false;
 
   const handleQuit = async () => {
     if (detaching) return;
     detaching = true;
     await saveSession();
+    suspendSessionPersistence();
     await shutdownShim();
     await disposeRuntime();
     renderer.destroy();
@@ -21,6 +23,7 @@ export function createExitHandlers(params: {
     if (detaching) return;
     detaching = true;
     await saveSession();
+    suspendSessionPersistence();
     await disposeRuntime();
     renderer.destroy();
     process.exit(0);
