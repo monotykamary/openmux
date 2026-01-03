@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup, onMount } from 'solid-js';
 import { sendPtyFocusEvent } from '../../effect/bridge';
 import { setFocusedPty } from '../../terminal/focused-pty-registry';
+import { setHostFocusState } from '../../terminal/host-focus';
 
 const FOCUS_IN_SEQUENCE = '\x1b[I';
 const FOCUS_OUT_SEQUENCE = '\x1b[O';
@@ -73,6 +74,7 @@ export function setupHostFocusTracking(params: {
   createEffect(() => {
     const focusedPtyId = getFocusedPtyId();
     const hostFocused = isHostFocused();
+    setHostFocusState(hostFocused);
     if (hostFocused === null) {
       return;
     }

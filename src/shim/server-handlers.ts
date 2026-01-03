@@ -9,6 +9,7 @@ import type { ITerminalEmulator } from '../terminal/emulator-interface';
 import { setHostColors as setHostColorsDefault, type TerminalColors } from '../terminal/terminal-colors';
 import { SHIM_SOCKET_PATH, type ShimHeader } from './protocol';
 import { setKittyTransmitForwarder, setKittyUpdateForwarder } from './kitty-forwarder';
+import { setNotificationForwarder } from './notification-forwarder';
 import type { ShimServerState } from './server-state';
 import { createRequestHandler } from './server-requests';
 import { sendFrame, sendResponse, sendError } from './server/frames';
@@ -264,6 +265,14 @@ export function createServerHandlers(state: ShimServerState, options?: ShimServe
     state.activeClientId = clientId;
     setKittyTransmitForwarder(sendKittyTransmit);
     setKittyUpdateForwarder(queueKittyUpdate);
+    setNotificationForwarder((event) => {
+      sendEvent({
+        type: 'ptyNotification',
+        ptyId: event.ptyId,
+        notification: event.notification,
+        subtitle: event.subtitle,
+      });
+    });
     const ptyIds = await subscribeAllPtys();
     await handleLifecycle();
     await handleTitles();
@@ -277,6 +286,7 @@ export function createServerHandlers(state: ShimServerState, options?: ShimServe
     state.activeClientId = null;
     setKittyTransmitForwarder(null);
     setKittyUpdateForwarder(null);
+    setNotificationForwarder(null);
     for (const ptyId of state.ptySubscriptions.keys()) {
       await unsubscribeFromPty(ptyId);
     }

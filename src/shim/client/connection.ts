@@ -10,6 +10,9 @@ import { getHostColors } from '../../terminal/terminal-colors';
 import { unpackDirtyUpdate } from '../../terminal/cell-serialization';
 import { encodeFrame, FrameReader, SHIM_SOCKET_DIR, SHIM_SOCKET_PATH, type ShimHeader } from '../protocol';
 import { bufferToArrayBuffer } from './utils';
+import { sendDesktopNotification, sendMacOsNotification } from '../../terminal/desktop-notifications';
+import { getFocusedPtyId } from '../../terminal/focused-pty-registry';
+import { getHostFocusState } from '../../terminal/host-focus';
 import {
   handlePtyExit,
   handlePtyLifecycle,
@@ -19,6 +22,7 @@ import {
   handleUnifiedUpdate,
 } from './state';
 import { runStream } from '../../effect/stream-utils';
+import type { DesktopNotification } from '../../terminal/command-parser';
 
 const CLIENT_VERSION = 1;
 const CLIENT_ID = `client_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -203,6 +207,32 @@ function handleFrame(header: ShimHeader, payloads: Buffer[]): void {
     const ptyId = header.ptyId as string;
     const title = (header.title as string) ?? '';
     handlePtyTitle(ptyId, title);
+    return;
+  }
+
+  if (header.type === 'ptyNotification') {
+    const notification = header.notification as DesktopNotification | undefined;
+    if (!notification) return;
+    const subtitle = typeof header.subtitle === 'string' ? header.subtitle : undefined;
+    const ptyId = header.ptyId as string | undefined;
+    const hostFocused = getHostFocusState();
+    const focusedPtyId = getFocusedPtyId();
+    const isUnfocusedPane = Boolean(ptyId && focusedPtyId && ptyId !== focusedPtyId);
+    const allowFocusedPaneOsc = (() => {
+      const raw = (process.env.OPENMUX_ALLOW_FOCUSED_PANE_OSC ?? '').toLowerCase();
+      return raw === '1' || raw === 'true' || raw === 'on';
+    })();
+
+    if (hostFocused === true && (isUnfocusedPane || !allowFocusedPaneOsc)) {
+      sendMacOsNotification({
+        title: notification.title,
+        subtitle,
+        body: notification.body,
+      });
+      return;
+    }
+
+    sendDesktopNotification({ notification, subtitle });
     return;
   }
 

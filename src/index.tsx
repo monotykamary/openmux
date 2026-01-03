@@ -25,21 +25,21 @@ async function main() {
     const { onMount, onCleanup } = await import('solid-js');
     const { createPasteInterceptingStdin } = await import('./terminal/paste-intercepting-stdin');
     const { triggerClipboardPaste } = await import('./terminal/focused-pty-registry');
+    const { setHostSequenceWriter, writeHostSequence } = await import('./terminal/host-output');
 
     // Wrapper component that handles kitty keyboard setup after render
     function AppWithSetup() {
       const renderer = useRenderer();
 
-      const writeHostSequence = (sequence: string) => {
-        const stdout = (renderer as any).stdout ?? process.stdout;
-        const writeOut = (renderer as any).realStdoutWrite ?? stdout.write.bind(stdout);
-        writeOut.call(stdout, sequence);
-        if (stdout.isTTY) {
-          (stdout as any)._handle?.flush?.();
-        }
-      };
-
       onMount(() => {
+        setHostSequenceWriter((sequence) => {
+          const stdout = (renderer as any).stdout ?? process.stdout;
+          const writeOut = (renderer as any).realStdoutWrite ?? stdout.write.bind(stdout);
+          writeOut.call(stdout, sequence);
+          if (stdout.isTTY) {
+            (stdout as any)._handle?.flush?.();
+          }
+        });
         // Enable kitty keyboard protocol AFTER renderer setup
         // Flag 1 = disambiguate escape codes (detect Alt+key without breaking regular input)
         // Flag 2 = report key releases/repeats
@@ -56,6 +56,7 @@ async function main() {
       onCleanup(() => {
         // Disable focus tracking so we don't pollute the parent shell.
         writeHostSequence('\x1b[?1004l');
+        setHostSequenceWriter(null);
       });
 
       return <App />;
