@@ -24,9 +24,10 @@ bun run check:circular # Detect circular deps in src/
 ## libghostty-vt Notes
 
 - Ghostty is tracked as a submodule in `vendor/ghostty`.
-- Update + apply the terminal C API patch with `scripts/update-ghostty-vt.sh`.
-- Patch files live in `patches/` (for example `patches/ghostty-vt.patch`, `patches/libgit2.patch`).
-- `scripts/build.sh` builds `libghostty-vt` via `zig build lib-vt` before bundling.
+- Wrapper library lives in `native/ghostty-wrapper` and exports the C API.
+- `scripts/update-ghostty-vt.sh` updates the submodule only (no patches).
+- `scripts/update-libgit2.sh` updates `vendor/libgit2` directly (no patches).
+- `scripts/build.sh` builds `libghostty-vt` via the wrapper before bundling.
 
 ## Technology Stack
 

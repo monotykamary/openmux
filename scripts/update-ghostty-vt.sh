@@ -5,33 +5,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 GHOSTTY_DIR="${GHOSTTY_VT_DIR:-$PROJECT_DIR/vendor/ghostty}"
-PATCH_FILE="$PROJECT_DIR/patches/ghostty-vt.patch"
 REMOTE_URL="${GHOSTTY_VT_REMOTE:-https://github.com/ghostty-org/ghostty.git}"
 
-MODE="update"
 REF=""
 
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 Usage: scripts/update-ghostty-vt.sh [options]
 
 Options:
-  --patch-only     Apply the ghostty-vt patch without updating the submodule.
   --ref <ref>      Update the submodule to a specific ref (commit/tag/branch).
   --help, -h       Show this help message.
 
 Environment:
   GHOSTTY_VT_DIR     Override ghostty source directory (default: vendor/ghostty)
   GHOSTTY_VT_REMOTE  Override ghostty remote URL
-EOF
+USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --patch-only)
-      MODE="patch"
-      shift
-      ;;
     --ref)
       REF="${2:-}"
       shift 2
@@ -48,11 +41,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ! -f "$PATCH_FILE" ]]; then
-  echo "Error: patch file not found at $PATCH_FILE" >&2
-  exit 1
-fi
-
 if [[ "$GHOSTTY_DIR" == "$PROJECT_DIR/vendor/ghostty" ]]; then
   git submodule update --init --recursive "$GHOSTTY_DIR"
 fi
@@ -63,50 +51,29 @@ if [[ ! -d "$GHOSTTY_DIR" ]]; then
   exit 1
 fi
 
-if git -C "$GHOSTTY_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  git -C "$GHOSTTY_DIR" remote set-url origin "$REMOTE_URL" >/dev/null 2>&1 || true
+if ! git -C "$GHOSTTY_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "Error: $GHOSTTY_DIR is not a git repository; cannot update." >&2
+  exit 1
 fi
 
-if [[ "$MODE" == "update" ]]; then
-  if ! git -C "$GHOSTTY_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    echo "Error: $GHOSTTY_DIR is not a git repository; cannot update." >&2
-    exit 1
-  fi
+git -C "$GHOSTTY_DIR" remote set-url origin "$REMOTE_URL" >/dev/null 2>&1 || true
 
-  git -C "$GHOSTTY_DIR" fetch origin --tags --force
+git -C "$GHOSTTY_DIR" fetch origin --tags --force
 
-  if [[ -n "$REF" ]]; then
-    target_ref="$REF"
-  else
-    target_ref="$(git -C "$GHOSTTY_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
-    if [[ -z "$target_ref" ]]; then
-      target_ref="origin/main"
-    fi
-  fi
-
-  target_commit="$(git -C "$GHOSTTY_DIR" rev-parse "$target_ref")"
-
-  git -C "$GHOSTTY_DIR" reset --hard HEAD
-  git -C "$GHOSTTY_DIR" clean -fd
-  git -C "$GHOSTTY_DIR" checkout --detach "$target_commit"
-  echo "Pinned ghostty to $target_commit"
-fi
-
-if git -C "$GHOSTTY_DIR" apply --reverse --check --whitespace=nowarn "$PATCH_FILE" >/dev/null 2>&1; then
-  echo "ghostty-vt patch already applied."
+if [[ -n "$REF" ]]; then
+  target_ref="$REF"
 else
-  err_file="$(mktemp)"
-  if ! git -C "$GHOSTTY_DIR" apply --whitespace=nowarn "$PATCH_FILE" 2> "$err_file"; then
-    cat "$err_file" >&2
-    rm -f "$err_file"
-    echo "" >&2
-    echo "ghostty-vt patch failed to apply. Update patches/ghostty-vt.patch or adjust for upstream changes." >&2
-    exit 1
+  target_ref="$(git -C "$GHOSTTY_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [[ -z "$target_ref" ]]; then
+    target_ref="origin/main"
   fi
-  rm -f "$err_file"
-  echo "Applied ghostty-vt patch."
 fi
 
-if [[ "$MODE" == "update" ]]; then
-  echo "Remember to commit the new submodule pointer: git add vendor/ghostty"
-fi
+target_commit="$(git -C "$GHOSTTY_DIR" rev-parse "$target_ref")"
+
+git -C "$GHOSTTY_DIR" reset --hard HEAD
+git -C "$GHOSTTY_DIR" clean -fd
+git -C "$GHOSTTY_DIR" checkout --detach "$target_commit"
+
+echo "Pinned ghostty to $target_commit"
+echo "Remember to commit the new submodule pointer: git add vendor/ghostty"

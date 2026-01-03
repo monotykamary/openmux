@@ -31,10 +31,13 @@ function resolveLibPath(): string {
 
   const basePaths = [
     execDir,
+    // Wrapper library output (preferred for local dev)
+    join(repoRoot, "native", "ghostty-wrapper", "zig-out", "lib"),
     // Vendored ghostty source (preferred)
     join(repoRoot, "ghostty", "zig-out", "lib"),
     join(repoRoot, "vendor", "ghostty", "zig-out", "lib"),
     // Fallbacks for local dev
+    join(process.cwd(), "native", "ghostty-wrapper", "zig-out", "lib"),
     join(process.cwd(), "ghostty", "zig-out", "lib"),
     join(process.cwd(), "vendor", "ghostty", "zig-out", "lib"),
   ];

@@ -1,0 +1,18 @@
+.{
+    .name = .ghostty_wrapper,
+    .version = "0.1.0",
+    .fingerprint = 0xf8584fb5db844b7a,
+    .paths = .{""},
+    .dependencies = .{
+        .ghostty = .{ .path = "../../vendor/ghostty" },
+        .wuffs = .{ .path = "../../vendor/ghostty/pkg/wuffs" },
+        .oniguruma = .{ .path = "../../vendor/ghostty/pkg/oniguruma" },
+        .simdutf = .{ .path = "../../vendor/ghostty/pkg/simdutf" },
+        .highway = .{ .path = "../../vendor/ghostty/pkg/highway" },
+        .utfcpp = .{ .path = "../../vendor/ghostty/pkg/utfcpp" },
+        .uucode = .{
+            .url = "https://deps.files.ghostty.org/uucode-31655fba3c638229989cc524363ef5e3c7b580c1.tar.gz",
+            .hash = "uucode-0.1.0-ZZjBPicPTQDlG6OClzn2bPu7ICkkkyWrTB6aRsBr-A1E",
+        },
+    },
+}

@@ -6,7 +6,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GHOSTTY_SCRIPT="$SCRIPT_DIR/update-ghostty-vt.sh"
 LIBGIT2_SCRIPT="$SCRIPT_DIR/update-libgit2.sh"
 
-MODE="update"
 REF=""
 GHOSTTY_REF=""
 LIBGIT2_REF=""
@@ -16,7 +15,6 @@ usage() {
 Usage: scripts/update-submodules.sh [options]
 
 Options:
-  --patch-only        Apply patches without updating submodules.
   --ref <ref>         Update both submodules to a specific ref (commit/tag/branch).
   --ghostty-ref <ref> Update ghostty submodule to a specific ref.
   --libgit2-ref <ref> Update libgit2 submodule to a specific ref.
@@ -29,10 +27,6 @@ USAGE
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --patch-only)
-      MODE="patch"
-      shift
-      ;;
     --ref)
       REF="${2:-}"
       shift 2
@@ -56,12 +50,6 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-
-if [[ "$MODE" == "patch" ]]; then
-  "$GHOSTTY_SCRIPT" --patch-only
-  "$LIBGIT2_SCRIPT" --patch-only
-  exit 0
-fi
 
 if [[ -n "$GHOSTTY_REF" ]]; then
   ghostty_args=(--ref "$GHOSTTY_REF")

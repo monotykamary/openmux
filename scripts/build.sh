@@ -132,25 +132,13 @@ build_zig_git() {
 build_ghostty_vt() {
     echo "Building ghostty-vt native library..."
 
-    local ghostty_dir="${GHOSTTY_VT_DIR:-$PROJECT_DIR/ghostty}"
-    if [[ ! -d "$ghostty_dir" ]]; then
-        ghostty_dir="$PROJECT_DIR/vendor/ghostty"
-    fi
-
-    if [[ ! -d "$ghostty_dir" ]]; then
-        echo "Error: ghostty directory not found. Set GHOSTTY_VT_DIR or add ghostty sources."
+    local ghostty_wrapper_dir="$PROJECT_DIR/native/ghostty-wrapper"
+    if [[ ! -d "$ghostty_wrapper_dir" ]]; then
+        echo "Error: ghostty-wrapper directory not found at $ghostty_wrapper_dir"
         exit 1
     fi
-
-    if [[ ! -f "$ghostty_dir/include/ghostty/vt/terminal.h" ]]; then
-        if [[ "$ghostty_dir" == "$PROJECT_DIR/vendor/ghostty" && -x "$PROJECT_DIR/scripts/update-ghostty-vt.sh" ]]; then
-            GHOSTTY_VT_DIR="$ghostty_dir" "$PROJECT_DIR/scripts/update-ghostty-vt.sh" --patch-only
-        fi
-    fi
-
-    if [[ ! -f "$ghostty_dir/include/ghostty/vt/terminal.h" ]]; then
-        echo "Error: ghostty-vt patch missing (include/ghostty/vt/terminal.h not found)."
-        echo "Run: scripts/update-ghostty-vt.sh --patch-only"
+    if [[ ! -d "$PROJECT_DIR/vendor/ghostty" ]]; then
+        echo "Error: ghostty submodule not found. Run: git submodule update --init --recursive vendor/ghostty"
         exit 1
     fi
 
@@ -159,18 +147,11 @@ build_ghostty_vt() {
         exit 1
     fi
 
-    local ghostty_version
-    ghostty_version=$(grep -E 'version = "' "$ghostty_dir/build.zig.zon" | head -1 | sed -E 's/.*version = "([^"]+)".*/\1/')
-    if [[ -z "$ghostty_version" ]]; then
-        echo "Error: could not determine ghostty version from $ghostty_dir/build.zig.zon"
-        exit 1
-    fi
-
-    cd "$ghostty_dir"
-    zig build lib-vt -Doptimize=ReleaseFast -Dversion-string="$ghostty_version"
+    cd "$ghostty_wrapper_dir"
+    zig build -Doptimize=ReleaseFast
     cd "$PROJECT_DIR"
 
-    echo "Built ghostty-vt native library"
+    echo "Built ghostty-vt wrapper library"
 }
 
 sign_macos_artifacts() {
@@ -303,14 +284,10 @@ build() {
         exit 1
     fi
 
-    # Copy ghostty-vt native library
-    local ghostty_dir="${GHOSTTY_VT_DIR:-$PROJECT_DIR/ghostty}"
-    if [[ ! -d "$ghostty_dir" ]]; then
-        ghostty_dir="$PROJECT_DIR/vendor/ghostty"
-    fi
-    local ghostty_lib="$ghostty_dir/zig-out/lib/$GHOSTTY_LIB_NAME"
+    # Copy ghostty-vt wrapper library
+    local ghostty_lib="$PROJECT_DIR/native/ghostty-wrapper/zig-out/lib/$GHOSTTY_LIB_NAME"
     if [[ ! -f "$ghostty_lib" ]]; then
-        ghostty_lib="$ghostty_dir/zig-out/lib/ghostty-vt.$LIB_EXT"
+        ghostty_lib="$PROJECT_DIR/native/ghostty-wrapper/zig-out/lib/ghostty-vt.$LIB_EXT"
     fi
     if [[ -f "$ghostty_lib" ]]; then
         cp "$ghostty_lib" "$DIST_DIR/$GHOSTTY_LIB_NAME"
