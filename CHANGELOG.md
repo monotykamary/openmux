@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.87](https://github.com/monotykamary/openmux/compare/v0.2.86...v0.2.87) (2026-01-03)
+
+
+### Features
+
+* forward desktop notifications to host terminal ([4122416](https://github.com/monotykamary/openmux/commit/412241600ae084e465fc757e45073171712f19d8))
+
+
+### Bug Fixes
+
+* avoid dropping notifications when macos notify fails ([026d4cc](https://github.com/monotykamary/openmux/commit/026d4cc73a45f947d0e2771f23c145ef530ff5a8))
+* **scrollback:** enforce line limit and trim kitty placements ([d3e6114](https://github.com/monotykamary/openmux/commit/d3e6114cc3e37e064b1751e7e8e1c95c8c50d5e6))
+
+
+### Refactoring
+
+* modularize large modules ([a0e8f12](https://github.com/monotykamary/openmux/commit/a0e8f1216eeeb47638c6ba2b2af5325cf3b94932))
+
+
+### Tests
+
+* **ghostty:** cover scrollback trim and kitty cleanup ([91ea7b4](https://github.com/monotykamary/openmux/commit/91ea7b436280f33e0256b25e2afc39123722894f))
+
 ### [0.2.86](https://github.com/monotykamary/openmux/compare/v0.2.85...v0.2.86) (2026-01-03)
 
 
