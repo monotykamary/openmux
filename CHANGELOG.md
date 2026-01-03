@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.83](https://github.com/monotykamary/openmux/compare/v0.2.82...v0.2.83) (2026-01-03)
+
+
+### Refactoring
+
+* **ghostty:** rename wrapper package ([1d1818c](https://github.com/monotykamary/openmux/commit/1d1818cbb4fd1e0cf87adba4ebd2f12f6499a770))
+
 ### [0.2.82](https://github.com/monotykamary/openmux/compare/v0.2.81...v0.2.82) (2026-01-03)
 
 
