@@ -18,3 +18,23 @@ test "regular: scrollback exposes oldest lines" {
     try testing.expectEqual(@as(c_int, 4), count);
     try testing.expectEqual(@as(u32, 'A'), cells[0].codepoint);
 }
+
+test "regular: scrollback trims to configured limit" {
+    const config = terminal.GhosttyTerminalConfig{
+        .scrollback_limit = 3,
+        .fg_color = 0,
+        .bg_color = 0,
+        .cursor_color = 0,
+        .palette = .{0} ** 16,
+    };
+    const term = terminal.newWithConfig(4, 2, &config);
+    defer terminal.free(term);
+
+    const line = "X\r\n";
+    for (0..12) |_| {
+        terminal.write(term, line, line.len);
+    }
+
+    const len = terminal.getScrollbackLength(term);
+    try testing.expectEqual(@as(c_int, 3), len);
+}
