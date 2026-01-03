@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.86](https://github.com/monotykamary/openmux/compare/v0.2.85...v0.2.86) (2026-01-03)
+
+
+### Features
+
+* **vim:** add overlay vim bindings, status mode, and delete confirmations ([185176f](https://github.com/monotykamary/openmux/commit/185176f1c6a85b5281cee42b47d75e0459e2ca67))
+
 ### [0.2.85](https://github.com/monotykamary/openmux/compare/v0.2.84...v0.2.85) (2026-01-03)
 
 ### [0.2.84](https://github.com/monotykamary/openmux/compare/v0.2.83...v0.2.84) (2026-01-03)
