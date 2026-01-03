@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.88](https://github.com/monotykamary/openmux/compare/v0.2.87...v0.2.88) (2026-01-03)
+
+
+### Refactoring
+
+* **shim:** split connection frame handling ([779655f](https://github.com/monotykamary/openmux/commit/779655f388da44471d6469800dd7bc0163b09636))
+
 ### [0.2.87](https://github.com/monotykamary/openmux/compare/v0.2.86...v0.2.87) (2026-01-03)
 
 
