@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.82](https://github.com/monotykamary/openmux/compare/v0.2.81...v0.2.82) (2026-01-03)
+
+
+### Features
+
+* **ghostty:** migrate libghostty-vt to wrapper ([f0c9fb5](https://github.com/monotykamary/openmux/commit/f0c9fb572b2432fe5fb6c176f1fb6f4381a1a224))
+
+
+### Bug Fixes
+
+* **ghostty-wrapper:** init response buffer ([7a88f24](https://github.com/monotykamary/openmux/commit/7a88f2481718c27988232faa820d90af27d2c225))
+
 ### [0.2.81](https://github.com/monotykamary/openmux/compare/v0.2.80...v0.2.81) (2026-01-02)
 
 
