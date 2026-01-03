@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.2.84](https://github.com/monotykamary/openmux/compare/v0.2.83...v0.2.84) (2026-01-03)
+
+
+### Refactoring
+
+* **zig-git:** modularize tests ([5ab8932](https://github.com/monotykamary/openmux/commit/5ab893259c8e829eb2132d68ac555f04dbe7b06e))
+
 ### [0.2.83](https://github.com/monotykamary/openmux/compare/v0.2.82...v0.2.83) (2026-01-03)
 
 
