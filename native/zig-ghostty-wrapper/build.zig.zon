@@ -1,7 +1,7 @@
 .{
-    .name = .ghostty_wrapper,
+    .name = .zig_ghostty_wrapper,
     .version = "0.1.0",
-    .fingerprint = 0xf8584fb5db844b7a,
+    .fingerprint = 0xfa546bd946a249b7,
     .paths = .{""},
     .dependencies = .{
         .ghostty = .{ .path = "../../vendor/ghostty" },

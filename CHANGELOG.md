@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### Bug Fixes
 
-* **ghostty-wrapper:** init response buffer ([7a88f24](https://github.com/monotykamary/openmux/commit/7a88f2481718c27988232faa820d90af27d2c225))
+* **zig-ghostty-wrapper:** init response buffer ([7a88f24](https://github.com/monotykamary/openmux/commit/7a88f2481718c27988232faa820d90af27d2c225))
 
 ### [0.2.81](https://github.com/monotykamary/openmux/compare/v0.2.80...v0.2.81) (2026-01-02)
 

@@ -248,8 +248,8 @@ pub fn build(b: *std.Build) !void {
 
     lib.root_module.addImport("ghostty", ghostty_module);
     lib.installHeadersDirectory(
-        b.path("include/ghostty-wrapper"),
-        "ghostty-wrapper",
+        b.path("include/zig-ghostty-wrapper"),
+        "zig-ghostty-wrapper",
         .{ .include_extensions = &.{".h"} },
     );
 

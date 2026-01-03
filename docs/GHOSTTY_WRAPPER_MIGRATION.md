@@ -4,7 +4,7 @@ This document describes the migration from the patch-based approach for integrat
 
 ## Status (Completed)
 
-- Wrapper library lives at `native/ghostty-wrapper`.
+- Wrapper library lives at `native/zig-ghostty-wrapper`.
 - Patch file `patches/ghostty-vt.patch` removed; the Ghostty submodule stays clean.
 - Build/test scripts use the wrapper library (`scripts/build.sh`, `scripts/test-ghostty-vt.sh`).
 
@@ -40,9 +40,9 @@ Ghostty is tracked as a git submodule at `vendor/ghostty`, pointing to the upstr
 
 ### What the Wrapper Provides
 
-The wrapper replaces the legacy patch by moving the C API implementation into `native/ghostty-wrapper`. It exposes the same terminal lifecycle, render state queries, scrollback access, mode queries, Kitty graphics enumeration, and response buffer handling functions, while importing Ghostty types directly via Zig.
+The wrapper replaces the legacy patch by moving the C API implementation into `native/zig-ghostty-wrapper`. It exposes the same terminal lifecycle, render state queries, scrollback access, mode queries, Kitty graphics enumeration, and response buffer handling functions, while importing Ghostty types directly via Zig.
 
-The wrapper also ships its own `include/ghostty-wrapper/terminal.h` header, matching the C API previously provided by the patch.
+The wrapper also ships its own `include/zig-ghostty-wrapper/terminal.h` header, matching the C API previously provided by the patch.
 
 ### FFI Interface from TypeScript
 
@@ -52,18 +52,18 @@ The FFI currently imports approximately 50 functions covering terminal lifecycle
 
 ### Build Process
 
-The build script `scripts/build.sh` orchestrates the native library builds. For Ghostty, it now builds `native/ghostty-wrapper` and copies the resulting `libghostty-vt` shared library into the distribution directory alongside the zig-pty and zig-git libraries.
+The build script `scripts/build.sh` orchestrates the native library builds. For Ghostty, it now builds `native/zig-ghostty-wrapper` and copies the resulting `libghostty-vt` shared library into the distribution directory alongside the zig-pty and zig-git libraries.
 
 ## Proposed Wrapper Library Architecture
 
-The new architecture introduces a `native/ghostty-wrapper` directory that contains a standalone Zig library. This library imports Ghostty's public Zig modules and exports a C API, completely replacing the patched code.
+The new architecture introduces a `native/zig-ghostty-wrapper` directory that contains a standalone Zig library. This library imports Ghostty's public Zig modules and exports a C API, completely replacing the patched code.
 
 ### Directory Structure
 
 The wrapper library will have the following structure:
 
 ```
-native/ghostty-wrapper/
+native/zig-ghostty-wrapper/
   build.zig           # Build configuration
   build.zig.zon       # Package manifest declaring ghostty dependency
   src/
@@ -74,7 +74,7 @@ native/ghostty-wrapper/
     kitty.zig         # Kitty graphics enumeration
     responses.zig     # Response buffer handling
   include/
-    ghostty-wrapper/
+    zig-ghostty-wrapper/
       terminal.h      # Public C header
 ```
 
@@ -84,7 +84,7 @@ The `build.zig.zon` file declares Ghostty as a path dependency, pointing to the 
 
 ```zig
 .{
-    .name = "ghostty-wrapper",
+    .name = "zig-ghostty-wrapper",
     .version = "0.1.0",
     .paths = .{""},
     .dependencies = .{
@@ -150,13 +150,13 @@ The migration should proceed in phases to minimize risk and allow for incrementa
 
 ### Phase 1: Create the Wrapper Library Skeleton
 
-Create the `native/ghostty-wrapper` directory with `build.zig.zon` declaring the Ghostty dependency. Create a minimal `build.zig` that attempts to import the Ghostty modules and build a shared library. Create a `src/main.zig` that exports a single test function. Verify that `zig build` succeeds and produces a loadable shared library.
+Create the `native/zig-ghostty-wrapper` directory with `build.zig.zon` declaring the Ghostty dependency. Create a minimal `build.zig` that attempts to import the Ghostty modules and build a shared library. Create a `src/main.zig` that exports a single test function. Verify that `zig build` succeeds and produces a loadable shared library.
 
 This phase validates that the Zig package dependency system works correctly with the vendored Ghostty submodule.
 
 ### Phase 2: Implement Terminal Wrapper Core
 
-Extract the terminal wrapper implementation from the legacy patch (now materialized in `native/ghostty-wrapper/src/terminal.zig`). The relevant code originated in `src/terminal/c/terminal.zig` and was adapted to import types from the Ghostty package rather than relative imports.
+Extract the terminal wrapper implementation from the legacy patch (now materialized in `native/zig-ghostty-wrapper/src/terminal.zig`). The relevant code originated in `src/terminal/c/terminal.zig` and was adapted to import types from the Ghostty package rather than relative imports.
 
 Create `src/terminal.zig` with the `TerminalWrapper` struct that holds a pointer to a Ghostty `Terminal` and a `RenderState`. Implement the lifecycle functions (`new`, `free`, `resize`, `write`). Export these from `main.zig` with the expected C function names.
 
@@ -188,13 +188,13 @@ Either re-export the key encoding functions that Ghostty already provides, or en
 
 ### Phase 8: Create the C Header
 
-Create `include/ghostty-wrapper/terminal.h` with declarations for all exported functions. This header should match the current header in the patch to ensure TypeScript FFI compatibility.
+Create `include/zig-ghostty-wrapper/terminal.h` with declarations for all exported functions. This header should match the current header in the patch to ensure TypeScript FFI compatibility.
 
 ### Phase 9: Update Build System
 
 Modify `scripts/build.sh` to build the wrapper library instead of the patched Ghostty. The build function should:
 
-1. Build the wrapper library using `zig build` in `native/ghostty-wrapper`
+1. Build the wrapper library using `zig build` in `native/zig-ghostty-wrapper`
 2. Copy the resulting shared library to the distribution directory
 3. No longer apply the patch or build within `vendor/ghostty`
 
@@ -265,9 +265,9 @@ Before considering the migration complete, verify the following:
 For implementers, here are the key files to reference:
 
 **Wrapper implementation:**
-- `native/ghostty-wrapper/src/terminal.zig` - Terminal C API wrapper implementation
-- `native/ghostty-wrapper/src/main.zig` - C export declarations
-- `native/ghostty-wrapper/include/ghostty-wrapper/terminal.h` - Public C header
+- `native/zig-ghostty-wrapper/src/terminal.zig` - Terminal C API wrapper implementation
+- `native/zig-ghostty-wrapper/src/main.zig` - C export declarations
+- `native/zig-ghostty-wrapper/include/zig-ghostty-wrapper/terminal.h` - Public C header
 
 **Ghostty public interface:**
 - `vendor/ghostty/src/lib_vt.zig` - Public Zig API exports

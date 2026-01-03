@@ -78,8 +78,10 @@ jobs:
             exit 1
           fi
 
-      - name: Apply ghostty-vt patch
-        run: ./scripts/update-ghostty-vt.sh --patch-only
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: Run Zig tests
         run: cd native/zig-pty && zig build test --summary all
@@ -88,4 +90,4 @@ jobs:
         run: cd native/zig-git && zig build test --summary all
 
       - name: Run Ghostty VT tests
-        run: ./scripts/test-ghostty-vt.sh
+        run: bun run test:zig-ghostty-wrapper

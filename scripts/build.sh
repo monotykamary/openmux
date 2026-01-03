@@ -132,9 +132,9 @@ build_zig_git() {
 build_ghostty_vt() {
     echo "Building ghostty-vt native library..."
 
-    local ghostty_wrapper_dir="$PROJECT_DIR/native/ghostty-wrapper"
-    if [[ ! -d "$ghostty_wrapper_dir" ]]; then
-        echo "Error: ghostty-wrapper directory not found at $ghostty_wrapper_dir"
+    local zig_ghostty_wrapper_dir="$PROJECT_DIR/native/zig-ghostty-wrapper"
+    if [[ ! -d "$zig_ghostty_wrapper_dir" ]]; then
+        echo "Error: zig-ghostty-wrapper directory not found at $zig_ghostty_wrapper_dir"
         exit 1
     fi
     if [[ ! -d "$PROJECT_DIR/vendor/ghostty" ]]; then
@@ -147,7 +147,7 @@ build_ghostty_vt() {
         exit 1
     fi
 
-    cd "$ghostty_wrapper_dir"
+    cd "$zig_ghostty_wrapper_dir"
     zig build -Doptimize=ReleaseFast
     cd "$PROJECT_DIR"
 
@@ -285,9 +285,9 @@ build() {
     fi
 
     # Copy ghostty-vt wrapper library
-    local ghostty_lib="$PROJECT_DIR/native/ghostty-wrapper/zig-out/lib/$GHOSTTY_LIB_NAME"
+    local ghostty_lib="$PROJECT_DIR/native/zig-ghostty-wrapper/zig-out/lib/$GHOSTTY_LIB_NAME"
     if [[ ! -f "$ghostty_lib" ]]; then
-        ghostty_lib="$PROJECT_DIR/native/ghostty-wrapper/zig-out/lib/ghostty-vt.$LIB_EXT"
+        ghostty_lib="$PROJECT_DIR/native/zig-ghostty-wrapper/zig-out/lib/ghostty-vt.$LIB_EXT"
     fi
     if [[ -f "$ghostty_lib" ]]; then
         cp "$ghostty_lib" "$DIST_DIR/$GHOSTTY_LIB_NAME"

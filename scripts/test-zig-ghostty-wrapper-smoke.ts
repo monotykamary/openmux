@@ -1,5 +1,5 @@
 /**
- * Minimal FFI smoke test for the ghostty wrapper.
+ * Minimal FFI smoke test for the zig-ghostty-wrapper.
  */
 import { ghostty } from "../src/terminal/ghostty-vt/ffi";
 
@@ -55,7 +55,7 @@ try {
     throw new Error(`unexpected kitty response: ${response}`);
   }
 
-  console.log("ghostty wrapper smoke test ok");
+  console.log("zig-ghostty-wrapper smoke test ok");
 } finally {
   ghostty.symbols.ghostty_terminal_free(term);
 }
