@@ -16,6 +16,159 @@ type ViCompat = typeof vi & {
 
 const viCompat = vi as ViCompat;
 
+type FakeTimer = {
+  callback: (...args: unknown[]) => void;
+  args: unknown[];
+  time: number;
+  intervalMs?: number;
+};
+
+const realTimers = {
+  setTimeout: globalThis.setTimeout,
+  clearTimeout: globalThis.clearTimeout,
+  setInterval: globalThis.setInterval,
+  clearInterval: globalThis.clearInterval,
+  dateNow: Date.now.bind(Date),
+};
+
+let fakeTimersActive = false;
+let fakeNow = realTimers.dateNow();
+let nextFakeTimerId = 1;
+const fakeTimers = new Map<number, FakeTimer>();
+
+// Bun exposes part of Vitest's `vi` API. These tests need a small fake-time scheduler.
+function normalizeDelay(delay: unknown): number {
+  const value = typeof delay === 'number' ? delay : Number(delay ?? 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function invokeTimer(timer: FakeTimer): void {
+  timer.callback(...timer.args);
+}
+
+function installFakeTimers(now?: number | Date): void {
+  fakeTimersActive = true;
+  fakeNow =
+    now instanceof Date ? now.getTime() : typeof now === 'number' ? now : realTimers.dateNow();
+  fakeTimers.clear();
+
+  globalThis.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+    const id = nextFakeTimerId++;
+    fakeTimers.set(id, {
+      callback:
+        typeof callback === 'function' ? (callback as (...args: unknown[]) => void) : () => {},
+      args,
+      time: fakeNow + normalizeDelay(delay),
+    });
+    return id as unknown as ReturnType<typeof setTimeout>;
+  }) as typeof setTimeout;
+
+  globalThis.clearTimeout = ((timer?: ReturnType<typeof setTimeout>) => {
+    fakeTimers.delete(timer as unknown as number);
+  }) as typeof clearTimeout;
+
+  globalThis.setInterval = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+    const intervalMs = normalizeDelay(delay);
+    const id = nextFakeTimerId++;
+    fakeTimers.set(id, {
+      callback:
+        typeof callback === 'function' ? (callback as (...args: unknown[]) => void) : () => {},
+      args,
+      time: fakeNow + intervalMs,
+      intervalMs,
+    });
+    return id as unknown as ReturnType<typeof setInterval>;
+  }) as typeof setInterval;
+
+  globalThis.clearInterval = ((timer?: ReturnType<typeof setInterval>) => {
+    fakeTimers.delete(timer as unknown as number);
+  }) as typeof clearInterval;
+
+  Date.now = () => fakeNow;
+}
+
+function restoreRealTimers(): void {
+  fakeTimersActive = false;
+  fakeTimers.clear();
+  globalThis.setTimeout = realTimers.setTimeout;
+  globalThis.clearTimeout = realTimers.clearTimeout;
+  globalThis.setInterval = realTimers.setInterval;
+  globalThis.clearInterval = realTimers.clearInterval;
+  Date.now = realTimers.dateNow;
+}
+
+function runTimer(id: number): void {
+  const timer = fakeTimers.get(id);
+  if (!timer) return;
+
+  if (timer.intervalMs === undefined) {
+    fakeTimers.delete(id);
+  } else {
+    timer.time += timer.intervalMs;
+  }
+
+  invokeTimer(timer);
+}
+
+function nextDueTimer(targetTime: number): [number, FakeTimer] | undefined {
+  let next: [number, FakeTimer] | undefined;
+  for (const entry of fakeTimers.entries()) {
+    const [, timer] = entry;
+    if (timer.time > targetTime) continue;
+    if (!next || timer.time < next[1].time) {
+      next = entry;
+    }
+  }
+  return next;
+}
+
+viCompat.useFakeTimers = ((options?: { now?: number | Date }) => {
+  installFakeTimers(options?.now);
+  return viCompat;
+}) as typeof vi.useFakeTimers;
+
+viCompat.useRealTimers = (() => {
+  restoreRealTimers();
+  return viCompat;
+}) as typeof vi.useRealTimers;
+
+viCompat.advanceTimersByTime = (ms: number) => {
+  if (!fakeTimersActive) return;
+  const targetTime = fakeNow + Math.max(0, ms);
+  let guard = 100_000;
+
+  while (guard > 0) {
+    const next = nextDueTimer(targetTime);
+    if (!next) break;
+    fakeNow = next[1].time;
+    runTimer(next[0]);
+    guard -= 1;
+  }
+
+  fakeNow = targetTime;
+};
+
+viCompat.runOnlyPendingTimers = () => {
+  if (!fakeTimersActive) return;
+  const pending = Array.from(fakeTimers.entries()).sort((a, b) => a[1].time - b[1].time);
+  for (const [id, timer] of pending) {
+    if (!fakeTimers.has(id)) continue;
+    fakeNow = Math.max(fakeNow, timer.time);
+    runTimer(id);
+  }
+};
+
+viCompat.runAllTimers = () => {
+  if (!fakeTimersActive) return;
+  let guard = 100_000;
+  while (fakeTimers.size > 0 && guard > 0) {
+    viCompat.runOnlyPendingTimers?.();
+    guard -= 1;
+  }
+};
+
+viCompat.getTimerCount = () => fakeTimers.size;
+
 if (!viCompat.mocked) {
   viCompat.mocked = (value) => value;
 }
