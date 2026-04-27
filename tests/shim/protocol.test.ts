@@ -1,5 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from 'bun:test';
 import { encodeFrame, FrameReader, type ShimHeader } from '../../src/shim/protocol';
+
+function encodeRawFrame(headerBytes: Buffer, declaredHeaderLength = headerBytes.length): Buffer {
+  const frameLength = 4 + headerBytes.length;
+  const buffer = Buffer.alloc(4 + frameLength);
+  buffer.writeUInt32BE(frameLength, 0);
+  buffer.writeUInt32BE(declaredHeaderLength, 4);
+  headerBytes.copy(buffer, 8);
+  return buffer;
+}
 
 function readFrames(chunks: Buffer[]): Array<{ header: ShimHeader; payloads: Buffer[] }> {
   const reader = new FrameReader();
@@ -57,5 +66,33 @@ describe('shim protocol', () => {
     expect(frames).toHaveLength(1);
     expect(frames[0].payloads).toHaveLength(1);
     expect(frames[0].payloads[0].toString('utf8')).toBe('onetwo');
+  });
+
+  test('skips malformed JSON frames without throwing', () => {
+    const reader = new FrameReader();
+    const frames: Array<{ header: ShimHeader; payloads: Buffer[] }> = [];
+    const malformed = encodeRawFrame(Buffer.from('{bad json', 'utf8'));
+    const valid = encodeFrame({ type: 'event' });
+
+    expect(() => {
+      reader.feed(Buffer.concat([malformed, valid]), (header, payloads) => {
+        frames.push({ header, payloads });
+      });
+    }).not.toThrow();
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0].header).toEqual({ type: 'event' });
+  });
+
+  test('skips frames with invalid header or payload lengths', () => {
+    const badHeaderLength = encodeRawFrame(Buffer.from('{}', 'utf8'), 50);
+    const badPayloadLength = encodeFrame({ type: 'event', payloadLengths: [10] }, [
+      Buffer.from('abc'),
+    ]);
+    const valid = encodeFrame({ type: 'event', payloadLengths: [1] }, [Buffer.from('z')]);
+    const frames = readFrames([Buffer.concat([badHeaderLength, badPayloadLength, valid])]);
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0].payloads[0].toString('utf8')).toBe('z');
   });
 });

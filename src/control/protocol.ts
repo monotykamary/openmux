@@ -6,8 +6,7 @@ export const CONTROL_PROTOCOL_VERSION = 1;
 
 const defaultSocketDir = join(homedir(), '.config', 'openmux', 'sockets');
 
-export const CONTROL_SOCKET_DIR =
-  process.env.OPENMUX_CONTROL_SOCKET_DIR ?? defaultSocketDir;
+export const CONTROL_SOCKET_DIR = process.env.OPENMUX_CONTROL_SOCKET_DIR ?? defaultSocketDir;
 
 export const CONTROL_SOCKET_PATH =
   process.env.OPENMUX_CONTROL_SOCKET_PATH ?? join(CONTROL_SOCKET_DIR, 'openmux-ui.sock');
@@ -67,17 +66,39 @@ export class FrameReader {
 
       const headerLength = frame.readUInt32BE(0);
       const headerEnd = 4 + headerLength;
+      // Bad complete frames should not crash the socket data handler.
+      if (headerEnd > frame.length) {
+        continue;
+      }
+
       const headerJson = frame.subarray(4, headerEnd).toString('utf8');
-      const header = JSON.parse(headerJson) as ControlHeader;
+      let header: ControlHeader;
+      try {
+        const parsed = JSON.parse(headerJson) as unknown;
+        if (!parsed || typeof parsed !== 'object') {
+          continue;
+        }
+        header = parsed as ControlHeader;
+      } catch {
+        continue;
+      }
 
       const payloads: Buffer[] = [];
       let offset = headerEnd;
-      const payloadLengths = header.payloadLengths ?? [];
+      const payloadLengths = Array.isArray(header.payloadLengths) ? header.payloadLengths : [];
 
       if (payloadLengths.length > 0) {
+        let validPayloads = true;
         for (const length of payloadLengths) {
+          if (!Number.isInteger(length) || length < 0 || offset + length > frame.length) {
+            validPayloads = false;
+            break;
+          }
           payloads.push(frame.subarray(offset, offset + length));
           offset += length;
+        }
+        if (!validPayloads) {
+          continue;
         }
       } else if (offset < frame.length) {
         payloads.push(frame.subarray(offset));
