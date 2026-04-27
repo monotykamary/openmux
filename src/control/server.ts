@@ -7,7 +7,14 @@ import type { LayoutState } from '../core/operations/layout-actions';
 import type { ITerminalEmulator } from '../terminal/emulator-interface';
 import type { SessionMetadata } from '../core/types';
 import { SessionStorageError } from '../effect/errors';
-import { CONTROL_PROTOCOL_VERSION, CONTROL_SOCKET_DIR, CONTROL_SOCKET_PATH, encodeFrame, FrameReader, type ControlHeader } from './protocol';
+import {
+  CONTROL_PROTOCOL_VERSION,
+  CONTROL_SOCKET_DIR,
+  CONTROL_SOCKET_PATH,
+  encodeFrame,
+  FrameReader,
+  type ControlHeader,
+} from './protocol';
 import { parsePaneSelector, resolvePaneSelector } from './targets';
 import { captureEmulator, type CaptureFormat } from './capture';
 
@@ -19,9 +26,18 @@ export type ControlServerDeps = {
   splitPane: (direction: 'horizontal' | 'vertical') => void;
   writeToPty: (ptyId: string, data: string) => void;
   getEmulator: (ptyId: string) => ITerminalEmulator | null;
-  fetchTerminalState: (ptyId: string, options?: { force?: boolean }) => Promise<TerminalState | null>;
-  fetchScrollState: (ptyId: string, options?: { force?: boolean }) => Promise<TerminalScrollState | null>;
-  capturePty?: (ptyId: string, options: { lines: number; format: CaptureFormat; raw?: boolean }) => Promise<string | null>;
+  fetchTerminalState: (
+    ptyId: string,
+    options?: { force?: boolean }
+  ) => Promise<TerminalState | null>;
+  fetchScrollState: (
+    ptyId: string,
+    options?: { force?: boolean }
+  ) => Promise<TerminalScrollState | null>;
+  capturePty?: (
+    ptyId: string,
+    options: { lines: number; format: CaptureFormat; raw?: boolean }
+  ) => Promise<string | null>;
   isPtyActive: (ptyId: string) => boolean;
   createSession: (name?: string) => Promise<SessionMetadata | SessionStorageError>;
   getActiveSessionId: () => string | null | undefined;
@@ -32,7 +48,12 @@ export type ControlServer = {
   socketPath: string;
 };
 
-type ControlErrorCode = 'invalid_request' | 'not_found' | 'ambiguous' | 'internal' | 'session_creation_failed';
+type ControlErrorCode =
+  | 'invalid_request'
+  | 'not_found'
+  | 'ambiguous'
+  | 'internal'
+  | 'session_creation_failed';
 
 /** Error processing control request */
 export class ControlRequestError extends errore.createTaggedError({
@@ -40,6 +61,60 @@ export class ControlRequestError extends errore.createTaggedError({
   message: 'Control request failed: $reason',
 }) {
   code: ControlErrorCode = 'internal';
+}
+
+function getControlSocketDir(): string {
+  return process.env.OPENMUX_CONTROL_SOCKET_DIR ?? CONTROL_SOCKET_DIR;
+}
+
+function getControlSocketPath(): string {
+  return process.env.OPENMUX_CONTROL_SOCKET_PATH ?? CONTROL_SOCKET_PATH;
+}
+
+async function socketAcceptsConnections(socketPath: string): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const client = net.createConnection(socketPath);
+    const timeout = setTimeout(() => {
+      cleanup();
+      client.destroy();
+      reject(new Error(`Timed out checking control socket: ${socketPath}`));
+    }, 250);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      client.removeAllListeners('connect');
+      client.removeAllListeners('error');
+    };
+
+    client.once('connect', () => {
+      cleanup();
+      client.end();
+      resolve(true);
+    });
+
+    client.once('error', (error: NodeJS.ErrnoException) => {
+      cleanup();
+      client.destroy();
+      if (error.code === 'ENOENT' || error.code === 'ECONNREFUSED') {
+        resolve(false);
+        return;
+      }
+      reject(error);
+    });
+  });
+}
+
+async function prepareSocketFile(socketPath: string): Promise<void> {
+  // Only unlink stale files. Removing an active Unix socket path orphans the running server.
+  if (await socketAcceptsConnections(socketPath)) {
+    throw new Error(`Control socket already in use: ${socketPath}`);
+  }
+
+  await fs.unlink(socketPath).catch((e: NodeJS.ErrnoException) => {
+    if (e.code !== 'ENOENT') {
+      throw e;
+    }
+  });
 }
 
 function parseWorkspaceId(value: unknown): WorkspaceId | undefined {
@@ -270,8 +345,9 @@ async function handlePaneCapture(
     const end = Math.min(scrollbackLength, start + lines);
     const count = Math.max(0, end - start);
     if (count > 0) {
-      await (emulator as { prefetchScrollbackLines: (offset: number, count: number) => Promise<void> })
-        .prefetchScrollbackLines(start, count);
+      await (
+        emulator as { prefetchScrollbackLines: (offset: number, count: number) => Promise<void> }
+      ).prefetchScrollbackLines(start, count);
     }
   }
 
@@ -285,10 +361,11 @@ async function handlePaneCapture(
 }
 
 export async function startControlServer(deps: ControlServerDeps): Promise<ControlServer> {
-  await fs.mkdir(CONTROL_SOCKET_DIR, { recursive: true });
-  await fs.unlink(CONTROL_SOCKET_PATH).catch((e) => {
-    console.warn('[control] Failed to unlink control socket:', e);
-  });
+  const socketDir = getControlSocketDir();
+  const socketPath = getControlSocketPath();
+
+  await fs.mkdir(socketDir, { recursive: true });
+  await prepareSocketFile(socketPath);
 
   const server = net.createServer((socket) => {
     const reader = new FrameReader();
@@ -342,7 +419,11 @@ export async function startControlServer(deps: ControlServerDeps): Promise<Contr
               sendError(requestId, `Unknown method: ${method}`, 'invalid_request');
           }
         },
-        catch: (e: unknown) => new ControlRequestError({ reason: e instanceof Error ? e.message : 'Request failed', cause: e }),
+        catch: (e: unknown) =>
+          new ControlRequestError({
+            reason: e instanceof Error ? e.message : 'Request failed',
+            cause: e,
+          }),
       });
 
       if (result instanceof ControlRequestError) {
@@ -360,14 +441,14 @@ export async function startControlServer(deps: ControlServerDeps): Promise<Contr
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(CONTROL_SOCKET_PATH, () => resolve());
+    server.listen(socketPath, () => resolve());
   });
 
   return {
-    socketPath: CONTROL_SOCKET_PATH,
+    socketPath,
     close: async () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      await fs.unlink(CONTROL_SOCKET_PATH).catch((e) => {
+      await fs.unlink(socketPath).catch((e) => {
         console.warn('[control] Failed to unlink control socket on close:', e);
       });
     },

@@ -5,6 +5,7 @@ import * as errore from 'errore';
 import { FrameReader } from './protocol';
 import { createServerHandlers, type ShimServerOptions } from './server-handlers';
 import { createShimServerState, resetShimServerState } from './server-state';
+import { prepareShimSocketFile } from './server-socket';
 import { ShimConnectionError } from '../effect/errors';
 
 const shimState = createShimServerState();
@@ -24,18 +25,6 @@ async function ensureSocketDir(socketDir: string): Promise<void | ShimConnection
 }
 
 /**
- * Removes the socket file if it exists, ignoring errors.
- * @param socketPath - Path to the socket file to remove
- */
-async function removeSocketFile(socketPath: string): Promise<void> {
-  try {
-    await fs.unlink(socketPath);
-  } catch {
-    // Ignore missing file
-  }
-}
-
-/**
  * Starts the shim server listening on a Unix socket.
  * Creates server handlers and manages client connections with single-client lock semantics.
  * @param options - Optional server configuration including socket path and PTY provider
@@ -44,14 +33,15 @@ async function removeSocketFile(socketPath: string): Promise<void> {
 export async function startShimServer(
   options?: ShimServerOptions
 ): Promise<net.Server | ShimConnectionError> {
-  resetShimServerState(shimState);
-
   const handlers = createServerHandlers(shimState, options);
 
   const dirResult = await ensureSocketDir(handlers.socketDir);
   if (dirResult instanceof ShimConnectionError) return dirResult;
 
-  await removeSocketFile(handlers.socketPath);
+  const socketResult = await prepareShimSocketFile(handlers.socketPath);
+  if (socketResult instanceof ShimConnectionError) return socketResult;
+
+  resetShimServerState(shimState);
 
   const server = net.createServer((socket) => {
     const frameReader = new FrameReader();
