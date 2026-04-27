@@ -5,7 +5,6 @@ import path from 'node:path';
 import * as errore from 'errore';
 import { spawnAsync } from '../../../../native/zig-pty/ts/index';
 import { createGhosttyVTEmulator } from '../../../terminal/ghostty-vt/emulator';
-import { ArchivedTerminalEmulator } from '../../../terminal/archived-emulator';
 import { TerminalQueryPassthrough } from '../../../terminal/terminal-query-passthrough';
 import { createSyncModeParser } from '../../../terminal/sync-mode-parser';
 import { getCapabilityEnvironment } from '../../../terminal/capabilities';
@@ -27,8 +26,13 @@ import type { ScrollbackArchiveManager } from '../../../terminal/scrollback-arch
 import { ScrollbackArchiver } from './scrollback-archiver';
 import { getConfigDir } from '../../../core/user-config';
 
-const DEFAULT_CELL_WIDTH = 8;
-const DEFAULT_CELL_HEIGHT = 16;
+function defaultCellWidth(): number {
+  return 8;
+}
+
+function defaultCellHeight(): number {
+  return 16;
+}
 
 export interface SessionFactoryDeps {
   colors: TerminalColors;
@@ -73,10 +77,10 @@ export async function createSession(
   const pixelHeight = hasPixels ? options.pixelHeight : undefined;
   const cellWidth = hasPixels
     ? Math.max(1, Math.floor((pixelWidth ?? 0) / cols))
-    : DEFAULT_CELL_WIDTH;
+    : defaultCellWidth();
   const cellHeight = hasPixels
     ? Math.max(1, Math.floor((pixelHeight ?? 0) / rows))
-    : DEFAULT_CELL_HEIGHT;
+    : defaultCellHeight();
   const cwd = options.cwd ?? process.cwd();
   const shell = deps.defaultShell;
   const shellName = shell.split('/').pop() ?? '';
@@ -100,6 +104,8 @@ export async function createSession(
     rootDir: path.join(scrollbackRoot, String(id)),
     manager: deps.scrollbackArchiveManager,
   });
+  // Dynamic import keeps circular test imports from touching the class before initialization.
+  const { ArchivedTerminalEmulator } = await import('../../../terminal/archived-emulator');
   const emulator = new ArchivedTerminalEmulator(liveEmulator, scrollbackArchive);
 
   // Create terminal query passthrough for handling terminal queries
@@ -157,8 +163,8 @@ export async function createSession(
     rows,
     cellWidth,
     cellHeight,
-    pixelWidth: hasPixels ? pixelWidth! : cols * DEFAULT_CELL_WIDTH,
-    pixelHeight: hasPixels ? pixelHeight! : rows * DEFAULT_CELL_HEIGHT,
+    pixelWidth: hasPixels ? pixelWidth! : cols * defaultCellWidth(),
+    pixelHeight: hasPixels ? pixelHeight! : rows * defaultCellHeight(),
     cwd,
     cwdReported: false,
     shell,

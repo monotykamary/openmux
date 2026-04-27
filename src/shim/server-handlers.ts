@@ -20,18 +20,20 @@ import {
   detachClient,
   applyHostColors,
   type ShimHandlerContext,
-  type WithPty,
   type ShimServerOptions,
 } from './handlers';
 import type { ShimServerState } from './server-state';
 
-const defaultWithPty: WithPty = async (fn) => {
+// Function declaration avoids TDZ failures when tests import this module through cycles.
+async function defaultWithPty<A>(
+  fn: (pty: ReturnType<typeof getPtyService>) => Promise<A | Error> | A | Error
+): Promise<A | Error> {
   if (!hasServices()) {
     return new ServicesNotInitializedError({ operation: 'withPty' });
   }
   const pty = getPtyService();
   return await fn(pty);
-};
+}
 
 /**
  * Creates shim server handlers with configured context.
