@@ -39,33 +39,7 @@ export function removePendingPaneCreations(
   );
 }
 
-export function getInsertedPaneOrder(
-  paneOrder: Map<string, number>,
-  insertAfterPaneId: string
-): number | null {
-  const insertAfterOrder = paneOrder.get(insertAfterPaneId);
-  if (insertAfterOrder === undefined) {
-    return null;
-  }
-
-  let nextOrder: number | undefined;
-  for (const order of paneOrder.values()) {
-    if (order <= insertAfterOrder) {
-      continue;
-    }
-    if (nextOrder === undefined || order < nextOrder) {
-      nextOrder = order;
-    }
-  }
-
-  if (nextOrder === undefined) {
-    return Math.floor(insertAfterOrder) + 1;
-  }
-
-  return insertAfterOrder + (nextOrder - insertAfterOrder) / 2;
-}
-
-export function getAppendedPaneOrder(paneOrder: Map<string, number>): number {
+function getAppendedPaneOrder(paneOrder: Map<string, number>): number {
   return [...paneOrder.values()].reduce((maxOrder, order) => Math.max(maxOrder, order), -1) + 1;
 }
 

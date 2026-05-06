@@ -179,7 +179,11 @@ describe('createHostColorSync', () => {
 
     appearanceTriggerRef.current?.();
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Poll until both refresh calls are observed or timeout (avoids flaky fixed-delay on slow CI)
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline && refreshHostColorsCache.mock.calls.length < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
 
     expect(refreshHostColorsCache).toHaveBeenCalledTimes(2);
     expect(refreshHostColorsCache).toHaveBeenNthCalledWith(1, { timeoutMs: 200, oscMode: 'fast' });

@@ -10,7 +10,7 @@
  * because that can surface orphaned/shadow PTYs that do not belong to any session workspace.
  */
 
-import type { SetStoreFunction } from 'solid-js/store';
+import { produce, type SetStoreFunction } from 'solid-js/store';
 
 import {
   RefreshGuard,
@@ -23,6 +23,10 @@ import type { AggregateViewState } from './types';
 import { createSuspendedPtyCache, type SuspendedPtyCache } from './refresh/suspended-pty-cache';
 import { createBuildSnapshot } from './refresh/build-snapshot';
 import { applySnapshot } from './refresh/apply-snapshot';
+import { applyGitMetadataSnapshot } from './git';
+import { recomputeMatches, recomputeTree } from './session';
+import { getGlobalGitMetadataCache } from '../git-metadata-cache';
+import { getGitInfo, getGitDiffStats } from '../../effect/services/pty/helpers';
 
 export { ptyMetadataToInfo } from './pty-info';
 
@@ -72,22 +76,72 @@ export function createAggregateViewRefreshers(
     return;
   };
 
+  /** Hydrate git metadata for all PTYs in the current state.
+   *  Runs outside the refresh mutex — safe because it only updates
+   *  git fields on existing PTYs and never adds or removes them. */
+  const hydrateGitMetadata = async (options: { forceRefresh: boolean }): Promise<void> => {
+    if (!state.showAggregateView) return;
+
+    const cwds = [...new Set(state.allPtys.map((pty) => pty.cwd).filter(Boolean))];
+    if (cwds.length === 0) return;
+
+    const gitCache = getGlobalGitMetadataCache({
+      fetchGitInfo: (cwd) => getGitInfo(cwd, { force: false }),
+      fetchDiffStats: getGitDiffStats,
+    });
+
+    const gitMetadataMap = await gitCache.getMetadataBatch(cwds, {
+      forceRefresh: options.forceRefresh,
+    });
+
+    if (!state.showAggregateView) return;
+
+    setState(
+      produce((s) => {
+        let treeChanged = false;
+        for (let i = 0; i < s.allPtys.length; i++) {
+          const pty = s.allPtys[i];
+          const gitMetadata = gitMetadataMap.get(pty.cwd);
+          const updatedPty = applyGitMetadataSnapshot(pty, gitMetadata);
+          if (updatedPty !== pty) {
+            s.allPtys[i] = updatedPty;
+            treeChanged = true;
+          }
+        }
+        if (treeChanged) {
+          recomputeMatches(s);
+          recomputeTree(s);
+        }
+      })
+    );
+  };
+
   const refreshPtys = async () => {
     if (refreshState.refreshInProgress) {
       refreshState.pendingFullRefresh = true;
       return;
     }
 
+    // Phase 1: Build and apply snapshot without git metadata.
+    // This is fast because it skips expensive git status/diff fetches.
+    // The mutex is released after this phase, allowing refreshActiveSession
+    // to run unblocked for newly created PTYs.
     do {
       refreshState.pendingFullRefresh = false;
       await using _guardRefresh = new RefreshGuard(refreshState, 'refreshInProgress');
       void _guardRefresh;
 
-      const result = await refreshPtysOnce({ forceGitRefresh: true });
+      const result = await refreshPtysOnce({ forceGitRefresh: false, skipGitMetadata: true });
       if (result instanceof Error) {
         console.error('Failed to refresh aggregate PTYs:', result.message);
       }
     } while (refreshState.pendingFullRefresh);
+
+    // Phase 2: Hydrate git metadata outside the mutex.
+    // This is the slow part (git status + diff stats per repo) but it's safe
+    // to run without the mutex because it only updates git fields on existing
+    // PTYs — it never adds or removes PTYs.
+    await hydrateGitMetadata({ forceRefresh: true });
   };
 
   const initialLoad = async (): Promise<void | Error> => {

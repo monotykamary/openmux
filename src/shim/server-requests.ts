@@ -48,7 +48,8 @@ async function readPtyValue<T>(
   try {
     const result = await context.withPty(fn);
     return result instanceof Error ? null : (result as Exclude<T, Error>);
-  } catch {
+  } catch (err) {
+    console.warn('[shim] readPtyValue failed:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }

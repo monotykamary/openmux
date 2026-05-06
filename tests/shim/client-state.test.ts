@@ -1,28 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { TerminalCell, TerminalState, UnifiedTerminalUpdate } from '../../src/core/types';
-import {
-  deletePtyState,
-  getEmulator,
-  getKittyState,
-  getPtyState,
-  handlePtyActivity,
-  handlePtyLifecycle,
-  handlePtyKittyTransmit,
-  handlePtyKittyUpdate,
-  handlePtyTitle,
-  handleUnifiedUpdate,
-  registerEmulatorFactory,
-  setPtyState,
-  subscribeToActivity,
-  subscribeKittyTransmit,
-  subscribeScroll,
-  subscribeState,
-  subscribeToAllTitles,
-  subscribeToLifecycle,
-  subscribeToTitle,
-  subscribeUnified,
-  resetAllPtyState,
-} from '../../src/shim/client/state';
+import { defaultRegistry, resetAllPtyState } from '../../src/shim/client/state';
 import {
   KittyGraphicsCompression,
   KittyGraphicsFormat,
@@ -82,33 +60,33 @@ describe('shim client state', () => {
     let unifiedCount = 0;
     let stateCount = 0;
     let scrollCount = 0;
-    const unsubUnified = subscribeUnified(ptyId, () => {
+    const unsubUnified = defaultRegistry.subscribeUnified(ptyId, () => {
       unifiedCount += 1;
     });
-    const unsubState = subscribeState(ptyId, () => {
+    const unsubState = defaultRegistry.subscribeState(ptyId, () => {
       stateCount += 1;
     });
-    const unsubScroll = subscribeScroll(ptyId, () => {
+    const unsubScroll = defaultRegistry.subscribeScroll(ptyId, () => {
       scrollCount += 1;
     });
 
-    handleUnifiedUpdate(ptyId, update);
+    defaultRegistry.handleUnifiedUpdate(ptyId, update);
 
     expect(unifiedCount).toBe(1);
     expect(stateCount).toBe(1);
     expect(scrollCount).toBe(1);
-    expect(getPtyState(ptyId)?.terminalState?.cells[0]?.[0]?.char).toBe('x');
+    expect(defaultRegistry.getPtyState(ptyId)?.terminalState?.cells[0]?.[0]?.char).toBe('x');
 
     unsubUnified();
     unsubState();
     unsubScroll();
-    deletePtyState(ptyId);
+    defaultRegistry.deletePtyState(ptyId);
   });
 
   test('applies dirty rows to cached state', () => {
     const ptyId = 'pty-dirty';
     const initialState = makeState('a');
-    setPtyState(ptyId, {
+    defaultRegistry.setPtyState(ptyId, {
       terminalState: initialState,
       cachedRows: [...initialState.cells],
       scrollState: { viewportOffset: 0, scrollbackLength: 0, isAtBottom: true },
@@ -135,45 +113,45 @@ describe('shim client state', () => {
       scrollState: { viewportOffset: 0, scrollbackLength: 1, isAtBottom: true },
     };
 
-    handleUnifiedUpdate(ptyId, update);
-    const state = getPtyState(ptyId);
+    defaultRegistry.handleUnifiedUpdate(ptyId, update);
+    const state = defaultRegistry.getPtyState(ptyId);
     expect(state?.terminalState?.cells[0]?.[0]?.char).toBe('z');
     expect(state?.title).toBe('init');
 
-    deletePtyState(ptyId);
+    defaultRegistry.deletePtyState(ptyId);
   });
 
   test('updates title and notifies title subscribers', () => {
     const ptyId = 'pty-title';
     let titleCount = 0;
     let globalCount = 0;
-    const unsubTitle = subscribeToTitle(ptyId, () => {
+    const unsubTitle = defaultRegistry.subscribeToTitle(ptyId, () => {
       titleCount += 1;
     });
-    const unsubGlobal = subscribeToAllTitles(() => {
+    const unsubGlobal = defaultRegistry.subscribeToAllTitles(() => {
       globalCount += 1;
     });
 
-    handlePtyTitle(ptyId, 'hello');
+    defaultRegistry.handlePtyTitle(ptyId, 'hello');
 
     expect(titleCount).toBe(1);
     expect(globalCount).toBe(1);
-    expect(getPtyState(ptyId)?.title).toBe('hello');
+    expect(defaultRegistry.getPtyState(ptyId)?.title).toBe('hello');
 
     unsubTitle();
     unsubGlobal();
-    deletePtyState(ptyId);
+    defaultRegistry.deletePtyState(ptyId);
   });
 
   test('notifies global activity subscribers', () => {
     const ptyId = 'pty-activity';
     let activityCount = 0;
-    const unsubscribe = subscribeToActivity((event) => {
+    const unsubscribe = defaultRegistry.subscribeToActivity((event) => {
       expect(event.ptyId).toBe(ptyId);
       activityCount += 1;
     });
 
-    handlePtyActivity(ptyId);
+    defaultRegistry.handlePtyActivity(ptyId);
 
     expect(activityCount).toBe(1);
 
@@ -182,7 +160,7 @@ describe('shim client state', () => {
 
   test('lifecycle destroy removes cached state', () => {
     const ptyId = 'pty-life';
-    setPtyState(ptyId, {
+    defaultRegistry.setPtyState(ptyId, {
       terminalState: makeState('b'),
       cachedRows: [],
       scrollState: { viewportOffset: 0, scrollbackLength: 0, isAtBottom: true },
@@ -190,14 +168,14 @@ describe('shim client state', () => {
     });
 
     let eventType: 'created' | 'destroyed' | null = null;
-    const unsub = subscribeToLifecycle((event) => {
+    const unsub = defaultRegistry.subscribeToLifecycle((event) => {
       eventType = event.type;
     });
 
-    handlePtyLifecycle(ptyId, 'destroyed');
+    defaultRegistry.handlePtyLifecycle(ptyId, 'destroyed');
 
     expect(eventType).toBe('destroyed');
-    expect(getPtyState(ptyId)).toBeUndefined();
+    expect(defaultRegistry.getPtyState(ptyId)).toBeUndefined();
 
     unsub();
   });
@@ -206,7 +184,7 @@ describe('shim client state', () => {
     const ptyId = 'pty-emulator';
     let lastScrollback: number | null = null;
     let lastLimit: boolean | null = null;
-    registerEmulatorFactory(
+    defaultRegistry.registerEmulatorFactory(
       () =>
         ({
           handleScrollbackChange: (newLength: number, isAtLimit: boolean) => {
@@ -216,7 +194,7 @@ describe('shim client state', () => {
         }) as any
     );
 
-    getEmulator(ptyId);
+    defaultRegistry.getEmulator(ptyId);
 
     const update: UnifiedTerminalUpdate = {
       terminalUpdate: {
@@ -245,12 +223,12 @@ describe('shim client state', () => {
       },
     };
 
-    handleUnifiedUpdate(ptyId, update);
+    defaultRegistry.handleUnifiedUpdate(ptyId, update);
 
     expect(lastScrollback).toBe(3);
     expect(lastLimit).toBe(true);
 
-    deletePtyState(ptyId);
+    defaultRegistry.deletePtyState(ptyId);
   });
 
   test('stores kitty graphics updates and retains image data', () => {
@@ -284,50 +262,50 @@ describe('shim client state', () => {
     };
     const data = new Uint8Array([1, 2, 3]);
 
-    handlePtyKittyUpdate(ptyId, {
+    defaultRegistry.handlePtyKittyUpdate(ptyId, {
       images: [info],
       placements: [placement],
       removedImageIds: [],
       imageData: new Map([[info.id, data]]),
     });
 
-    const state = getKittyState(ptyId);
+    const state = defaultRegistry.getKittyState(ptyId);
     expect(state?.dirty).toBe(true);
     expect(state?.seedImageIds.has(info.id)).toBe(true);
     expect(state?.images.get(info.id)?.data).toEqual(data);
     expect(state?.placements).toHaveLength(1);
 
-    handlePtyKittyUpdate(ptyId, {
+    defaultRegistry.handlePtyKittyUpdate(ptyId, {
       images: [info],
       placements: [],
       removedImageIds: [],
       imageData: new Map(),
     });
 
-    const next = getKittyState(ptyId);
+    const next = defaultRegistry.getKittyState(ptyId);
     expect(next?.images.get(info.id)?.data).toEqual(data);
     expect(next?.seedImageIds.has(info.id)).toBe(false);
 
-    handlePtyKittyUpdate(ptyId, {
+    defaultRegistry.handlePtyKittyUpdate(ptyId, {
       images: [],
       placements: [],
       removedImageIds: [info.id],
       imageData: new Map(),
     });
 
-    const finalState = getKittyState(ptyId);
+    const finalState = defaultRegistry.getKittyState(ptyId);
     expect(finalState?.images.size).toBe(0);
 
-    deletePtyState(ptyId);
+    defaultRegistry.deletePtyState(ptyId);
   });
 
   test('buffers kitty transmit events received before subscription', () => {
     const events: Array<{ ptyId: string; sequence: string }> = [];
 
-    handlePtyKittyTransmit('pty-buffer', 'first-seq');
-    handlePtyKittyTransmit('pty-buffer', 'second-seq');
+    defaultRegistry.handlePtyKittyTransmit('pty-buffer', 'first-seq');
+    defaultRegistry.handlePtyKittyTransmit('pty-buffer', 'second-seq');
 
-    const unsubscribe = subscribeKittyTransmit((event) => {
+    const unsubscribe = defaultRegistry.subscribeKittyTransmit((event) => {
       events.push(event);
     });
 
@@ -336,10 +314,10 @@ describe('shim client state', () => {
       { ptyId: 'pty-buffer', sequence: 'second-seq' },
     ]);
 
-    handlePtyKittyTransmit('pty-buffer', 'live-seq');
+    defaultRegistry.handlePtyKittyTransmit('pty-buffer', 'live-seq');
     expect(events[2]).toEqual({ ptyId: 'pty-buffer', sequence: 'live-seq' });
 
     unsubscribe();
-    deletePtyState('pty-buffer');
+    defaultRegistry.deletePtyState('pty-buffer');
   });
 });

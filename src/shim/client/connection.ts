@@ -438,7 +438,7 @@ export async function shutdownShim(): Promise<void> {
   try {
     process.kill(shimPid);
   } catch {
-    // Ignore kill errors
+    // intentionally ignored: process may have already exited
   }
 }
 

@@ -96,12 +96,10 @@ export async function detectHostCapabilities(): Promise<TerminalCapabilities> {
     capabilities.colorSchemeEvents = true;
   }
 
-  // TODO: For more accurate detection, we could:
-  // 1. Send DA1/DA2 queries to stdout
-  // 2. Read responses from stdin
-  // 3. Parse the responses
-  // However, this requires async stdin reading which can be complex
-  // For now, we rely on environment variables which covers most cases
+  // Terminal name detection relies on env vars (TERM, KITTY_WINDOW_ID, etc.) which
+  // covers the common cases (iTerm2, Kitty, Ghostty, WezTerm, etc.).
+  // Full DA1/DA2 query+parse would require non-blocking stdin at init time and is
+  // intentionally deferred (see queryHostColors + host-color-scheme for color probing).
 
   // Query terminal colors (foreground, background, palette)
   // This allows openmux to inherit the user's color scheme

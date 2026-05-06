@@ -7,14 +7,14 @@ const testSocketDir = join(tmpdir(), `openmux-test-${Date.now()}`);
 process.env.OPENMUX_SHIM_SOCKET_DIR = testSocketDir;
 process.env.OPENMUX_SHIM_SOCKET_PATH = join(testSocketDir, 'test.sock');
 
-import * as stateModule from '../../src/shim/client/state';
+import { defaultRegistry, resetAllPtyState } from '../../src/shim/client/state';
 import * as connectionModule from '../../src/shim/client/connection';
 
 let shimClientNonce = 0;
 
 describe('shim client getTitle', () => {
   beforeEach(() => {
-    stateModule.resetAllPtyState();
+    resetAllPtyState();
   });
 
   afterEach(() => {
@@ -22,7 +22,7 @@ describe('shim client getTitle', () => {
   });
 
   test('returns cached non-empty titles without requesting', async () => {
-    stateModule.setPtyState('pty-1', {
+    defaultRegistry.setPtyState('pty-1', {
       terminalState: null,
       cachedRows: [],
       scrollState: { viewportOffset: 0, scrollbackLength: 0, isAtBottom: true },
@@ -30,7 +30,7 @@ describe('shim client getTitle', () => {
     });
 
     const sendRequestSpy = vi.spyOn(connectionModule, 'sendRequest');
-    const getPtyStateSpy = vi.spyOn(stateModule, 'getPtyState');
+    const getPtyStateSpy = vi.spyOn(defaultRegistry, 'getPtyState');
 
     const { getTitle } = await import(`../../src/shim/client.ts?title=${shimClientNonce++}`);
     const title = await getTitle('pty-1');
@@ -41,14 +41,14 @@ describe('shim client getTitle', () => {
   });
 
   test('refreshes empty cached titles from the shim', async () => {
-    stateModule.setPtyState('pty-2', {
+    defaultRegistry.setPtyState('pty-2', {
       terminalState: null,
       cachedRows: [],
       scrollState: { viewportOffset: 0, scrollbackLength: 0, isAtBottom: true },
       title: '',
     });
 
-    const handlePtyTitleSpy = vi.spyOn(stateModule, 'handlePtyTitle');
+    const handlePtyTitleSpy = vi.spyOn(defaultRegistry, 'handlePtyTitle');
     const sendRequestSpy = vi.spyOn(connectionModule, 'sendRequest').mockResolvedValue({
       header: { result: { title: 'shell' } },
       payloads: [],
@@ -60,13 +60,13 @@ describe('shim client getTitle', () => {
     expect(title).toBe('shell');
     expect(sendRequestSpy).toHaveBeenCalledWith('getTitle', { ptyId: 'pty-2' });
     expect(handlePtyTitleSpy).toHaveBeenCalledWith('pty-2', 'shell');
-    expect(stateModule.getPtyState('pty-2')?.title).toBe('shell');
+    expect(defaultRegistry.getPtyState('pty-2')?.title).toBe('shell');
 
     sendRequestSpy.mockRestore();
   });
 
   test('requests title when no cache exists', async () => {
-    const handlePtyTitleSpy = vi.spyOn(stateModule, 'handlePtyTitle');
+    const handlePtyTitleSpy = vi.spyOn(defaultRegistry, 'handlePtyTitle');
     const sendRequestSpy = vi.spyOn(connectionModule, 'sendRequest').mockResolvedValue({
       header: { result: { title: 'shell' } },
       payloads: [],
@@ -78,7 +78,7 @@ describe('shim client getTitle', () => {
     expect(title).toBe('shell');
     expect(sendRequestSpy).toHaveBeenCalledWith('getTitle', { ptyId: 'pty-3' });
     expect(handlePtyTitleSpy).toHaveBeenCalledWith('pty-3', 'shell');
-    expect(stateModule.getPtyState('pty-3')?.title).toBe('shell');
+    expect(defaultRegistry.getPtyState('pty-3')?.title).toBe('shell');
 
     sendRequestSpy.mockRestore();
   });

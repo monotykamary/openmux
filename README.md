@@ -30,21 +30,6 @@ A terminal multiplexer with master-stack layout (Zellij-style), built with:
 
 ## Installation
 
-> ⚠️ **Important Update Note for v0.3.0 Users**
-> 
-> openmux v0.3.0 contains a quirky bug that prevents `openmux update` from working correctly.
-> If you're on v0.3.0, please update manually using one of the following methods:
->
-> ```bash
-> # Option 1: Reinstall via install script
-> curl -fsSL https://raw.githubusercontent.com/monotykamary/openmux/main/scripts/install.sh | bash
->
-> # Option 2: Update via package manager
-> bun update -g openmux
-> # or
-> npm update -g openmux
-> ```
-
 ### Quick Install (curl)
 
 ```bash
@@ -217,6 +202,7 @@ Notes:
 ### Template Overlay
 
 **Apply Tab:**
+
 - `↑` / `↓` - Navigate templates
 - `Enter` - Apply selected template
 - `Tab` - Switch to save tab
@@ -224,6 +210,7 @@ Notes:
 - `Esc` - Close overlay
 
 **Save Tab:**
+
 - `Enter` - Save current layout as template
 - `Tab` - Switch to apply tab
 - `Backspace` - Delete last character
@@ -232,6 +219,7 @@ Notes:
 ### Aggregate View
 
 **List:**
+
 - `↑` / `↓` - Navigate PTYs
 - `Enter` - Preview selected PTY
 - `Tab` - Jump to selected PTY and close view
@@ -241,12 +229,14 @@ Notes:
 - `Alt+Esc` - Close aggregate view
 
 **Preview:**
+
 - `Alt+Esc` - Return to list
 - `Alt+f` - Open search in preview
 - `Alt+x` - Kill current PTY
 - Full keyboard/mouse support for terminal interaction
 
 **Search (in preview):**
+
 - `Ctrl+n` - Next match
 - `Ctrl+p` - Previous match
 - `Enter` - Jump to match
@@ -254,6 +244,7 @@ Notes:
 - `Backspace` - Delete last character
 
 **Prefix (in preview):**
+
 - `q` - Quit openmux
 - `d` - Detach
 - `Esc` - Return to list
@@ -262,6 +253,7 @@ Notes:
 ### Session Picker
 
 **List Tab:**
+
 - `↑` / `↓` - Navigate sessions
 - `Enter` - Select or create session
 - `Ctrl+n` - Create new session
@@ -271,6 +263,7 @@ Notes:
 - `Esc` - Close picker
 
 **Rename Tab:**
+
 - `Enter` - Confirm new name
 - `Esc` - Cancel rename
 - `Backspace` - Delete last character

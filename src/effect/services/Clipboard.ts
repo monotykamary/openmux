@@ -30,11 +30,13 @@ export async function createClipboard(): Promise<Clipboard> {
 
   // Pre-detect available clipboard tools for Linux
   let hasWlCopy = false;
+  let hasWlPaste = false;
   let hasXclip = false;
   let hasXsel = false;
 
   if (platform === 'linux') {
     hasWlCopy = await commandExists('wl-copy');
+    hasWlPaste = await commandExists('wl-paste');
     hasXclip = await commandExists('xclip');
     hasXsel = await commandExists('xsel');
 
@@ -43,6 +45,7 @@ export async function createClipboard(): Promise<Clipboard> {
       console.log('[clipboard] Detection:', {
         wayland: wayland ? process.env.WAYLAND_DISPLAY : false,
         hasWlCopy,
+        hasWlPaste,
         hasXclip,
         hasXsel,
       });
@@ -50,6 +53,14 @@ export async function createClipboard(): Promise<Clipboard> {
   }
 
   const write = async (text: string): Promise<ClipboardError | void> => {
+    // Early error for Linux with no available tools (avoids raw throw inside tryAsync)
+    if (platform === 'linux' && !(wayland && hasWlCopy) && !hasXclip && !hasXsel) {
+      return new ClipboardError({
+        operation: 'write',
+        reason: 'No clipboard tool found. Install wl-clipboard (Wayland) or xclip/xsel (X11).',
+      });
+    }
+
     const result = await errore.tryAsync<void, ClipboardError>({
       try: async () => {
         if (platform === 'darwin') {
@@ -87,11 +98,8 @@ export async function createClipboard(): Promise<Clipboard> {
             proc.stdin.write(text);
             proc.stdin.end();
             await proc.exited;
-          } else {
-            throw new Error(
-              'No clipboard tool found. Install wl-clipboard (Wayland) or xclip/xsel (X11).'
-            );
           }
+          // No else: pre-check above guarantees a tool exists for linux
         } else if (platform === 'win32') {
           const proc = Bun.spawn(['clip'], { stdin: 'pipe' });
           proc.stdin.write(text);
@@ -122,6 +130,14 @@ export async function createClipboard(): Promise<Clipboard> {
   };
 
   const read = async (): Promise<ClipboardError | string> => {
+    // Early error for Linux with no available tools (avoids raw throw inside tryAsync)
+    if (platform === 'linux' && !(wayland && hasWlPaste) && !hasXclip && !hasXsel) {
+      return new ClipboardError({
+        operation: 'read',
+        reason: 'No clipboard tool found. Install wl-clipboard (Wayland) or xclip/xsel (X11).',
+      });
+    }
+
     const result = await errore.tryAsync<string, ClipboardError>({
       try: async () => {
         if (platform === 'darwin') {
@@ -129,7 +145,7 @@ export async function createClipboard(): Promise<Clipboard> {
           return result.text();
         } else if (platform === 'linux') {
           // Try Wayland first if available, then fall back to X11
-          if (wayland && hasWlCopy) {
+          if (wayland && hasWlPaste) {
             if (process.env.CLIPBOARD_DEBUG) {
               console.log('[clipboard] Using wl-paste for read');
             }
@@ -147,11 +163,8 @@ export async function createClipboard(): Promise<Clipboard> {
             }
             const result = await Bun.$`xsel --clipboard --output`.quiet();
             return result.text();
-          } else {
-            throw new Error(
-              'No clipboard tool found. Install wl-clipboard (Wayland) or xclip/xsel (X11).'
-            );
           }
+          // No else: pre-check above guarantees a tool exists for linux
         } else if (platform === 'win32') {
           const result = await Bun.$`powershell -command "Get-Clipboard"`.quiet();
           return result.text();

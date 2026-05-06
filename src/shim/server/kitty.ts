@@ -121,7 +121,11 @@ function normalizeCachedTransmitSequence(sequence: string): string {
   let fileData: Buffer;
   try {
     fileData = fs.readFileSync(filePath);
-  } catch {
+  } catch (err) {
+    console.warn(
+      '[shim/kitty] Failed to read image file:',
+      err instanceof Error ? err.message : String(err)
+    );
     return sequence;
   }
 

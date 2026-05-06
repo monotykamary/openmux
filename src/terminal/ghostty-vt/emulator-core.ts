@@ -237,6 +237,18 @@ export class GhosttyVTEmulatorCore {
     };
   }
 
+  eraseScrollbackTail(lines: number): void {
+    if (this._disposed) return;
+    if (lines <= 0) return;
+    this.terminal.eraseScrollbackTail(lines);
+    this.scrollbackCache.clear();
+    this.scrollbackSnapshotDirty = true;
+    this.scrollState = {
+      ...this.scrollState,
+      scrollbackLength: this.terminal.getScrollbackLength(),
+    };
+  }
+
   getTerminalState(): TerminalState {
     if (this._disposed) {
       if (this.cachedState) {

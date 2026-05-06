@@ -21,4 +21,8 @@ pub const TerminalWrapper = struct {
     last_screen_is_alternate: bool = false,
     /// Desired scrollback limit in lines (0 = unlimited)
     scrollback_limit_lines: usize = 0,
+    /// Virtual tail trim: hides the newest N scrollback lines from JS-side reads
+    /// without physically removing them (avoids PageList serial-number gaps).
+    /// Reset to 0 on every write() so stale trims don't persist.
+    scrollback_tail_trim: usize = 0,
 };

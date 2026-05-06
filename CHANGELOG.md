@@ -2,6 +2,81 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.3.112](https://github.com/monotykamary/openmux/compare/v0.3.111...v0.3.112) (2026-05-02)
+
+
+### Bug Fixes
+
+* clipboard errors and native inits; test: error class coverage; docs: drop v0.3.0 note ([f001d9f](https://github.com/monotykamary/openmux/commit/f001d9fc8a54475ae6229d4a741a2fe4453b563a))
+
+### [0.3.111](https://github.com/monotykamary/openmux/compare/v0.3.110...v0.3.111) (2026-05-01)
+
+
+### Bug Fixes
+
+* **build:** clean up .tmp files left by upstream builds in vendor dirs ([13c3e24](https://github.com/monotykamary/openmux/commit/13c3e243bd72e0316750ad10b38838b51ddfc2e3))
+
+### [0.3.110](https://github.com/monotykamary/openmux/compare/v0.3.109...v0.3.110) (2026-05-01)
+
+
+### Bug Fixes
+
+* **pty:** eliminate scrollback duplication from pi full redraws ([742e37a](https://github.com/monotykamary/openmux/commit/742e37a5e6298e32cde8cdbd1b04928c1a271cfc))
+
+### [0.3.109](https://github.com/monotykamary/openmux/compare/v0.3.108...v0.3.109) (2026-04-30)
+
+### [0.3.108](https://github.com/monotykamary/openmux/compare/v0.3.107...v0.3.108) (2026-04-30)
+
+
+### Bug Fixes
+
+* **paste:** restore clipboard handler registration and bind stdout write context ([5f10499](https://github.com/monotykamary/openmux/commit/5f104993b52a93b9c110a622efbb20da3f27c73f))
+
+
+### Refactoring
+
+* remove delegate boilerplate, type AppActionsDeps, deduplicate selection logic ([85a12c0](https://github.com/monotykamary/openmux/commit/85a12c03582366ea6f7bca38d50ecf76ea7daa04))
+
+### [0.3.107](https://github.com/monotykamary/openmux/compare/v0.3.106...v0.3.107) (2026-04-30)
+
+
+### Bug Fixes
+
+* **aggregate:** replace try-catch with errore.try pattern in filterPtys ([7a47a8a](https://github.com/monotykamary/openmux/commit/7a47a8a2cfbaea2990e33f79dc6cca269fcb1987))
+* **tsconfig:** add ESNext.Disposable to lib for using/await using types ([c67e6d2](https://github.com/monotykamary/openmux/commit/c67e6d23e97a2583badc276e712d7ec4c46defe2))
+
+
+### Tests
+
+* **aggregate:** remove unused imports and dynamic import() types in regression test ([045931c](https://github.com/monotykamary/openmux/commit/045931c8e1d5e88acb82232845a05e17bcfb78d4))
+
+
+### Refactoring
+
+* **app:** extract useAppActions hook to deduplicate action handlers ([53130be](https://github.com/monotykamary/openmux/commit/53130be77e4ef1b36d5246688aa06b140599a895))
+
+### [0.3.106](https://github.com/monotykamary/openmux/compare/v0.3.105...v0.3.106) (2026-04-28)
+
+
+### Bug Fixes
+
+* **aggregate:** preserve git metadata through skipGitMetadata refresh ([7d6c912](https://github.com/monotykamary/openmux/commit/7d6c91240e53098345bf2f848fb0007c300b8923))
+* **search:** prevent double q exit and dropped input during fast typing ([5ee126c](https://github.com/monotykamary/openmux/commit/5ee126cf03398546e37a15a6ebdea521bdc7fb9a))
+
+### [0.3.105](https://github.com/monotykamary/openmux/compare/v0.3.104...v0.3.105) (2026-04-28)
+
+
+### Bug Fixes
+
+* **aggregate:** split refreshPtys into fast phase + async git hydration ([08a6561](https://github.com/monotykamary/openmux/commit/08a65618b5eefb0bb219c3a64bd7767f897ba39d))
+
+### [0.3.104](https://github.com/monotykamary/openmux/compare/v0.3.103...v0.3.104) (2026-04-28)
+
+
+### Refactoring
+
+* **aggregate:** reduce sidebar width from 25% to 20% ([47651b3](https://github.com/monotykamary/openmux/commit/47651b313e9e7667684650255115ef0eb70553d1))
+
 ### [0.3.103](https://github.com/monotykamary/openmux/compare/v0.3.102...v0.3.103) (2026-04-26)
 
 

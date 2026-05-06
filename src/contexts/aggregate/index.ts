@@ -89,8 +89,6 @@ export {
   setPendingPaneCreations,
   upsertPendingPaneCreation,
   removePendingPaneCreations,
-  getInsertedPaneOrder,
-  getAppendedPaneOrder,
   getNextPendingPaneCreationOrder,
   findPendingPaneCreationForLifecycle,
 } from './pending';

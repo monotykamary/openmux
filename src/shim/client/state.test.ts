@@ -1,31 +1,20 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 
 // Import the real module using a query parameter to bypass any mocks
-// The query parameter forces Bun to treat this as a different module
 const stateModule = await import('./state?real');
 
-const {
-  deletePtyState,
-  getCachedPtyMetadata,
-  handlePtyActivity,
-  handlePtyKittyTransmit,
-  handlePtyTitle,
-  resetAllPtyState,
-  setCachedPtyMetadata,
-  setPtyState,
-  subscribeKittyTransmit,
-  subscribeUnified,
-} = stateModule;
+const { defaultRegistry, resetAllPtyState } = stateModule;
 
 describe('shim/client/state', () => {
   beforeEach(() => {
     resetAllPtyState();
   });
+
   it('replays the cached full terminal snapshot to unified subscribers', () => {
     const ptyId = 'pty-unified-test';
     const updates: Array<{ cols: number; rows: number; title: string }> = [];
 
-    setPtyState(ptyId, {
+    defaultRegistry.setPtyState(ptyId, {
       terminalState: {
         cols: 80,
         rows: 24,
@@ -45,7 +34,7 @@ describe('shim/client/state', () => {
       title: 'shell',
     });
 
-    const unsubscribe = subscribeUnified(ptyId, (update) => {
+    const unsubscribe = defaultRegistry.subscribeUnified(ptyId, (update) => {
       updates.push({
         cols: update.terminalUpdate.cols,
         rows: update.terminalUpdate.rows,
@@ -54,7 +43,7 @@ describe('shim/client/state', () => {
     });
 
     unsubscribe();
-    deletePtyState(ptyId);
+    defaultRegistry.deletePtyState(ptyId);
 
     expect(updates).toHaveLength(1);
     expect(updates[0]).toEqual({ cols: 80, rows: 24, title: 'shell' });
@@ -63,16 +52,16 @@ describe('shim/client/state', () => {
   it('marks cached metadata stale on activity but preserves title updates', () => {
     const ptyId = 'pty-metadata-test';
 
-    setCachedPtyMetadata(ptyId, {
+    defaultRegistry.setCachedPtyMetadata(ptyId, {
       session: null,
       cwd: '/tmp',
       title: 'before',
     });
 
-    handlePtyTitle(ptyId, 'after');
-    handlePtyActivity(ptyId);
+    defaultRegistry.handlePtyTitle(ptyId, 'after');
+    defaultRegistry.handlePtyActivity(ptyId);
 
-    expect(getCachedPtyMetadata(ptyId)).toEqual({
+    expect(defaultRegistry.getCachedPtyMetadata(ptyId)).toEqual({
       value: {
         session: null,
         cwd: '/tmp',
@@ -82,22 +71,22 @@ describe('shim/client/state', () => {
       stale: true,
     });
 
-    deletePtyState(ptyId);
+    defaultRegistry.deletePtyState(ptyId);
   });
 
   it('buffers kitty transmits until a subscriber attaches', () => {
     const ptyId = 'pty-kitty-test';
     const events: string[] = [];
 
-    handlePtyKittyTransmit(ptyId, 'seq-1');
-    const unsubscribe = subscribeKittyTransmit((event) => {
+    defaultRegistry.handlePtyKittyTransmit(ptyId, 'seq-1');
+    const unsubscribe = defaultRegistry.subscribeKittyTransmit((event) => {
       if (event.ptyId === ptyId) {
         events.push(event.sequence);
       }
     });
 
     unsubscribe();
-    deletePtyState(ptyId);
+    defaultRegistry.deletePtyState(ptyId);
 
     expect(events).toEqual(['seq-1']);
   });

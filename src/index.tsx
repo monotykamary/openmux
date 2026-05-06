@@ -57,15 +57,22 @@ async function initializeAndRender(): Promise<StartupError | void> {
   const { copyToClipboard } = await import('./effect/bridge');
 
   function AppWithSetup() {
-    const renderer = useRenderer();
+    const renderer = useRenderer() as unknown as {
+      enableKittyKeyboard(flags: number): void;
+      stdout?: NodeJS.WriteStream & { _handle?: { flush?(): void } | null };
+      realStdoutWrite?: (data: string, cb?: (err?: Error | null) => void) => void;
+    };
 
     onMount(() => {
-      setHostSequenceWriter((sequence) => {
-        const stdout = (renderer as any).stdout ?? process.stdout;
-        const writeOut = (renderer as any).realStdoutWrite ?? stdout.write.bind(stdout);
+      setHostSequenceWriter((sequence: string) => {
+        // realStdoutWrite is an unbound reference to stdout.write stored by
+        // OpenTUI's constructor (this.realStdoutWrite = stdout.write). It MUST
+        // be called with .call(stdout, ...) so that `this._write` resolves.
+        const stdout = renderer.stdout ?? process.stdout;
+        const writeOut = renderer.realStdoutWrite ?? stdout.write.bind(stdout);
         writeOut.call(stdout, sequence);
         if (stdout.isTTY) {
-          (stdout as any)._handle?.flush?.();
+          (stdout as { _handle?: { flush?(): void } | null })._handle?.flush?.();
         }
       });
       renderer.enableKittyKeyboard(3);

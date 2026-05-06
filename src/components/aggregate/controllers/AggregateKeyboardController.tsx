@@ -230,6 +230,17 @@ export function AggregateKeyboardController(props: AggregateKeyboardControllerPr
     }
   });
 
+  // Sync aggregate inSearchMode with global search state.
+  // When search is exited via the global handler (e.g. pressing `q` in
+  // search mode), the global handler clears search.searchState but does
+  // not clear the aggregate's local inSearchMode flag. This effect
+  // ensures the aggregate view doesn't require a second `q` press.
+  createEffect(() => {
+    if (!search.searchState && inSearchMode()) {
+      setInSearchMode(false);
+    }
+  });
+
   // Register keyboard handler
   useOverlayKeyboardHandler({
     overlay: 'aggregateView',

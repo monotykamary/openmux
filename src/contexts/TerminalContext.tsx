@@ -42,7 +42,7 @@ import {
 } from '../hooks/usePtySubscription';
 import type { ITerminalEmulator } from '../terminal/emulator-interface';
 import { isShimClient } from '../shim/mode';
-import { getPtyState as getShimPtyState } from '../shim/client/state';
+import { defaultRegistry as shimPtyRegistry } from '../shim/client/state';
 
 export interface TerminalContextValue {
   /** Create a new PTY session for a pane */
@@ -162,7 +162,7 @@ export function TerminalProvider(props: TerminalProviderProps) {
   const shouldCacheScrollState = !isShimClient();
   const getScrollState = (ptyId: string): TerminalScrollState | undefined => {
     if (!shouldCacheScrollState) {
-      return getShimPtyState(ptyId)?.scrollState;
+      return shimPtyRegistry.getPtyState(ptyId)?.scrollState;
     }
     return ptyCaches.scrollStates.get(ptyId);
   };

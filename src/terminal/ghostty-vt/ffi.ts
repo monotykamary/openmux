@@ -2,9 +2,10 @@
  * Native libghostty-vt loader and symbols.
  */
 
-import { dlopen, FFIType } from "bun:ffi";
-import { basename, dirname, join } from "path";
-import { existsSync } from "fs";
+import { dlopen, FFIType } from 'bun:ffi';
+import { basename, dirname, join } from 'path';
+import { existsSync } from 'fs';
+import { GhosttyVtInitError } from '../../effect/errors';
 
 function resolveLibPath(): string {
   const envPath = process.env.GHOSTTY_VT_LIB;
@@ -12,11 +13,8 @@ function resolveLibPath(): string {
 
   const platform = process.platform;
 
-  const ext = platform === "darwin" ? "dylib" : platform === "win32" ? "dll" : "so";
-  const filenames =
-    platform === "win32"
-      ? ["ghostty-vt.dll"]
-      : [`libghostty-vt.${ext}`];
+  const ext = platform === 'darwin' ? 'dylib' : platform === 'win32' ? 'dll' : 'so';
+  const filenames = platform === 'win32' ? ['ghostty-vt.dll'] : [`libghostty-vt.${ext}`];
 
   // For compiled binaries, check next to the executable first.
   const execDir = dirname(process.execPath);
@@ -24,22 +22,23 @@ function resolveLibPath(): string {
   const base = Bun.fileURLToPath(import.meta.url);
   const fileDir = dirname(base);
   const dirName = basename(fileDir);
-  const here = dirName === "ghostty-vt" || dirName === "terminal" || dirName === "src" || dirName === "dist"
-    ? dirname(fileDir)
-    : fileDir;
-  const repoRoot = join(here, "..", "..");
+  const here =
+    dirName === 'ghostty-vt' || dirName === 'terminal' || dirName === 'src' || dirName === 'dist'
+      ? dirname(fileDir)
+      : fileDir;
+  const repoRoot = join(here, '..', '..');
 
   const basePaths = [
     execDir,
     // Wrapper library output (preferred for local dev)
-    join(repoRoot, "native", "zig-ghostty-wrapper", "zig-out", "lib"),
+    join(repoRoot, 'native', 'zig-ghostty-wrapper', 'zig-out', 'lib'),
     // Vendored ghostty source (preferred)
-    join(repoRoot, "ghostty", "zig-out", "lib"),
-    join(repoRoot, "vendor", "ghostty", "zig-out", "lib"),
+    join(repoRoot, 'ghostty', 'zig-out', 'lib'),
+    join(repoRoot, 'vendor', 'ghostty', 'zig-out', 'lib'),
     // Fallbacks for local dev
-    join(process.cwd(), "native", "zig-ghostty-wrapper", "zig-out", "lib"),
-    join(process.cwd(), "ghostty", "zig-out", "lib"),
-    join(process.cwd(), "vendor", "ghostty", "zig-out", "lib"),
+    join(process.cwd(), 'native', 'zig-ghostty-wrapper', 'zig-out', 'lib'),
+    join(process.cwd(), 'ghostty', 'zig-out', 'lib'),
+    join(process.cwd(), 'vendor', 'ghostty', 'zig-out', 'lib'),
   ];
 
   const candidates: string[] = [];
@@ -54,9 +53,10 @@ function resolveLibPath(): string {
     if (existsSync(candidate)) return candidate;
   }
 
-  throw new Error(
-    `libghostty-vt shared library not found.\nChecked:\n  - GHOSTTY_VT_LIB=${envPath ?? "<unset>"}\n  - ${candidates.join("\n  - ")}\n\nSet GHOSTTY_VT_LIB or ensure one of these paths contains the file.`
-  );
+  throw new GhosttyVtInitError({
+    operation: 'resolve-lib',
+    reason: `libghostty-vt shared library not found. Checked: GHOSTTY_VT_LIB=${envPath ?? '<unset>'}; candidates: ${candidates.join(', ')}. Set GHOSTTY_VT_LIB or ensure library is built.`,
+  });
 }
 
 const libPath = resolveLibPath();
@@ -156,6 +156,10 @@ export const ghostty = dlopen(libPath, {
     returns: FFIType.i32,
   },
   ghostty_terminal_trim_scrollback: {
+    args: [FFIType.pointer, FFIType.i32],
+    returns: FFIType.void,
+  },
+  ghostty_terminal_erase_scrollback_tail: {
     args: [FFIType.pointer, FFIType.i32],
     returns: FFIType.void,
   },

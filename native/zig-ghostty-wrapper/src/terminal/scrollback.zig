@@ -14,7 +14,9 @@ pub fn getScrollbackLength(ptr: ?*anyopaque) callconv(.c) c_int {
     // total_rows includes both scrollback and active area
     // We subtract rows (active area) to get just scrollback
     if (pages.total_rows <= pages.rows) return 0;
-    return @intCast(pages.total_rows - pages.rows);
+    const raw: c_int = @intCast(pages.total_rows - pages.rows);
+    const trim: c_int = @intCast(wrapper.scrollback_tail_trim);
+    return if (raw > trim) raw - trim else 0;
 }
 
 /// Get a line from the scrollback buffer
@@ -36,10 +38,15 @@ pub fn getScrollbackLine(
     const scrollback_len = getScrollbackLength(ptr);
     if (offset >= scrollback_len) return -1;
 
+    // Adjust offset to skip the virtually-trimmed tail.
+    // The trim hides the newest N lines, so we shift the raw offset
+    // by adding the trim count to reach the correct physical row.
+    const raw_offset: c_int = offset + @as(c_int, @intCast(wrapper.scrollback_tail_trim));
+
     // Get the pin for this scrollback row
     // history point: y=0 is oldest, y=scrollback_len-1 is newest
     const pages = &wrapper.terminal.screens.active.pages;
-    const pin = pages.pin(.{ .history = .{ .y = @intCast(offset) } }) orelse return -1;
+    const pin = pages.pin(.{ .history = .{ .y = @intCast(raw_offset) } }) orelse return -1;
 
     // Get cells for this row
     const cells = pin.cells(.all);
@@ -139,9 +146,12 @@ pub fn getScrollbackGrapheme(
     const scrollback_len = getScrollbackLength(ptr);
     if (offset >= scrollback_len) return -1;
 
+    // Adjust offset to skip the virtually-trimmed tail.
+    const raw_offset: c_int = offset + @as(c_int, @intCast(wrapper.scrollback_tail_trim));
+
     // Get the pin for this scrollback row
     const pages = &wrapper.terminal.screens.active.pages;
-    const pin = pages.pin(.{ .history = .{ .y = @intCast(offset) } }) orelse return -1;
+    const pin = pages.pin(.{ .history = .{ .y = @intCast(raw_offset) } }) orelse return -1;
 
     const cells = pin.cells(.all);
     const page = pin.node.data;

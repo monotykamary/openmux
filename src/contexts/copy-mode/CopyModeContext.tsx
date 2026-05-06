@@ -125,9 +125,7 @@ export function CopyModeProvider(props: CopyModeProviderProps) {
     return getLineAccessor(maxAbsY, (absY) => getLineCellsAt(absY, meta));
   };
 
-  // ============================================================================
   // Public API
-  // ============================================================================
 
   const enterCopyMode = (
     ptyId: string,

@@ -43,11 +43,8 @@ export function handleSearchKeyboard(event: KeyboardEvent, deps: SearchKeyboardD
     meta: event.meta,
   };
 
-  const isBareEscape = event.key === 'escape'
-    && !event.ctrl
-    && !event.alt
-    && !event.meta
-    && !event.shift;
+  const isBareEscape =
+    event.key === 'escape' && !event.ctrl && !event.alt && !event.meta && !event.shift;
 
   const handleAction = (action: string | null): boolean => {
     if (!action) return false;
@@ -92,10 +89,17 @@ export function handleSearchKeyboard(event: KeyboardEvent, deps: SearchKeyboardD
     if (!currentSearchState) {
       return true;
     }
-    const searchCharCode = event.sequence?.charCodeAt(0) ?? 0;
-    const isPrintable = event.sequence?.length === 1 && searchCharCode >= 32 && searchCharCode < 127;
-    if (isPrintable && !event.ctrl && !event.alt && !event.meta) {
-      deps.setSearchQuery(currentSearchState.query + event.sequence);
+    const printableChar =
+      event.key.length === 1 &&
+      event.key.charCodeAt(0) >= 32 &&
+      event.key.charCodeAt(0) < 127 &&
+      !event.ctrl &&
+      !event.alt &&
+      !event.meta
+        ? event.key
+        : null;
+    if (printableChar) {
+      deps.setSearchQuery(currentSearchState.query + printableChar);
       return true;
     }
     return true;
@@ -130,7 +134,8 @@ export function handleSearchKeyboard(event: KeyboardEvent, deps: SearchKeyboardD
   if (handleAction(result.action)) return true;
 
   const isBackspace = event.key === 'backspace';
-  const shouldMatchBindings = !isBackspace && (event.ctrl || event.alt || event.meta || event.key.length > 1);
+  const shouldMatchBindings =
+    !isBackspace && (event.ctrl || event.alt || event.meta || event.key.length > 1);
   if (shouldMatchBindings && !isBareEscape) {
     const fallbackAction = matchKeybinding(deps.keybindings, keyEvent);
     if (handleAction(fallbackAction)) return true;

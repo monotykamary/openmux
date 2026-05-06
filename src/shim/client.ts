@@ -1,4 +1,9 @@
-import type { TerminalCell, TerminalScrollState, TerminalState } from '../core/types';
+import type {
+  TerminalCell,
+  TerminalScrollState,
+  TerminalState,
+  UnifiedTerminalUpdate,
+} from '../core/types';
 import type { SearchResult } from '../terminal/emulator-interface';
 import type { TerminalColors } from '../terminal/terminal-colors';
 import type { GitInfo } from '../effect/services/pty/helpers';
@@ -7,43 +12,25 @@ import { RemoteEmulator } from './client/emulator';
 import { sendRequest } from './client/connection';
 import { bufferToArrayBuffer } from './client/utils';
 import type { ShimPtyMetadata } from './pty-metadata';
-import {
-  getCachedPtyMetadata,
-  getEmulator,
-  getKittyState,
-  getPtyState,
-  handlePtyTitle,
-  registerEmulatorFactory,
-  setPtyState,
-  subscribeKittyTransmit,
-  subscribeKittyUpdate,
-  subscribeScroll,
-  subscribeState,
-  subscribeToActivity,
-  subscribeExit,
-  subscribeToAllTitles,
-  subscribeToLifecycle,
-  subscribeToTitle,
-  subscribeUnified,
-} from './client/state';
+import { defaultRegistry } from './client/state';
 
 /**
  * Builds fallback PTY metadata from cached values.
  * Falls back to empty defaults if no cache available.
  */
 function buildFallbackPtyMetadata(ptyId: string): ShimPtyMetadata {
-  const cachedMetadata = getCachedPtyMetadata(ptyId)?.value;
+  const cachedMetadata = defaultRegistry.getCachedPtyMetadata(ptyId)?.value;
   if (cachedMetadata) {
     return {
       ...cachedMetadata,
-      title: getPtyState(ptyId)?.title ?? cachedMetadata.title,
+      title: defaultRegistry.getPtyState(ptyId)?.title ?? cachedMetadata.title,
     };
   }
 
   return {
     session: null,
     cwd: null,
-    title: getPtyState(ptyId)?.title ?? '',
+    title: defaultRegistry.getPtyState(ptyId)?.title ?? '',
   };
 }
 
@@ -172,7 +159,7 @@ export async function getTerminalState(
   ptyId: string,
   options?: { force?: boolean }
 ): Promise<TerminalState | null> {
-  const cached = getPtyState(ptyId)?.terminalState;
+  const cached = defaultRegistry.getPtyState(ptyId)?.terminalState;
   if (cached && !options?.force) {
     return cached;
   }
@@ -184,13 +171,13 @@ export async function getTerminalState(
 
   const buffer = bufferToArrayBuffer(response.payloads[0]!);
   const state = unpackTerminalState(buffer);
-  const existing = getPtyState(ptyId);
+  const existing = defaultRegistry.getPtyState(ptyId);
   const scrollState = existing?.scrollState ?? {
     viewportOffset: 0,
     scrollbackLength: 0,
     isAtBottom: true,
   };
-  setPtyState(ptyId, {
+  defaultRegistry.setPtyState(ptyId, {
     terminalState: state,
     cachedRows: [...state.cells],
     scrollState,
@@ -209,7 +196,7 @@ export async function getScrollState(
   ptyId: string,
   options?: { force?: boolean }
 ): Promise<TerminalScrollState | null> {
-  const cached = getPtyState(ptyId)?.scrollState;
+  const cached = defaultRegistry.getPtyState(ptyId)?.scrollState;
   if (cached && !options?.force) {
     return cached;
   }
@@ -217,8 +204,8 @@ export async function getScrollState(
   const response = await sendRequest('getScrollState', { ptyId });
   const scrollState = response.header.result as TerminalScrollState | undefined;
   if (scrollState) {
-    const existing = getPtyState(ptyId);
-    setPtyState(ptyId, {
+    const existing = defaultRegistry.getPtyState(ptyId);
+    defaultRegistry.setPtyState(ptyId, {
       terminalState: existing?.terminalState ?? null,
       cachedRows: existing?.cachedRows ?? [],
       scrollState,
@@ -443,14 +430,14 @@ export async function getGitDiffStats(
  * @returns Terminal title
  */
 export async function getTitle(ptyId: string): Promise<string> {
-  const cached = getPtyState(ptyId)?.title;
+  const cached = defaultRegistry.getPtyState(ptyId)?.title;
   if (cached !== undefined && cached !== '') {
     return cached;
   }
 
   const response = await sendRequest('getTitle', { ptyId });
   const title = (response.header.result as { title?: string } | undefined)?.title ?? '';
-  handlePtyTitle(ptyId, title);
+  defaultRegistry.handlePtyTitle(ptyId, title);
   return title;
 }
 
@@ -511,26 +498,32 @@ export async function getSessionMapping(sessionId: string): Promise<{
 
 function createRemoteEmulator(ptyId: string): RemoteEmulator {
   return new RemoteEmulator(ptyId, {
-    getPtyState,
-    getKittyState,
+    getPtyState: (id: string) => defaultRegistry.getPtyState(id),
+    getKittyState: (id: string, alt?: boolean) => defaultRegistry.getKittyState(id, alt),
     fetchScrollbackLines: getScrollbackLines,
     searchPty,
   });
 }
 
-registerEmulatorFactory(createRemoteEmulator);
+defaultRegistry.registerEmulatorFactory(createRemoteEmulator);
 
-export {
-  getEmulator,
-  subscribeKittyTransmit,
-  subscribeKittyUpdate,
-  subscribeScroll,
-  subscribeState,
-  subscribeToActivity,
-  subscribeExit,
-  subscribeToAllTitles,
-  subscribeToLifecycle,
-  subscribeToTitle,
-  subscribeUnified,
-};
+/** Convenience re-exports from the default PTY registry for namespace import consumers. */
+export const getEmulator = (ptyId: string) => defaultRegistry.getEmulator(ptyId);
+export const subscribeKittyTransmit = (cb: (event: { ptyId: string; sequence: string }) => void) =>
+  defaultRegistry.subscribeKittyTransmit(cb);
+export const subscribeKittyUpdate = (cb: (event: { ptyId: string }) => void) =>
+  defaultRegistry.subscribeKittyUpdate(cb);
+export const subscribeToActivity = (cb: (event: { ptyId: string }) => void) =>
+  defaultRegistry.subscribeToActivity(cb);
+export const subscribeExit = (ptyId: string, cb: (exitCode: number) => void) =>
+  defaultRegistry.subscribeExit(ptyId, cb);
+export const subscribeToAllTitles = (cb: (event: { ptyId: string; title: string }) => void) =>
+  defaultRegistry.subscribeToAllTitles(cb);
+export const subscribeToLifecycle = (
+  cb: (event: { type: 'created' | 'destroyed'; ptyId: string }) => void
+) => defaultRegistry.subscribeToLifecycle(cb);
+export const subscribeToTitle = (ptyId: string, cb: (title: string) => void) =>
+  defaultRegistry.subscribeToTitle(ptyId, cb);
+export const subscribeUnified = (ptyId: string, cb: (update: UnifiedTerminalUpdate) => void) =>
+  defaultRegistry.subscribeUnified(ptyId, cb);
 export { onShimDetached, shutdownShim, waitForShim } from './client/connection';

@@ -8,12 +8,36 @@ import {
   setSessionPaneOrder,
 } from '../pane-order';
 import { recomputeMatches, recomputeTree } from '../session';
-import type { AggregateViewState } from '../types';
-import { dedupeAggregatePtysByPane } from '../rows';
+import type { AggregateViewState, PtyInfo } from '../types';
+import { dedupeAggregatePtysByPane, getAggregatePaneKey } from '../rows';
+import { hasGitMetadata } from '../git';
 import type { SnapshotResult } from './build-snapshot';
 
 export interface ApplySnapshotOptions {
   mergeWithExisting?: boolean;
+}
+
+/** Copy git metadata fields from a source PTY onto a target PTY.
+ *  Only git fields are copied; all other fields come from the target. */
+export function applyGitMetadataToPty(target: PtyInfo, source: PtyInfo): PtyInfo {
+  return {
+    ...target,
+    gitBranch: source.gitBranch,
+    gitDiffStats: source.gitDiffStats,
+    gitDirty: source.gitDirty,
+    gitStaged: source.gitStaged,
+    gitUnstaged: source.gitUnstaged,
+    gitUntracked: source.gitUntracked,
+    gitConflicted: source.gitConflicted,
+    gitAhead: source.gitAhead,
+    gitBehind: source.gitBehind,
+    gitStashCount: source.gitStashCount,
+    gitState: source.gitState,
+    gitDetached: source.gitDetached,
+    gitRepoKey: source.gitRepoKey,
+    gitIsWorktree: source.gitIsWorktree,
+    gitCommonDir: source.gitCommonDir,
+  };
 }
 
 export function applySnapshot(
@@ -125,6 +149,21 @@ export function applySnapshot(
         setSessionPaneOrder(s.sessionPaneOrderIndex, insertion.sessionId, sessionPaneOrder);
       }
 
+      // Build git metadata lookup from EXISTING PTYs before they're replaced.
+      // This is used to fill in empty git fields on snapshot PTYs after
+      // the replacement, avoiding the flicker between Phase 1 (skipGitMetadata)
+      // and Phase 2 (hydrateGitMetadata).
+      const preExistingGitByPtyId = new Map<string, PtyInfo>();
+      const preExistingGitByPaneKey = new Map<string, PtyInfo>();
+      for (const pty of s.allPtys) {
+        if (!hasGitMetadata(pty)) continue;
+        if (!s.deletedPtyIds.has(pty.ptyId)) {
+          preExistingGitByPtyId.set(pty.ptyId, pty);
+        }
+        const key = getAggregatePaneKey(pty.sessionId, pty.paneId);
+        if (key) preExistingGitByPaneKey.set(key, pty);
+      }
+
       if (mergeMode) {
         // Merge PTYs: keep existing PTYs for sessions that don't have PTYs
         // in the snapshot (i.e., non-active sessions during a fast refresh),
@@ -148,6 +187,53 @@ export function applySnapshot(
         ]);
       } else {
         s.allPtys = dedupeAggregatePtysByPane(finalPtys);
+      }
+
+      // Single-writer git metadata preservation: fill in empty git fields
+      // on snapshot PTYs from their previous entries. This avoids the
+      // flicker where Phase 1 (skipGitMetadata) clears all git metadata
+      // and Phase 2 (hydrateGitMetadata) must async-fetch it back.
+      // Only carried forward when the ptyId matches AND the CWD hasn't
+      // changed (stale repo metadata must not leak into a new directory).
+      //
+      // In merge mode, dedupeAggregatePtysByPane already preserves git
+      // metadata from existing PTYs, so this loop only fills gaps that
+      // the dedupe missed (e.g. saved: → live ptyId transitions without
+      // pane-key overlap).
+
+      // Identify which PTYs came from the snapshot (vs carried-existing)
+      // to avoid filling git metadata on non-snapshot entries.
+      const snapshotPtyIds = new Set(finalPtys.map((p) => p.ptyId));
+      const snapshotPaneKeys = new Set<string>();
+      for (const p of finalPtys) {
+        const key = getAggregatePaneKey(p.sessionId, p.paneId);
+        if (key) snapshotPaneKeys.add(key);
+      }
+
+      for (let i = 0; i < s.allPtys.length; i++) {
+        const pty = s.allPtys[i];
+        // Only fill snapshot PTYs (not carried-existing from merge mode)
+        if (!snapshotPtyIds.has(pty.ptyId)) {
+          const paneKey = getAggregatePaneKey(pty.sessionId, pty.paneId);
+          if (paneKey && !snapshotPaneKeys.has(paneKey)) continue;
+        }
+        if (hasGitMetadata(pty)) continue;
+
+        // Try match by ptyId first (same PTY, same pane)
+        const byPtyId = preExistingGitByPtyId.get(pty.ptyId);
+        if (byPtyId && byPtyId.cwd === pty.cwd) {
+          s.allPtys[i] = applyGitMetadataToPty(pty, byPtyId);
+          continue;
+        }
+
+        // Try match by pane key (saved: → live transition for same pane)
+        const paneKey = getAggregatePaneKey(pty.sessionId, pty.paneId);
+        if (paneKey) {
+          const byPaneKey = preExistingGitByPaneKey.get(paneKey);
+          if (byPaneKey && byPaneKey.cwd === pty.cwd) {
+            s.allPtys[i] = applyGitMetadataToPty(pty, byPaneKey);
+          }
+        }
       }
       s.allPtysIndex = buildPtyIndex(s.allPtys);
 

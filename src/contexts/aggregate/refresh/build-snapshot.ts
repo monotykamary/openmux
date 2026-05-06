@@ -204,16 +204,22 @@ export function createBuildSnapshot(deps: BuildSnapshotDeps) {
 
           for (const currentPty of currentLivePtysForSession) {
             const metadataResult = currentLiveMetadata.get(currentPty.ptyId);
+            const existingPty = previousPanePtyByKey.get(
+              getAggregatePaneKey(sessionId, currentPty.paneId) ?? ''
+            );
             const nextPty =
               metadataResult && !(metadataResult instanceof Error) && metadataResult !== null
-                ? ptyMetadataToInfo({
-                    ...metadataResult,
-                    sessionId,
-                    sessionMetadata: session,
-                    paneId: currentPty.paneId,
-                    workspaceId: currentPty.workspaceId,
-                    title: metadataResult.title ?? currentPty.title,
-                  })
+                ? ptyMetadataToInfo(
+                    {
+                      ...metadataResult,
+                      sessionId,
+                      sessionMetadata: session,
+                      paneId: currentPty.paneId,
+                      workspaceId: currentPty.workspaceId,
+                      title: metadataResult.title ?? currentPty.title,
+                    },
+                    existingPty
+                  )
                 : buildLivePaneFallback({
                     sessionId,
                     sessionMetadata: session,

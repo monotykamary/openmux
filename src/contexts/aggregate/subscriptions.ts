@@ -17,7 +17,7 @@ import { subscribeToGitRepoChanges } from '../../effect/services/pty/helpers';
 import type { AggregateViewState, PendingPaneCreation } from './types';
 import { buildPtyIndex } from './filter';
 import { findPendingPaneCreationForLifecycle, removePendingPaneCreations } from './pending';
-import { clearPreviewState } from './selection';
+import { selectAfterPtyRemoval } from './selection';
 import { getSessionPaneOrder, setSessionPaneOrder, getPendingPaneOrderKey } from './pane-order';
 import { recomputeMatches, recomputeTree } from './session';
 
@@ -120,6 +120,16 @@ export interface LifecycleHandlerDeps {
   onPtyDestroyed?: (ptyId: string) => void;
 }
 
+const MAX_DELETED_PTY_IDS = 256;
+
+function pruneDeletedPtyIds(set: Set<string>): void {
+  if (set.size <= MAX_DELETED_PTY_IDS) return;
+  const entries = [...set];
+  for (let i = 0; i < entries.length - MAX_DELETED_PTY_IDS; i++) {
+    set.delete(entries[i]!);
+  }
+}
+
 export function createLifecycleHandlers(
   state: AggregateViewState,
   setState: SetStoreFunction<AggregateViewState>,
@@ -207,7 +217,7 @@ export function createLifecycleHandlers(
     // can't match unclaimed insertions when there are multiple for the same
     // session (it only matches when exactly one is unclaimed), leaving the
     // pending creation orphaned and permanently blocking autoswitch.
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     // NOW remove the pending creation. The refresh has put the real PTY
     // into allPtys/matchedPtys, so the placeholder is no longer needed.
@@ -261,6 +271,7 @@ export function createLifecycleHandlers(
     setState(
       produce((s) => {
         s.deletedPtyIds.add(ptyId);
+        pruneDeletedPtyIds(s.deletedPtyIds);
         removeAggregateSessionMappingForPty(ptyId);
         s.pendingPtyIds.delete(ptyId);
         s.recentlyAddedPtyIds.delete(ptyId);
@@ -295,80 +306,7 @@ export function createLifecycleHandlers(
         }
 
         if (s.selectedPtyId === ptyId && removedFlattenedIndex !== undefined) {
-          const findNearestSelectable = (
-            startIndex: number,
-            direction: 'up' | 'down'
-          ): { index: number; item: (typeof s.flattenedTree)[number] } | null => {
-            const delta = direction === 'up' ? -1 : 1;
-            let selectionIndex = startIndex + delta;
-
-            while (selectionIndex >= 0 && selectionIndex < s.flattenedTree.length) {
-              const item = s.flattenedTree[selectionIndex];
-              if (item && item.node.type !== 'spacer') {
-                return { index: selectionIndex, item };
-              }
-              selectionIndex += delta;
-            }
-
-            return null;
-          };
-
-          const findNearestPtyInSessionAbove = (
-            startIndex: number,
-            currentSessionId: string
-          ): number | null => {
-            for (let selectionIndex = startIndex - 1; selectionIndex >= 0; selectionIndex--) {
-              const item = s.flattenedTree[selectionIndex];
-              if (item?.node.type === 'session') {
-                break;
-              }
-              if (item?.node.type === 'pty' && item.parentSessionId === currentSessionId) {
-                return selectionIndex;
-              }
-            }
-
-            return null;
-          };
-
-          const findSessionHeader = (
-            startIndex: number,
-            currentSessionId: string
-          ): number | null => {
-            for (let selectionIndex = startIndex - 1; selectionIndex >= 0; selectionIndex--) {
-              const item = s.flattenedTree[selectionIndex];
-              if (item?.node.type === 'session' && item.node.session.id === currentSessionId) {
-                return selectionIndex;
-              }
-            }
-
-            return null;
-          };
-
-          const replacementIndex =
-            findNearestSelectable(removedFlattenedIndex, 'down')?.index ??
-            findNearestPtyInSessionAbove(removedFlattenedIndex, sessionId) ??
-            findSessionHeader(removedFlattenedIndex, sessionId) ??
-            findNearestSelectable(removedFlattenedIndex, 'up')?.index ??
-            null;
-
-          if (replacementIndex !== null) {
-            const newSelection = s.flattenedTree[replacementIndex];
-            s.selectedIndex = replacementIndex;
-            s.selectedPtyId =
-              newSelection?.node.type === 'pty' ? newSelection.node.ptyInfo.ptyId : null;
-            s.selectedSessionId =
-              newSelection?.node.type === 'session'
-                ? newSelection.node.session.id
-                : (newSelection?.parentSessionId ?? null);
-            if (s.selectedPtyId === null) {
-              clearPreviewState(s);
-            }
-          } else {
-            s.selectedPtyId = null;
-            s.selectedSessionId = null;
-            s.selectedIndex = 0;
-            clearPreviewState(s);
-          }
+          selectAfterPtyRemoval(s, ptyId);
         }
 
         recomputeMatches(s);

@@ -4,6 +4,9 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { createTestPtyService } from './index';
 import type { PtyService } from './interface';
+import { createTestServices } from '../../services';
+import { ClipboardError, GhosttyVtInitError, NativeKeyError } from '../../errors';
+import { createTestClipboard } from '../Clipboard';
 
 describe('createTestPtyService (litmus)', () => {
   let service: PtyService;
@@ -119,5 +122,47 @@ describe('createTestPtyService (litmus)', () => {
 
   it('should handle dispose without error', () => {
     expect(() => service.dispose()).not.toThrow();
+  });
+});
+
+// Tests for changes in Clipboard error paths, new GhosttyVtInitError, and NativeKeyError
+// These capture the refactored early-return error handling and tagged error usage.
+describe('error classes and clipboard (post-refactor)', () => {
+  it('should construct ClipboardError with correct shape', () => {
+    const err = new ClipboardError({ operation: 'write', reason: 'test' });
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('ClipboardError');
+    expect(err.message).toContain('Clipboard write failed: test');
+  });
+
+  it('should construct GhosttyVtInitError with correct shape', () => {
+    const err = new GhosttyVtInitError({ operation: 'resolve-lib', reason: 'missing lib' });
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('GhosttyVtInitError');
+    expect(err.message).toContain('Ghostty VT resolve-lib failed: missing lib');
+  });
+
+  it('should construct NativeKeyError with correct shape', () => {
+    const err = new NativeKeyError({ operation: 'init', reason: 'symbols unavailable' });
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('NativeKeyError');
+    expect(err.message).toContain('Native key encoder init failed: symbols unavailable');
+  });
+
+  it('should provide working test clipboard impl', async () => {
+    const clip = createTestClipboard();
+    await clip.write('hello test');
+    const read = await clip.read();
+    expect(read).toBe('hello test');
+    // write again overwrites
+    await clip.write('updated');
+    expect(await clip.read()).toBe('updated');
+  });
+
+  it('should create test services with clipboard', async () => {
+    const services = await createTestServices();
+    expect(services.clipboard).toBeDefined();
+    expect(typeof services.clipboard.write).toBe('function');
+    expect(typeof services.clipboard.read).toBe('function');
   });
 });

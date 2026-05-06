@@ -31,7 +31,7 @@ async function removeSocketFile(socketPath: string): Promise<void> {
   try {
     await fs.unlink(socketPath);
   } catch {
-    // Ignore missing file
+    // intentionally ignored: socket file may not exist on first run
   }
 }
 

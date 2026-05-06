@@ -5,15 +5,9 @@
  * which was causing screen flash issues with web workers.
  */
 
-import {
-  createContext,
-  useContext,
-  createSignal,
-  type ParentProps,
-  type Accessor,
-} from 'solid-js';
+import { createContext, useContext, createSignal, type ParentProps, type Accessor } from 'solid-js';
 
-interface TitleContextValue {
+export interface TitleContextValue {
   /** Get the title for a pane */
   getTitle: (paneId: string) => string | undefined;
   /** Set the title for a pane (does not trigger layout re-renders) */
@@ -35,11 +29,7 @@ const TitleContext = createContext<TitleContextValue | null>(null);
 export function TitleProvider(props: ParentProps) {
   const value = createTitleStore();
 
-  return (
-    <TitleContext.Provider value={value}>
-      {props.children}
-    </TitleContext.Provider>
-  );
+  return <TitleContext.Provider value={value}>{props.children}</TitleContext.Provider>;
 }
 
 export function createTitleStore(): TitleContextValue {
@@ -60,7 +50,7 @@ export function createTitleStore(): TitleContextValue {
       titles.set(paneId, title);
       if (!manualTitles.has(paneId)) {
         // Increment version to trigger re-reads in components
-        setTitleVersion(v => v + 1);
+        setTitleVersion((v) => v + 1);
       }
     }
   };
@@ -68,7 +58,7 @@ export function createTitleStore(): TitleContextValue {
   const clearAutoTitle = (paneId: string) => {
     const hadAuto = titles.delete(paneId);
     if (hadAuto && !manualTitles.has(paneId)) {
-      setTitleVersion(v => v + 1);
+      setTitleVersion((v) => v + 1);
     }
   };
 
@@ -76,14 +66,14 @@ export function createTitleStore(): TitleContextValue {
     const current = manualTitles.get(paneId);
     if (current !== title) {
       manualTitles.set(paneId, title);
-      setTitleVersion(v => v + 1);
+      setTitleVersion((v) => v + 1);
     }
   };
 
   const clearManualTitle = (paneId: string) => {
     if (manualTitles.has(paneId)) {
       manualTitles.delete(paneId);
-      setTitleVersion(v => v + 1);
+      setTitleVersion((v) => v + 1);
     }
   };
 
@@ -91,7 +81,7 @@ export function createTitleStore(): TitleContextValue {
     const hadTitle = titles.delete(paneId);
     const hadManual = manualTitles.delete(paneId);
     if (hadTitle || hadManual) {
-      setTitleVersion(v => v + 1);
+      setTitleVersion((v) => v + 1);
     }
   };
 

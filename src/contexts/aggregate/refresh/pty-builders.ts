@@ -5,6 +5,7 @@ import type {
 } from '../../../effect/models';
 import type { PtyInfo } from '../types';
 import { getSavedAggregatePtyId } from '../rows';
+import { hasGitMetadata } from '../git';
 import type { CurrentSessionPty } from '../subscriptions';
 
 export function collectSerializedPaneIds(
@@ -121,6 +122,31 @@ export function buildSavedPaneInfo(params: {
 }): PtyInfo {
   const { sessionId, sessionMetadata, paneId, workspaceId, cwd, title, existing } = params;
 
+  // Preserve git metadata from the existing PTY when the CWD hasn't changed.
+  // During a skipGitMetadata refresh, the snapshot PTYs have empty git fields.
+  // Carrying forward the existing git data avoids a visible flicker between
+  // Phase 1 (snapshot apply) and Phase 2 (hydrateGitMetadata).
+  const shouldPreserveExistingGit = existing && existing.cwd === cwd && hasGitMetadata(existing);
+  const preservedGit = shouldPreserveExistingGit
+    ? {
+        gitBranch: existing.gitBranch,
+        gitDiffStats: existing.gitDiffStats,
+        gitDirty: existing.gitDirty,
+        gitStaged: existing.gitStaged,
+        gitUnstaged: existing.gitUnstaged,
+        gitUntracked: existing.gitUntracked,
+        gitConflicted: existing.gitConflicted,
+        gitAhead: existing.gitAhead,
+        gitBehind: existing.gitBehind,
+        gitStashCount: existing.gitStashCount,
+        gitState: existing.gitState,
+        gitDetached: existing.gitDetached,
+        gitRepoKey: existing.gitRepoKey,
+        gitIsWorktree: existing.gitIsWorktree,
+        gitCommonDir: existing.gitCommonDir,
+      }
+    : getEmptyGitMetadata();
+
   return {
     ptyId: getSavedAggregatePtyId(sessionId, paneId),
     cwd,
@@ -135,7 +161,7 @@ export function buildSavedPaneInfo(params: {
     // means "data not yet loaded" — the serialized data IS the real data.
     title: existing?.title && existing.title !== '...' ? existing.title : title,
     sortOrderHint: existing?.sortOrderHint,
-    ...getEmptyGitMetadata(),
+    ...preservedGit,
   };
 }
 

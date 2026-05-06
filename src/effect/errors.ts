@@ -317,6 +317,16 @@ export class NativeKeyError extends errore.createTaggedError({
 }) {}
 
 /**
+ * Use for libghostty-vt shared library loading or terminal creation failures.
+ * These are typically fatal at startup or emulator init; the message includes
+ * diagnostic paths for the library.
+ */
+export class GhosttyVtInitError extends errore.createTaggedError({
+  name: 'GhosttyVtInitError',
+  message: 'Ghostty VT $operation failed: $reason',
+}) {}
+
+/**
  * Use when session operations (create, update, delete) fail.
  * This is for the session-operations context, not storage errors.
  */

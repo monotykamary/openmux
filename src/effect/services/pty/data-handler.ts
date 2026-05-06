@@ -28,6 +28,8 @@ interface DataHandlerState {
   pendingSegments: string[];
   syncTimeout: ReturnType<typeof setTimeout> | null;
   syncLikelyPiFullRedraw: boolean;
+  /** Set when a pi full-redraw segment is queued; cleared after drain processes it. */
+  piFullRedrawPending: boolean;
   pendingResponses: { fence: number; responses: string[] }[];
   segmentCounter: number;
   processedCounter: number;
@@ -53,7 +55,6 @@ const CLEAR_SCREEN_C1_REGEX = /\x9b2J/g;
 
 // Pi full redraws reach data-handler after sync-mode-parser has already stripped
 // CSI ? 2026 h/l. Normalize the post-sync payload instead of looking for sync markers.
-const CLEAR_SCREEN_SEQUENCE = '\x1b[2J';
 const CURSOR_HOME_SEQUENCE = '\x1b[H';
 const PI_FULL_REDRAW_PREFIX_REGEX =
   /^(?:\x1b\[2J|\x9b2J)(?:\x1b\[(?:H|1;1H)|\x9b(?:H|1;1H))(?:\x1b\[3J|\x9b3J)/;
@@ -113,19 +114,24 @@ function shouldSuppressClearScreen(session: InternalPtySession): boolean {
 }
 
 /**
- * Replace pi's destructive full-redraw prefix with a scrollback-preserving clear.
+ * Replace pi's destructive full-redraw prefix with a cursor-home replacement.
  *
  * sync-mode-parser strips CSI ? 2026 h/l before ready segments reach data-handler, so
  * the real payload we see here starts with CSI 2 J, home, CSI 3 J, then the new frame.
  *
  * The original sequence (CSI 2J + CSI H + CSI 3J) would clear the screen, push visible
- * content to scrollback, then destroy all scrollback. We keep CSI 2J (which properly
- * clears the visible screen and preserves visible-as-scrollback) and CSI H (cursor
- * home), but drop CSI 3J to preserve the user's scrollback history.
+ * content to scrollback (via ghostty's scrollClear heuristic on the primary screen at
+ * a prompt), then destroy all scrollback. Even dropping CSI 3J, keeping CSI 2J still
+ * pushes the entire visible conversation into scrollback, causing duplicate content.
  *
- * Previous approach (CSI H + CSI J) only erased the visible viewport without pushing
- * content to scrollback, causing the frame write to produce duplicate scrollback entries
- * and a visible content-shift artifact as ghostty's VT parser scrolled new lines.
+ * Pi's full redraw is a replacement, not a scroll. The new frame (rendered by OpenTUI
+ * with explicit cursor positioning) overwrites every visible row without triggering
+ * linefeed-based scrolling. By stripping the entire clear prefix (CSI 2J + CSI H +
+ * CSI 3J) and replacing it with just cursor-home, the frame content overwrites the
+ * existing visible rows in place — no scrollback duplication, no content shift.
+ *
+ * Sync-mode-parser's atomic delivery guarantees no intermediate stale state is
+ * rendered, so there is no flicker.
  *
  * @internal Exported for testing
  */
@@ -134,7 +140,7 @@ export function normalizePiFullRedrawSegment(segment: string, _terminalRows: num
   if (!match) return segment;
 
   const frame = segment.slice(match[0].length);
-  return `${CLEAR_SCREEN_SEQUENCE}${CURSOR_HOME_SEQUENCE}${frame}`;
+  return `${CURSOR_HOME_SEQUENCE}${frame}`;
 }
 
 /**
@@ -228,6 +234,7 @@ export function createDataHandler(options: DataHandlerOptions) {
     pendingSegments: [],
     syncTimeout: null,
     syncLikelyPiFullRedraw: false,
+    piFullRedrawPending: false,
     pendingResponses: [],
     segmentCounter: 0,
     processedCounter: 0,
@@ -340,6 +347,10 @@ export function createDataHandler(options: DataHandlerOptions) {
     }
 
     const force = drainOptions?.force ?? false;
+    const piRedraw = state.piFullRedrawPending;
+    // Snapshot scrollback length before writing a pi full redraw so we can
+    // detect and undo any LF-triggered scrollback growth.
+    const preWriteScrollback = piRedraw ? session.emulator.getScrollbackLength() : 0;
     const start = now();
     let batch = '';
     let batchLen = 0;
@@ -435,6 +446,27 @@ export function createDataHandler(options: DataHandlerOptions) {
       session.scrollbackArchiver?.schedule();
     }
 
+    // After writing a pi full redraw, check if any scrollback grew from
+    // LF-triggered scrolls and virtually trim the duplicate tail lines.
+    // With cursor-positioned frames (like OpenTUI), there should be zero
+    // growth. This is a safety net for edge cases.
+    if (piRedraw && wrote && !session.emulator.isDisposed) {
+      const postWriteScrollback = session.emulator.getScrollbackLength();
+      const growth = postWriteScrollback - preWriteScrollback;
+      if (growth > 0) {
+        tracePtyEvent('pi-redraw-scrollback-growth', {
+          ptyId: session.id,
+          growth,
+          preWriteScrollback,
+          postWriteScrollback,
+        });
+        if (typeof session.emulator.eraseScrollbackTail === 'function') {
+          session.emulator.eraseScrollbackTail(growth);
+        }
+      }
+      state.piFullRedrawPending = false;
+    }
+
     if (segmentsProcessed > 0) {
       state.processedCounter += segmentsProcessed;
       flushPendingResponses();
@@ -501,6 +533,9 @@ export function createDataHandler(options: DataHandlerOptions) {
         });
         if (flushed.length > 0) {
           state.pendingSegments.push(flushed);
+          if (state.syncLikelyPiFullRedraw) {
+            state.piFullRedrawPending = true;
+          }
           scheduleNotify();
         }
         state.syncTimeout = null;
@@ -517,10 +552,14 @@ export function createDataHandler(options: DataHandlerOptions) {
     // Add ready segments to pending queue
     let segmentsAdded = 0;
     for (const rawSegment of readySegments) {
+      const isPiRedraw = PI_FULL_REDRAW_PREFIX_REGEX.test(rawSegment);
       const segment = normalizePiFullRedrawSegment(rawSegment, session.rows);
       if (segment.length > 0) {
         state.pendingSegments.push(segment);
         segmentsAdded += 1;
+        if (isPiRedraw) {
+          state.piFullRedrawPending = true;
+        }
       }
     }
     if (segmentsAdded > 0) {

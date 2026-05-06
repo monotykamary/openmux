@@ -12,6 +12,7 @@ import type {
   SessionTreeNode,
 } from './aggregate-view-types';
 import { clearPreviewState, recomputeMatches, recomputeTree } from './aggregate-view-helpers';
+import { selectAfterPtyRemoval as selectAfterPtyRemovalShared } from './aggregate/selection';
 import {
   removePendingPaneCreations,
   upsertPendingPaneCreation,
@@ -154,9 +155,7 @@ export function createAggregateViewActions(params: AggregateViewActionsParams) {
     );
   };
 
-  // ============================================================================
   // Tree-Aware Navigation
-  // ============================================================================
 
   const navigateUp = () => {
     if (state.flattenedTree.length === 0) return;
@@ -289,9 +288,7 @@ export function createAggregateViewActions(params: AggregateViewActionsParams) {
     );
   };
 
-  // ============================================================================
   // Lazy Loading: Session PTY Loading on Demand
-  // ============================================================================
 
   /**
    * Attempt to load session PTYs on demand.
@@ -332,9 +329,7 @@ export function createAggregateViewActions(params: AggregateViewActionsParams) {
     return state.loadingSessionIds.has(sessionId);
   };
 
-  // ============================================================================
   // Session Tree Navigation
-  // ============================================================================
 
   /** Toggle session expansion (collapse/expand PTYs under a session) */
   const toggleSessionExpanded = (sessionId: string) => {
@@ -384,87 +379,14 @@ export function createAggregateViewActions(params: AggregateViewActionsParams) {
     return state.flattenedTree[state.selectedIndex];
   };
 
-  // ============================================================================
-  // Smart Selection on Close/Kill
-  // ============================================================================
-
-  const findNearestSelectable = (
-    startIndex: number,
-    direction: 'up' | 'down'
-  ): { index: number; item: FlattenedTreeItem } | null => {
-    const flattened = state.flattenedTree;
-    const delta = direction === 'up' ? -1 : 1;
-    let index = startIndex + delta;
-
-    while (index >= 0 && index < flattened.length) {
-      const item = flattened[index];
-      if (item && item.node.type !== 'spacer') {
-        return { index, item };
-      }
-      index += delta;
-    }
-
-    return null;
-  };
-
-  const findNearestPtyInSessionAbove = (startIndex: number, sessionId: string): number | null => {
-    for (let index = startIndex - 1; index >= 0; index--) {
-      const item = state.flattenedTree[index];
-      if (item?.node.type === 'session') {
-        break;
-      }
-      if (item?.node.type === 'pty' && item.parentSessionId === sessionId) {
-        return index;
-      }
-    }
-
-    return null;
-  };
-
-  const findSessionHeader = (startIndex: number, sessionId: string): number | null => {
-    for (let index = startIndex - 1; index >= 0; index--) {
-      const item = state.flattenedTree[index];
-      if (item?.node.type === 'session' && item.node.session.id === sessionId) {
-        return index;
-      }
-    }
-
-    return null;
-  };
-
   /**
    * Smart selection after removing a PTY.
-   * Keep the cursor in place by preferring the next selectable row below,
-   * but when nothing is below, move to the previous PTY before the session header.
+   * Delegates to the shared selectAfterPtyRemoval from aggregate/selection.
    */
-  const selectAfterPtyRemoval = (removedPtyId: string): void => {
-    const removedIndex = state.flattenedTreeIndex.get(removedPtyId);
-
-    if (removedIndex === undefined) {
-      return;
-    }
-
-    const removedItem = state.flattenedTree[removedIndex];
-    const removedSessionId = removedItem?.node.type === 'pty' ? removedItem.parentSessionId : null;
-
-    const replacementIndex =
-      findNearestSelectable(removedIndex, 'down')?.index ??
-      (removedSessionId ? findNearestPtyInSessionAbove(removedIndex, removedSessionId) : null) ??
-      (removedSessionId ? findSessionHeader(removedIndex, removedSessionId) : null) ??
-      findNearestSelectable(removedIndex, 'up')?.index ??
-      null;
-
+  const handleSelectAfterPtyRemoval = (removedPtyId: string): void => {
     setState(
       produce((s) => {
-        if (replacementIndex !== null) {
-          applySelection(s, replacementIndex);
-          return;
-        }
-
-        s.selectedIndex = 0;
-        s.selectedPtyId = null;
-        s.selectedSessionId = null;
-        clearPreviewState(s);
+        selectAfterPtyRemovalShared(s, removedPtyId);
       })
     );
   };
@@ -484,9 +406,7 @@ export function createAggregateViewActions(params: AggregateViewActionsParams) {
     return null;
   };
 
-  // ============================================================================
   // List Scrolling
-  // ============================================================================
 
   /** Scroll the list up by a specified amount (default: 3 lines) */
   const scrollListUp = (amount: number = 3) => {
@@ -697,7 +617,7 @@ export function createAggregateViewActions(params: AggregateViewActionsParams) {
     getFlattenedItem,
     getSelectedItem,
     // Smart selection on close/kill
-    selectAfterPtyRemoval,
+    selectAfterPtyRemoval: handleSelectAfterPtyRemoval,
     // List scrolling
     scrollListUp,
     scrollListDown,

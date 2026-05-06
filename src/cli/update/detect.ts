@@ -79,6 +79,7 @@ function fileExists(targetPath: string): boolean {
     fsSync.accessSync(targetPath, fsSync.constants.F_OK);
     return true;
   } catch {
+    // intentionally ignored: file may not exist
     return false;
   }
 }

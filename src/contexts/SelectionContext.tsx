@@ -8,13 +8,7 @@
  * - Shift+click to override app mouse tracking
  */
 
-import {
-  createContext,
-  useContext,
-  createSignal,
-  onCleanup,
-  type ParentProps,
-} from 'solid-js';
+import { createContext, useContext, createSignal, onCleanup, type ParentProps } from 'solid-js';
 import type { SelectionBounds } from '../core/types';
 import { deferMacrotask } from '../core/scheduling';
 import { copyToClipboard } from '../effect/bridge';
@@ -61,7 +55,7 @@ interface CopyNotificationState {
 /**
  * Selection context value
  */
-interface SelectionContextValue {
+export interface SelectionContextValue {
   /**
    * Start a new selection on mouse down
    */
@@ -87,11 +81,7 @@ interface SelectionContextValue {
   /**
    * Complete selection on mouse up (auto-copy and clear)
    */
-  completeSelection(
-    ptyId: string,
-    scrollbackLength: number,
-    getLine: LineGetter
-  ): Promise<void>;
+  completeSelection(ptyId: string, scrollbackLength: number, getLine: LineGetter): Promise<void>;
 
   /**
    * Clear selection for a pane
@@ -144,9 +134,7 @@ interface SelectionContextValue {
   clearCopyNotification: () => void;
 }
 
-
 const SelectionContext = createContext<SelectionContextValue | null>(null);
-
 
 interface SelectionProviderProps extends ParentProps {}
 
@@ -241,7 +229,7 @@ export function SelectionProvider(props: SelectionProviderProps) {
       startY: absoluteY,
       endX: x,
       endY: absoluteY,
-      focusAtEnd: true,  // Default to forward
+      focusAtEnd: true, // Default to forward
     };
 
     selections.set(ptyId, {
@@ -299,11 +287,7 @@ export function SelectionProvider(props: SelectionProviderProps) {
 
     await beginCopy(ptyId);
 
-    const text = extractSelectedText(
-      normalizedRange,
-      scrollbackLength,
-      getLine
-    );
+    const text = extractSelectedText(normalizedRange, scrollbackLength, getLine);
     if (text.length === 0) {
       clearCopyNotification();
       return;
@@ -369,17 +353,16 @@ export function SelectionProvider(props: SelectionProviderProps) {
     notifyCopy,
     notifyCopyError,
     clearCopyNotification,
-    get selectionVersion() { return selectionVersion(); },
-    get copyNotification() { return copyNotification(); },
+    get selectionVersion() {
+      return selectionVersion();
+    },
+    get copyNotification() {
+      return copyNotification();
+    },
   };
 
-  return (
-    <SelectionContext.Provider value={value}>
-      {props.children}
-    </SelectionContext.Provider>
-  );
+  return <SelectionContext.Provider value={value}>{props.children}</SelectionContext.Provider>;
 }
-
 
 export function useSelection(): SelectionContextValue {
   const context = useContext(SelectionContext);

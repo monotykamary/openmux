@@ -60,6 +60,13 @@ export interface ITerminalEmulator {
   getScrollbackLength(): number;
 
   /**
+   * Virtually trim the newest N scrollback lines without physically removing
+   * pages. Used after pi full redraws to prevent duplicate content from
+   * LF-triggered scrolls appearing in scrollback.
+   */
+  eraseScrollbackTail?(lines: number): void;
+
+  /**
    * Get a line from the scrollback buffer
    * @param offset Line offset from top of scrollback (0 = oldest line)
    * @returns Array of cells, or null if not available

@@ -11,15 +11,7 @@ import {
 import { unpackDirtyUpdate } from '../../terminal/cell-serialization';
 import type { DesktopNotification } from '../../terminal/command-parser';
 import { bufferToArrayBuffer } from './utils';
-import {
-  handlePtyActivity,
-  handlePtyExit,
-  handlePtyLifecycle,
-  handlePtyTitle,
-  handlePtyKittyTransmit,
-  handlePtyKittyUpdate,
-  handleUnifiedUpdate,
-} from './state';
+import { defaultRegistry } from './state';
 import type { ShimHeader } from '../protocol';
 
 /** Dependencies for creating a frame handler */
@@ -166,14 +158,14 @@ export function createFrameHandler(
         scrollState,
       };
 
-      handleUnifiedUpdate(ptyId, unifiedUpdate);
+      defaultRegistry.handleUnifiedUpdate(ptyId, unifiedUpdate);
       return;
     }
 
     if (header.type === 'ptyExit') {
       const ptyId = header.ptyId as string;
       const exitCode = header.exitCode as number;
-      handlePtyExit(ptyId, exitCode);
+      defaultRegistry.handlePtyExit(ptyId, exitCode);
       return;
     }
 
@@ -236,7 +228,7 @@ export function createFrameHandler(
         transmitTime: BigInt(info.transmitTime),
       }));
 
-      handlePtyKittyUpdate(ptyId, {
+      defaultRegistry.handlePtyKittyUpdate(ptyId, {
         images,
         placements: kitty.placements ?? [],
         removedImageIds: kitty.removedImageIds ?? [],
@@ -250,20 +242,20 @@ export function createFrameHandler(
       const ptyId = header.ptyId as string;
       const payload = payloads[0];
       if (!payload) return;
-      handlePtyKittyTransmit(ptyId, payload.toString('utf8'));
+      defaultRegistry.handlePtyKittyTransmit(ptyId, payload.toString('utf8'));
       return;
     }
 
     if (header.type === 'ptyTitle') {
       const ptyId = header.ptyId as string;
       const title = (header.title as string) ?? '';
-      handlePtyTitle(ptyId, title);
+      defaultRegistry.handlePtyTitle(ptyId, title);
       return;
     }
 
     if (header.type === 'ptyActivity') {
       const ptyId = header.ptyId as string;
-      handlePtyActivity(ptyId);
+      defaultRegistry.handlePtyActivity(ptyId);
       return;
     }
 
@@ -295,7 +287,7 @@ export function createFrameHandler(
     if (header.type === 'ptyLifecycle') {
       const ptyId = header.ptyId as string;
       const eventType = header.event as 'created' | 'destroyed';
-      handlePtyLifecycle(ptyId, eventType);
+      defaultRegistry.handlePtyLifecycle(ptyId, eventType);
       return;
     }
 

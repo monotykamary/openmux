@@ -14,10 +14,7 @@ import type { KeyboardEvent } from '../effect/bridge';
 import { normalizeTemplateId } from '../core/template-utils';
 import type { TemplateTabMode } from './template-overlay/keyboard';
 import { abbreviatePath } from './template-overlay/formatting';
-import {
-  buildSaveSummaryLines,
-  buildTemplateSummary,
-} from './template-overlay/summary';
+import { buildSaveSummaryLines, buildTemplateSummary } from './template-overlay/summary';
 import { createVimSequenceHandler, type VimInputMode } from '../core/vim-sequences';
 import { TemplateOverlayView } from './template-overlay/TemplateOverlayView';
 
@@ -89,11 +86,13 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
           try {
             cwd = await terminal.getSessionCwd(pane.ptyId);
           } catch {
+            // intentionally ignored: fallback to session CWD
             cwd = fallbackCwd;
           }
           try {
             processName = await terminal.getSessionForegroundProcess(pane.ptyId);
           } catch {
+            // intentionally ignored: process name is optional metadata
             processName = undefined;
           }
         }
@@ -309,9 +308,10 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
     event.key === 'escape' && !event.ctrl && !event.alt && !event.meta && !event.shift;
 
   const handleKeyDown = (event: KeyboardEvent) => {
-    const bindings = tab() === 'apply'
-      ? config.keybindings().templateOverlay.apply
-      : config.keybindings().templateOverlay.save;
+    const bindings =
+      tab() === 'apply'
+        ? config.keybindings().templateOverlay.apply
+        : config.keybindings().templateOverlay.save;
     const keyEvent = {
       key: event.key,
       ctrl: event.ctrl,
@@ -349,7 +349,8 @@ export function TemplateOverlay(props: TemplateOverlayProps) {
     if (handleAction(result.action)) return true;
 
     const isBackspace = event.key === 'backspace';
-    const shouldMatchBindings = !isBackspace && (event.ctrl || event.alt || event.meta || event.key.length > 1);
+    const shouldMatchBindings =
+      !isBackspace && (event.ctrl || event.alt || event.meta || event.key.length > 1);
     if (shouldMatchBindings && !isBareEscape(event)) {
       const action = matchKeybinding(bindings, keyEvent);
       if (handleAction(action)) return true;

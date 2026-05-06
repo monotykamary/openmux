@@ -15,6 +15,10 @@ import type { SessionMetadata } from '../../../effect/models';
 import type { PtyInfo } from '../types';
 import { dedupeAggregatePtysByPane, isSavedAggregatePtyId } from '../rows';
 import { mergePtyInfoPreservingGitMetadata } from '../git';
+import { applySnapshot, applyGitMetadataToPty } from '../refresh/apply-snapshot';
+import type { SnapshotResult } from '../refresh/build-snapshot';
+import type { AggregateViewState } from '../types';
+import { initialState } from '../types';
 
 const sessionMetadata: SessionMetadata = {
   id: 'session-1',
@@ -310,5 +314,298 @@ describe('regression: git metadata must not clear then redraw', () => {
     expect(merged.gitBranch).toBe('main');
     expect(merged.gitAhead).toBe(7);
     expect(merged.gitDiffStats).toEqual({ added: 10, removed: 2, binary: 0 });
+  });
+
+  it('applyGitMetadataToPty copies only git fields from source to target', () => {
+    const target: PtyInfo = {
+      ptyId: 'pty-1',
+      cwd: '/repo',
+      foregroundProcess: 'vim',
+      shell: '/bin/zsh',
+      title: 'editor',
+      workspaceId: 1,
+      paneId: 'pane-1',
+      sessionId: 'session-1',
+      sessionMetadata,
+      ...emptyGitFields,
+    };
+    const source: PtyInfo = {
+      ptyId: 'pty-1',
+      cwd: '/repo',
+      foregroundProcess: 'old-process',
+      shell: 'old-shell',
+      title: 'old-title',
+      workspaceId: 2,
+      paneId: 'pane-1',
+      sessionId: 'session-1',
+      sessionMetadata,
+      gitBranch: 'develop',
+      gitDiffStats: { added: 5, removed: 1, binary: 0 },
+      gitDirty: true,
+      gitStaged: 3,
+      gitUnstaged: 7,
+      gitUntracked: 1,
+      gitConflicted: 0,
+      gitAhead: 2,
+      gitBehind: 1,
+      gitStashCount: 1,
+      gitState: 'rebase',
+      gitDetached: false,
+      gitRepoKey: '/repo',
+      gitIsWorktree: false,
+      gitCommonDir: null,
+    };
+
+    const result = applyGitMetadataToPty(target, source);
+
+    // Target fields are preserved
+    expect(result.foregroundProcess).toBe('vim');
+    expect(result.shell).toBe('/bin/zsh');
+    expect(result.title).toBe('editor');
+    expect(result.cwd).toBe('/repo');
+
+    // Git fields come from source
+    expect(result.gitBranch).toBe('develop');
+    expect(result.gitDiffStats).toEqual({ added: 5, removed: 1, binary: 0 });
+    expect(result.gitDirty).toBe(true);
+    expect(result.gitStaged).toBe(3);
+    expect(result.gitUnstaged).toBe(7);
+    expect(result.gitAhead).toBe(2);
+    expect(result.gitBehind).toBe(1);
+    expect(result.gitStashCount).toBe(1);
+    expect(result.gitState).toBe('rebase');
+    expect(result.gitRepoKey).toBe('/repo');
+  });
+
+  it('applySnapshot non-merge path preserves git metadata from existing PTYs', () => {
+    // This is the bug: refreshPtys() Phase 1 builds a snapshot with
+    // skipGitMetadata:true, then applySnapshot replaces all PTYs.
+    // Without git metadata preservation, all git fields vanish between
+    // Phase 1 and Phase 2 (hydrateGitMetadata).
+    //
+    // The fix: applySnapshot fills in empty git fields on snapshot PTYs
+    // from the previous allPtys entries that match by ptyId or pane key.
+
+    const existingPty: PtyInfo = {
+      ptyId: 'pty-1',
+      cwd: '/repo',
+      foregroundProcess: 'vim',
+      shell: '/bin/zsh',
+      title: 'editor',
+      workspaceId: 1,
+      paneId: 'pane-1',
+      sessionId: 'session-1',
+      sessionMetadata,
+      gitBranch: 'main',
+      gitDiffStats: { added: 10, removed: 2, binary: 0 },
+      gitDirty: true,
+      gitStaged: 1,
+      gitUnstaged: 2,
+      gitUntracked: 0,
+      gitConflicted: 0,
+      gitAhead: 7,
+      gitBehind: 0,
+      gitStashCount: 0,
+      gitState: undefined,
+      gitDetached: false,
+      gitRepoKey: '/repo',
+      gitIsWorktree: false,
+      gitCommonDir: null,
+    };
+
+    // Snapshot PTY: same ptyId and paneId, but empty git fields (from skipGitMetadata)
+    const snapshotPty: PtyInfo = {
+      ...existingPty,
+      foregroundProcess: 'bash',
+      title: 'shell',
+      ...emptyGitFields,
+    };
+
+    const snapshot: SnapshotResult = {
+      sessions: [sessionMetadata],
+      sessionLoadStates: new Map([['session-1', { status: 'loaded', paneCount: 1 }]]),
+      sessionPaneOrders: new Map([['session-1', new Map([['pane-1', 0]])]]),
+      ptys: [snapshotPty],
+      loadedSessionIds: new Set(['session-1']),
+    };
+
+    const { createStore: createStoreSolid } = require('solid-js/store');
+    const [state, setState] = createStoreSolid<AggregateViewState>({
+      ...initialState,
+      showAggregateView: true,
+      allSessions: new Map([['session-1', sessionMetadata]]),
+      sessionLoadStates: new Map([['session-1', { status: 'loaded', paneCount: 1 }]]),
+      expandedSessionIds: new Set(['session-1']),
+      allPtys: [existingPty],
+      allPtysIndex: new Map([['pty-1', 0]]),
+      sessionPaneOrders: new Map(),
+      sessionPaneOrderIndex: new Map(),
+      pendingPaneCreations: [],
+    });
+
+    applySnapshot(state, setState, snapshot, { mergeWithExisting: false });
+
+    // Git metadata must survive the non-merge applySnapshot
+    expect(state.allPtys).toHaveLength(1);
+    expect(state.allPtys[0]!.ptyId).toBe('pty-1');
+    expect(state.allPtys[0]!.gitBranch).toBe('main');
+    expect(state.allPtys[0]!.gitDiffStats).toEqual({ added: 10, removed: 2, binary: 0 });
+    expect(state.allPtys[0]!.gitDirty).toBe(true);
+    expect(state.allPtys[0]!.gitAhead).toBe(7);
+    expect(state.allPtys[0]!.gitRepoKey).toBe('/repo');
+
+    // Non-git fields come from the snapshot (updated foregroundProcess/title)
+    expect(state.allPtys[0]!.foregroundProcess).toBe('bash');
+    expect(state.allPtys[0]!.title).toBe('shell');
+  });
+
+  it('applySnapshot non-merge path does NOT preserve git metadata when CWD changed', () => {
+    // When a PTY's CWD changed (e.g. cd into a different directory),
+    // the old git metadata is for the previous repo and must NOT be
+    // carried forward.
+
+    const existingPty: PtyInfo = {
+      ptyId: 'pty-1',
+      cwd: '/old-repo',
+      foregroundProcess: 'vim',
+      shell: '/bin/zsh',
+      title: 'editor',
+      workspaceId: 1,
+      paneId: 'pane-1',
+      sessionId: 'session-1',
+      sessionMetadata,
+      gitBranch: 'main',
+      gitDiffStats: { added: 10, removed: 2, binary: 0 },
+      gitDirty: true,
+      gitStaged: 1,
+      gitUnstaged: 2,
+      gitUntracked: 0,
+      gitConflicted: 0,
+      gitAhead: 7,
+      gitBehind: 0,
+      gitStashCount: 0,
+      gitState: undefined,
+      gitDetached: false,
+      gitRepoKey: '/old-repo',
+      gitIsWorktree: false,
+      gitCommonDir: null,
+    };
+
+    // Snapshot PTY: same ptyId but different CWD
+    const snapshotPty: PtyInfo = {
+      ...existingPty,
+      cwd: '/new-repo',
+      ...emptyGitFields,
+    };
+
+    const snapshot: SnapshotResult = {
+      sessions: [sessionMetadata],
+      sessionLoadStates: new Map([['session-1', { status: 'loaded', paneCount: 1 }]]),
+      sessionPaneOrders: new Map([['session-1', new Map([['pane-1', 0]])]]),
+      ptys: [snapshotPty],
+      loadedSessionIds: new Set(['session-1']),
+    };
+
+    const { createStore: createStoreSolid } = require('solid-js/store');
+    const [state, setState] = createStoreSolid<AggregateViewState>({
+      ...initialState,
+      showAggregateView: true,
+      allSessions: new Map([['session-1', sessionMetadata]]),
+      sessionLoadStates: new Map([['session-1', { status: 'loaded', paneCount: 1 }]]),
+      expandedSessionIds: new Set(['session-1']),
+      allPtys: [existingPty],
+      allPtysIndex: new Map([['pty-1', 0]]),
+      sessionPaneOrders: new Map(),
+      sessionPaneOrderIndex: new Map(),
+      pendingPaneCreations: [],
+    });
+
+    applySnapshot(state, setState, snapshot, { mergeWithExisting: false });
+
+    // Git metadata must NOT be preserved (CWD changed)
+    expect(state.allPtys).toHaveLength(1);
+    expect(state.allPtys[0]!.cwd).toBe('/new-repo');
+    expect(state.allPtys[0]!.gitBranch).toBeUndefined();
+    expect(state.allPtys[0]!.gitDirty).toBe(false);
+    expect(state.allPtys[0]!.gitRepoKey).toBeUndefined();
+  });
+
+  it('applySnapshot non-merge path preserves git metadata by pane key for saved: → live ptyId transition', () => {
+    // When a saved: PTY transitions to a live PTY (same pane, different ptyId),
+    // git metadata should be preserved via the pane key match.
+
+    const existingPty: PtyInfo = {
+      ptyId: 'saved:session-1:pane-1',
+      cwd: '/repo',
+      foregroundProcess: undefined,
+      shell: 'shell',
+      title: 'shell',
+      workspaceId: 1,
+      paneId: 'pane-1',
+      sessionId: 'session-1',
+      sessionMetadata,
+      gitBranch: 'develop',
+      gitDiffStats: { added: 20, removed: 5, binary: 1 },
+      gitDirty: true,
+      gitStaged: 5,
+      gitUnstaged: 10,
+      gitUntracked: 3,
+      gitConflicted: 0,
+      gitAhead: 3,
+      gitBehind: 2,
+      gitStashCount: 1,
+      gitState: undefined,
+      gitDetached: false,
+      gitRepoKey: '/repo',
+      gitIsWorktree: false,
+      gitCommonDir: null,
+    };
+
+    // Snapshot PTY: live ptyId (different from saved:), same pane, empty git fields
+    const snapshotPty: PtyInfo = {
+      ptyId: 'pty-live',
+      cwd: '/repo',
+      foregroundProcess: 'vim',
+      shell: '/bin/zsh',
+      title: 'editor',
+      workspaceId: 1,
+      paneId: 'pane-1',
+      sessionId: 'session-1',
+      sessionMetadata,
+      ...emptyGitFields,
+    };
+
+    const snapshot: SnapshotResult = {
+      sessions: [sessionMetadata],
+      sessionLoadStates: new Map([['session-1', { status: 'loaded', paneCount: 1 }]]),
+      sessionPaneOrders: new Map([['session-1', new Map([['pane-1', 0]])]]),
+      ptys: [snapshotPty],
+      loadedSessionIds: new Set(['session-1']),
+    };
+
+    const { createStore: createStoreSolid } = require('solid-js/store');
+    const [state, setState] = createStoreSolid<AggregateViewState>({
+      ...initialState,
+      showAggregateView: true,
+      allSessions: new Map([['session-1', sessionMetadata]]),
+      sessionLoadStates: new Map([['session-1', { status: 'loaded', paneCount: 1 }]]),
+      expandedSessionIds: new Set(['session-1']),
+      allPtys: [existingPty],
+      allPtysIndex: new Map([['saved:session-1:pane-1', 0]]),
+      sessionPaneOrders: new Map(),
+      sessionPaneOrderIndex: new Map(),
+      pendingPaneCreations: [],
+    });
+
+    applySnapshot(state, setState, snapshot, { mergeWithExisting: false });
+
+    // Git metadata must survive via pane key match
+    expect(state.allPtys).toHaveLength(1);
+    expect(state.allPtys[0]!.ptyId).toBe('pty-live');
+    expect(state.allPtys[0]!.gitBranch).toBe('develop');
+    expect(state.allPtys[0]!.gitDiffStats).toEqual({ added: 20, removed: 5, binary: 1 });
+    expect(state.allPtys[0]!.gitDirty).toBe(true);
+    expect(state.allPtys[0]!.gitAhead).toBe(3);
+    expect(state.allPtys[0]!.gitRepoKey).toBe('/repo');
   });
 });

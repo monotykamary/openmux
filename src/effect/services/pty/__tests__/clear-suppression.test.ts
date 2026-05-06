@@ -163,21 +163,21 @@ afterEach(() => {
 });
 
 describe('normalizePiFullRedrawSegment', () => {
-  it('rewrites pi full redraws to scrollback-preserving clear+home', () => {
+  it('rewrites pi full redraws to cursor-home replacement (no scrollback push)', () => {
     const input = '\x1b[2J\x1b[H\x1b[3Jhello';
-    expect(normalizePiFullRedrawSegment(input, 10)).toBe('\x1b[2J\x1b[Hhello');
+    expect(normalizePiFullRedrawSegment(input, 10)).toBe('\x1b[Hhello');
   });
 
-  it('preserves tall pi full redraw frames so scrollback survives', () => {
+  it('preserves tall pi full redraw frames without scrollback duplication', () => {
     const input = '\x1b[2J\x1b[H\x1b[3Jline 1\r\nline 2\r\nline 3\r\nline 4';
     expect(normalizePiFullRedrawSegment(input, 2)).toBe(
-      '\x1b[2J\x1b[Hline 1\r\nline 2\r\nline 3\r\nline 4'
+      '\x1b[Hline 1\r\nline 2\r\nline 3\r\nline 4'
     );
   });
 
   it('supports 1;1H and C1 variants', () => {
     const input = '\x9b2J\x9b1;1H\x9b3Jhello';
-    expect(normalizePiFullRedrawSegment(input, 10)).toBe('\x1b[2J\x1b[Hhello');
+    expect(normalizePiFullRedrawSegment(input, 10)).toBe('\x1b[Hhello');
   });
 
   it('only rewrites the destructive prefix at the start of the segment', () => {
@@ -213,7 +213,7 @@ describe('suppressClearScreenSequences', () => {
 });
 
 describe('createDataHandler pi redraw integration', () => {
-  it('normalizes pi full redraws after sync parsing before writing to the emulator', async () => {
+  it('normalizes pi full redraws to cursor-home replacement after sync parsing', async () => {
     const {
       session,
       emulatorWrites,
@@ -229,7 +229,7 @@ describe('createDataHandler pi redraw integration', () => {
     handleData('\x1b[?2026h\x1b[2J\x1b[H\x1b[3Jhello\x1b[?2026l');
     await waitForDrain();
 
-    expect(emulatorWrites).toEqual(['\x1b[2J\x1b[Hhello']);
+    expect(emulatorWrites).toEqual(['\x1b[Hhello']);
     expect(getScrollbackArchiveResetCount()).toBe(0);
     expect(getScrollbackArchiverResetCount()).toBe(0);
   });
@@ -248,7 +248,7 @@ describe('createDataHandler pi redraw integration', () => {
     expect(getScrollbackScheduleCount()).toBe(1);
   });
 
-  it('preserves tall full redraw frames so the emulator keeps scrollback', async () => {
+  it('preserves tall full redraw frames without scrollback duplication', async () => {
     const { session, emulatorWrites } = createMockSession();
     session.rows = 2;
     const { handleData } = createDataHandler({
@@ -260,7 +260,7 @@ describe('createDataHandler pi redraw integration', () => {
     handleData('\x1b[?2026h\x1b[2J\x1b[H\x1b[3Jline 1\r\nline 2\r\nline 3\r\nline 4\x1b[?2026l');
     await waitForDrain();
 
-    expect(emulatorWrites).toEqual(['\x1b[2J\x1b[Hline 1\r\nline 2\r\nline 3\r\nline 4']);
+    expect(emulatorWrites).toEqual(['\x1b[Hline 1\r\nline 2\r\nline 3\r\nline 4']);
   });
 
   it('leaves normal synchronized output untouched', async () => {
@@ -298,7 +298,7 @@ describe('createDataHandler pi redraw integration', () => {
     handleData('\x1b[?2026l');
     await flushFakeTimers();
 
-    expect(emulatorWrites).toEqual(['\x1b[2J\x1b[Hhello world']);
+    expect(emulatorWrites).toEqual(['\x1b[Hhello world']);
   });
 
   it('gives pi full redraw sync frames a longer idle timeout before force-flushing', async () => {
@@ -320,6 +320,6 @@ describe('createDataHandler pi redraw integration', () => {
     vi.advanceTimersByTime(550);
     await flushFakeTimers();
 
-    expect(emulatorWrites).toEqual(['\x1b[2J\x1b[Hhello']);
+    expect(emulatorWrites).toEqual(['\x1b[Hhello']);
   });
 });

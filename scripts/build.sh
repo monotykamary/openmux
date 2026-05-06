@@ -198,6 +198,8 @@ sign_macos_artifacts() {
 
 cleanup() {
     find "$PROJECT_DIR" -maxdepth 1 -name "*.bun-build" -type f -delete 2>/dev/null || true
+    # Clean up .tmp files left in vendor dirs by upstream builds (e.g. libgit2 cmake writes git2.h.tmp)
+    bash "$PROJECT_DIR/scripts/cleanup-vendor-tmp.sh"
     # Clean up intermediate bundle artifacts (keep binary, libs, wasm, etc.)
     rm -f "$DIST_DIR"/index.js 2>/dev/null || true
     rm -rf "$DIST_DIR"/chunk-*.js "$DIST_DIR"/terminal 2>/dev/null || true

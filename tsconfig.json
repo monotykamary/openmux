@@ -1,12 +1,17 @@
 {
   "include": ["src/**/*", "native/zig-pty/ts/**/*", "native/zig-git/ts/**/*"],
-  "exclude": ["node_modules", "**/*.test.ts", "**/*.test.tsx", "**/*.litmus.test.ts", "**/*.litmus.test.tsx", "**/*.smoke.test.ts", "**/*.smoke.test.tsx"],
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.litmus.test.ts",
+    "**/*.litmus.test.tsx",
+    "**/*.smoke.test.ts",
+    "**/*.smoke.test.tsx"
+  ],
   "compilerOptions": {
-    // Effect Language Service
-    "plugins": [{ "name": "@effect/language-service" }],
-
     // Environment setup & latest features
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "ESNext.Disposable"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",

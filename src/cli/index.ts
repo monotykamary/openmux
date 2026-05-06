@@ -41,6 +41,7 @@ async function withControlClient(): Promise<ReturnType<typeof connectControlClie
   try {
     return await connectControlClient({ timeoutMs: 250 });
   } catch {
+    // intentionally ignored: control server may not be running
     return null;
   }
 }

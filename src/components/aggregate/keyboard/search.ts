@@ -48,11 +48,17 @@ export function createAggregateSearchHandler(deps: SearchDeps) {
       return true;
     }
 
-    const searchCharCode = event.sequence?.charCodeAt(0) ?? 0;
-    const isPrintable =
-      event.sequence?.length === 1 && searchCharCode >= 32 && searchCharCode < 127;
-    if (isPrintable && !event.ctrl && !event.alt && !event.meta) {
-      deps.setSearchQuery(currentSearchState.query + event.sequence);
+    const printableChar =
+      event.key.length === 1 &&
+      event.key.charCodeAt(0) >= 32 &&
+      event.key.charCodeAt(0) < 127 &&
+      !event.ctrl &&
+      !event.alt &&
+      !event.meta
+        ? event.key
+        : null;
+    if (printableChar) {
+      deps.setSearchQuery(currentSearchState.query + printableChar);
       return true;
     }
 

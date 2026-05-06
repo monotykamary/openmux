@@ -242,13 +242,19 @@ class GhosttyKeyEncoder {
 
 function createHandle(ctor: unknown): Pointer {
   if (typeof ctor !== 'function') {
-    throw new Error('ghostty key encoder symbols unavailable');
+    throw new NativeKeyError({
+      operation: 'init',
+      reason: 'ghostty key encoder symbols unavailable',
+    });
   }
 
   const out = new BigUint64Array(1);
   const result = ctor(null, out);
   if (result !== GHOSTTY_SUCCESS) {
-    throw new Error(`ghostty key encoder init failed (code ${result})`);
+    throw new NativeKeyError({
+      operation: 'init',
+      reason: `ghostty key encoder init failed (code ${result})`,
+    });
   }
   return Number(out[0]) as Pointer;
 }

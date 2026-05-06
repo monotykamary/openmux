@@ -2,15 +2,16 @@
  * Native libghostty-vt terminal wrapper.
  */
 
-import { ghostty } from "./ffi";
-import type { Pointer } from "bun:ffi";
+import { ghostty } from './ffi';
+import type { Pointer } from 'bun:ffi';
 import type {
   DirtyState,
   GhosttyCell,
   GhosttyTerminalConfig,
   GhosttyKittyImageInfo,
   GhosttyKittyPlacement,
-} from "./types";
+} from './types';
+import { GhosttyVtInitError } from '../../effect/errors';
 
 const CELL_SIZE = 16;
 const CONFIG_SIZE = 4 * 4 + 16 * 4;
@@ -18,9 +19,7 @@ const KITTY_IMAGE_INFO_SIZE = 32;
 const KITTY_PLACEMENT_SIZE = 56;
 
 function toBuffer(data: Uint8Array): Buffer {
-  return Buffer.isBuffer(data)
-    ? data
-    : Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  return Buffer.isBuffer(data) ? data : Buffer.from(data.buffer, data.byteOffset, data.byteLength);
 }
 
 export class GhosttyVtTerminal {
@@ -38,7 +37,11 @@ export class GhosttyVtTerminal {
 
     if (config) {
       const configBuffer = Buffer.alloc(CONFIG_SIZE);
-      const view = new DataView(configBuffer.buffer, configBuffer.byteOffset, configBuffer.byteLength);
+      const view = new DataView(
+        configBuffer.buffer,
+        configBuffer.byteOffset,
+        configBuffer.byteLength
+      );
       let offset = 0;
 
       view.setUint32(offset, config.scrollbackLimit ?? 10000, true);
@@ -58,13 +61,19 @@ export class GhosttyVtTerminal {
 
       const handle = ghostty.symbols.ghostty_terminal_new_with_config(cols, rows, configBuffer);
       if (!handle) {
-        throw new Error("Failed to create ghostty-vt terminal");
+        throw new GhosttyVtInitError({
+          operation: 'terminal-new-with-config',
+          reason: 'Failed to create ghostty-vt terminal',
+        });
       }
       this.handle = handle;
     } else {
       const handle = ghostty.symbols.ghostty_terminal_new(cols, rows);
       if (!handle) {
-        throw new Error("Failed to create ghostty-vt terminal");
+        throw new GhosttyVtInitError({
+          operation: 'terminal-new',
+          reason: 'Failed to create ghostty-vt terminal',
+        });
       }
       this.handle = handle;
     }
@@ -81,7 +90,7 @@ export class GhosttyVtTerminal {
   }
 
   write(data: string | Uint8Array): void {
-    const bytes = typeof data === "string" ? this.encoder.encode(data) : data;
+    const bytes = typeof data === 'string' ? this.encoder.encode(data) : data;
     if (bytes.length === 0) return;
     const buffer = toBuffer(bytes);
     ghostty.symbols.ghostty_terminal_write(this.handle, buffer, buffer.byteLength);
@@ -191,6 +200,11 @@ export class GhosttyVtTerminal {
     ghostty.symbols.ghostty_terminal_trim_scrollback(this.handle, lines);
   }
 
+  eraseScrollbackTail(lines: number): void {
+    if (lines <= 0) return;
+    ghostty.symbols.ghostty_terminal_erase_scrollback_tail(this.handle, lines);
+  }
+
   isRowWrapped(row: number): boolean {
     return ghostty.symbols.ghostty_terminal_is_row_wrapped(this.handle, row);
   }
@@ -207,9 +221,13 @@ export class GhosttyVtTerminal {
     if (!this.hasResponse()) return null;
     // Use larger buffer to handle OSC 52 clipboard data (base64 can be ~4/3 of text size)
     const buffer = Buffer.alloc(4096);
-    const count = ghostty.symbols.ghostty_terminal_read_response(this.handle, buffer, buffer.byteLength);
+    const count = ghostty.symbols.ghostty_terminal_read_response(
+      this.handle,
+      buffer,
+      buffer.byteLength
+    );
     if (count <= 0) return null;
-    return buffer.subarray(0, count).toString("utf8");
+    return buffer.subarray(0, count).toString('utf8');
   }
 
   getKittyImagesDirty(): boolean {
@@ -225,7 +243,11 @@ export class GhosttyVtTerminal {
     if (count <= 0) return [];
 
     const buffer = Buffer.alloc(count * 4);
-    const written = ghostty.symbols.ghostty_terminal_get_kitty_image_ids(this.handle, buffer, count);
+    const written = ghostty.symbols.ghostty_terminal_get_kitty_image_ids(
+      this.handle,
+      buffer,
+      count
+    );
     if (written <= 0) return [];
 
     const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
@@ -276,7 +298,11 @@ export class GhosttyVtTerminal {
     if (count <= 0) return [];
 
     const buffer = Buffer.alloc(count * KITTY_PLACEMENT_SIZE);
-    const written = ghostty.symbols.ghostty_terminal_get_kitty_placements(this.handle, buffer, count);
+    const written = ghostty.symbols.ghostty_terminal_get_kitty_placements(
+      this.handle,
+      buffer,
+      count
+    );
     if (written <= 0) return [];
 
     const placements: GhosttyKittyPlacement[] = [];
