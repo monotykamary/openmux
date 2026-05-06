@@ -39,14 +39,26 @@ let socketDataStop: (() => void) | null = null;
 
 const detachedSubscribers = new Set<() => void>();
 
+/**
+ * Resolves the shim socket directory at call time so tests can override after process start.
+ * `protocol.ts` already exports an env-driven constant captured at module load — that covers
+ * production startup; this getter covers per-test substitution.
+ */
 function getShimSocketDir(): string {
   return process.env.OPENMUX_SHIM_SOCKET_DIR ?? SHIM_SOCKET_DIR;
 }
 
+/**
+ * Resolves the shim socket path at call time. See `getShimSocketDir` for the rationale.
+ */
 function getShimSocketPath(): string {
   return process.env.OPENMUX_SHIM_SOCKET_PATH ?? SHIM_SOCKET_PATH;
 }
 
+/**
+ * Removes a pending request from the registry and cancels its timeout in one step.
+ * Returns the entry so the caller can resolve or reject it.
+ */
 function takePendingRequest(requestId: number): PendingRequest | undefined {
   const pending = pendingRequests.get(requestId);
   if (!pending) return undefined;
@@ -56,6 +68,10 @@ function takePendingRequest(requestId: number): PendingRequest | undefined {
   return pending;
 }
 
+/**
+ * Rejects every in-flight request with the given error and clears the registry.
+ * Used on terminal transport events (socket close, explicit detach).
+ */
 function rejectPendingRequests(error: Error): void {
   for (const pending of pendingRequests.values()) {
     if (pending.timeout) clearTimeout(pending.timeout);
@@ -64,9 +80,12 @@ function rejectPendingRequests(error: Error): void {
   pendingRequests.clear();
 }
 
-function clearSocketState(client?: net.Socket): void {
-  // Close events can arrive late; do not let an old socket clear a newer connection.
-  if (client && socket && socket !== client) return;
+/**
+ * Tears down references tied to a closed socket, but only if it is still the current one.
+ * Late `close` events from a stale socket must not wipe a freshly reconnected one.
+ */
+function clearSocketState(client: net.Socket): void {
+  if (socket && socket !== client) return;
 
   socketDataStop?.();
   socketDataStop = null;
