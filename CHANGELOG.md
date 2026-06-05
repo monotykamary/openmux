@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.3.161](https://github.com/monotykamary/openmux/compare/v0.3.160...v0.3.161) (2026-06-05)
+
+
+### Features
+
+* lazy PTY loading — only create PTYs for focused pane ([2ca1315](https://github.com/monotykamary/openmux/commit/2ca1315559729cc0c019df1b9e792f0d2b7afd57))
+
 ### [0.3.160](https://github.com/monotykamary/openmux/compare/v0.3.159...v0.3.160) (2026-06-05)
 
 
