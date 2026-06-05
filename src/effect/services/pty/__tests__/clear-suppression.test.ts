@@ -186,9 +186,12 @@ describe('normalizePiFullRedrawSegment', () => {
     expect(normalizePiFullRedrawSegment(input, 10)).toBe('\x1b[H\x1b[J\x1b[3Jhello');
   });
 
-  it('only rewrites the destructive prefix at the start of the segment', () => {
-    const input = 'prefix\x1b[2J\x1b[H\x1b[3Jhello';
-    expect(normalizePiFullRedrawSegment(input, 10)).toBe(input);
+  it('normalizes CSI 2J after Kitty image delete prefix', () => {
+    const input = '\x1b_Ga=d,d=A,q=2\x1b\\\x1b[2J\x1b[H\x1b[3Jhello';
+    const normalized = normalizePiFullRedrawSegment(input, 10);
+    expect(normalized.includes('\x1b[2J')).toBe(false);
+    expect(normalized.startsWith('\x1b_Ga=d,d=A,q=2\x1b\\')).toBe(true);
+    expect(normalized.includes('\x1b[H\x1b[J\x1b[3J')).toBe(true);
   });
 
   it('normalizes CSI 2J + CSI H without CSI 3J', () => {

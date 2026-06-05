@@ -396,12 +396,14 @@ describe('scrollback contamination: CSI 2J normalization', () => {
     expect(normalized.includes('\x1b[H\x1b[J\x1b[3J')).toBe(true);
   });
 
-  it('does NOT normalize CSI 2J that is NOT at segment start', () => {
-    // The ^-anchored regex cannot match CSI 2J mid-segment.
-    // In practice this shouldn't happen for sync-wrapped pi frames,
-    // but documents the known gap for non-sync output.
-    const input = 'prefix\x1b[2J\x1b[H\x1b[3Jhello';
-    expect(normalizePiFullRedrawSegment(input, 24)).toBe(input);
+  it('normalizes CSI 2J mid-segment when preceded by Kitty image delete', () => {
+    // Pi's fullRender prepends Kitty image delete sequences before CSI 2J.
+    // The regex matches CSI 2J + CSI H at any position, preserving the prefix.
+    const input = '\x1b_Ga=d,d=A,q=2\x1b\\\x1b[2J\x1b[H\x1b[3Jhello';
+    const normalized = normalizePiFullRedrawSegment(input, 24);
+    expect(normalized.includes('\x1b[2J')).toBe(false);
+    expect(normalized.startsWith('\x1b_Ga=d,d=A,q=2\x1b\\')).toBe(true);
+    expect(normalized.includes('\x1b[H\x1b[J\x1b[3J')).toBe(true);
   });
 
   it('normalizes rapid consecutive pi frames', () => {

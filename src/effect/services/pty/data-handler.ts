@@ -85,8 +85,16 @@ const CLEAR_SCROLLBACK = '\x1b[3J';
 // CSI 3J (scrollback clear) is optional — most pi full-redraw frames use
 // CSI 2J + CSI H without CSI 3J. Both forms need normalization to prevent
 // ghostty's scrollClear from pushing old screen content into scrollback.
+// Matches pi's full-redraw prefix (CSI 2J + CSI H + optional CSI 3J) at any
+// position within a sync-wrapped segment. The ^-anchored version only matched
+// when CSI 2J was at the segment start, but pi's fullRender prepends Kitty
+// image delete sequences (\x1b_Ga=d,...\x1b\\) before CSI 2J, causing the
+// regex to miss those frames. Since all segments from the sync parser are
+// already validated as sync-wrapped (pi TUI output), matching anywhere is safe —
+// it will not accidentally normalize CSI 2J from user `clear` commands (those
+// are non-sync and released as separate segments by the parser).
 const PI_FULL_REDRAW_PREFIX_REGEX =
-  /^(?:\x1b\[2J|\x9b2J)(?:\x1b\[(?:H|1;1H)|\x9b(?:H|1;1H))(?:\x1b\[3J|\x9b3J)?/;
+  /(?:\x1b\[2J|\x9b2J)(?:\x1b\[(?:H|1;1H)|\x9b(?:H|1;1H))(?:\x1b\[3J|\x9b3J)?/;
 const RAW_PI_SYNC_FULL_REDRAW_START_REGEX =
   /\x1b\[\?2026h(?:\x1b\[2J|\x9b2J)(?:\x1b\[(?:H|1;1H)|\x9b(?:H|1;1H))(?:\x1b\[3J|\x9b3J)?/;
 const PI_SYNC_TIMEOUT_MS = 750;
@@ -260,8 +268,14 @@ export function normalizePiFullRedrawSegment(segment: string, _terminalRows: num
   // differential rendering's relative cursor positioning) to diverge
   // from the emulator's actual scroll position, leading to permanent
   // row-position artifacts during bash tool calls.
-  const frame = segment.slice(match[0].length);
-  return `${CURSOR_HOME_SEQUENCE}${ERASE_TO_END_OF_SCREEN}${CLEAR_SCROLLBACK}${frame}`;
+  //
+  // The regex matches CSI 2J + CSI H + optional CSI 3J at any position
+  // in the segment (pi may prepend Kitty image delete sequences before
+  // CSI 2J in its fullRender). Preserve any prefix before the match and
+  // replace only the CSI 2J + CSI H + optional CSI 3J portion.
+  const prefix = segment.slice(0, match.index!);
+  const frame = segment.slice(match.index! + match[0].length);
+  return `${prefix}${CURSOR_HOME_SEQUENCE}${ERASE_TO_END_OF_SCREEN}${CLEAR_SCROLLBACK}${frame}`;
 }
 
 /**
