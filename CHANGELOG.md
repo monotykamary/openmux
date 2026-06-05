@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.3.162](https://github.com/monotykamary/openmux/compare/v0.3.161...v0.3.162) (2026-06-05)
+
+
+### Bug Fixes
+
+* **terminal:** un-anchor CSI 2J normalization regex to handle Kitty image prefix ([d3569df](https://github.com/monotykamary/openmux/commit/d3569df6253ea0071d87fe6a50ec37cb31ee2ceb))
+
 ### [0.3.161](https://github.com/monotykamary/openmux/compare/v0.3.160...v0.3.161) (2026-06-05)
 
 
