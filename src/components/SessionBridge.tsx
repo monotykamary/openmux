@@ -128,7 +128,14 @@ export function SessionBridge(props: SessionBridgeProps) {
     setActiveSessionIdForShim(sessionId);
 
     // Try to resume PTYs for this session (if we've visited it before)
-    const resumeResult = await resumeSession(sessionId);
+    // Pass the focused pane ID so resumeSession can subscribe to it first.
+    // Use the ORIGINAL workspaces/activeWorkspaceId here (before pruning)
+    // — the focused pane is a hint, and if it ends up pruned the subscription
+    // is simply wasted (harmless).
+    const resumeFocusedPaneId = workspaces[activeWorkspaceId]?.focusedPaneId;
+    const resumeResult = await resumeSession(sessionId, {
+      focusedPaneId: resumeFocusedPaneId ?? undefined,
+    });
     const restoredPtys = resumeResult?.mapping;
     const missingPaneIds = resumeResult?.missingPaneIds ?? [];
     let workspacesToLoad = workspaces;

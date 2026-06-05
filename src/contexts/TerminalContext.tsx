@@ -69,7 +69,10 @@ export interface TerminalContextValue {
   /** Suspend a session (save PTY mapping, unsubscribe without destroying) */
   suspendSession: (sessionId: string) => void;
   /** Resume a session (resubscribe to saved PTYs, returns paneId→ptyId map + missing panes) */
-  resumeSession: (sessionId: string) => Promise<
+  resumeSession: (
+    sessionId: string,
+    options?: { focusedPaneId?: string }
+  ) => Promise<
     | {
         mapping: Map<string, string>;
         missingPaneIds: string[];
@@ -379,8 +382,10 @@ export function TerminalProvider(props: TerminalProviderProps) {
 
   // Resume a session: resubscribe to saved PTYs
   const handleResumeSession = async (
-    sessionId: string
+    sessionId: string,
+    options?: { focusedPaneId?: string }
   ): Promise<{ mapping: Map<string, string>; missingPaneIds: string[] } | undefined> => {
+    const focusedPaneId = options?.focusedPaneId;
     const shimMapping = await getSessionPtyMapping(sessionId);
     const missingPaneIds = new Set(shimMapping?.stalePaneIds ?? []);
     const baseSavedMapping = shimMapping?.mapping ?? sessionPtyMap.get(sessionId);
@@ -398,7 +403,18 @@ export function TerminalProvider(props: TerminalProviderProps) {
       ptyToSessionMap.set(ptyId, { sessionId, paneId });
     }
 
-    for (const [paneId, ptyId] of savedMapping) {
+    // Split entries into focused (subscribe first) and background.
+    // Prioritizing the focused pane's subscription means the user's
+    // active terminal is interactive sooner after a session switch.
+    const entries = [...savedMapping];
+    const focusedEntry = focusedPaneId
+      ? entries.find(([paneId]) => paneId === focusedPaneId)
+      : undefined;
+    const backgroundEntries = focusedEntry
+      ? entries.filter(([paneId]) => paneId !== focusedPaneId)
+      : entries;
+
+    const subscribePty = (paneId: string, ptyId: string) => {
       void subscribeToPtyWithCaches(ptyId, paneId, ptyCaches, ptyLifecycleHandlers.handlePtyExit, {
         cacheScrollState: shouldCacheScrollState,
       })
@@ -428,6 +444,50 @@ export function TerminalProvider(props: TerminalProviderProps) {
         .catch((error) => {
           console.warn(`[TerminalContext] Failed to resume PTY ${ptyId}:`, error);
         });
+    };
+
+    // Subscribe to the focused pane FIRST, then background panes.
+    // Awaiting the focused pane's subscription before firing the rest ensures
+    // it starts processing output before the background subscriptions compete
+    // for CPU and I/O.
+    if (focusedEntry) {
+      const [fPaneId, fPtyId] = focusedEntry;
+      try {
+        const unsub = await subscribeToPtyWithCaches(
+          fPtyId,
+          fPaneId,
+          ptyCaches,
+          ptyLifecycleHandlers.handlePtyExit,
+          { cacheScrollState: shouldCacheScrollState }
+        );
+        if (isActive) {
+          const currentPtyId = sessionPtyMap.get(sessionId)?.get(fPaneId);
+          const currentOwner = ptyToSessionMap.get(fPtyId);
+          if (
+            currentPtyId === fPtyId &&
+            currentOwner &&
+            currentOwner.sessionId === sessionId &&
+            currentOwner.paneId === fPaneId
+          ) {
+            const previousUnsub = unsubscribeFns.get(fPtyId);
+            if (previousUnsub) {
+              previousUnsub();
+            }
+            unsubscribeFns.set(fPtyId, unsub);
+          } else {
+            unsub();
+          }
+        } else {
+          unsub();
+        }
+      } catch (error) {
+        console.warn(`[TerminalContext] Failed to resume focused PTY ${fPtyId}:`, error);
+      }
+    }
+
+    // Subscribe to background PTYs (fire-and-forget)
+    for (const [paneId, ptyId] of backgroundEntries) {
+      subscribePty(paneId, ptyId);
     }
 
     return { mapping: savedMapping, missingPaneIds: Array.from(missingPaneIds) };

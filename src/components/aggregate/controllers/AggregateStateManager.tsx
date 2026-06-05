@@ -254,6 +254,38 @@ export function AggregateStateManager() {
     aggregate.setSelectedIndex(firstPtyIndex);
   });
 
+  // FOCUS-ON-SELECT: When the user selects a PTY in aggregate view (click or
+  // keyboard navigation), focus the corresponding pane in the layout.
+  // This is critical for lazy PTY creation: usePtyCreation only creates PTYs
+  // for the focused pane when aggregate view is open, so focusing the selected
+  // pane triggers its PTY creation immediately.
+  // Uses aggregate view's allPtys data for lookup (not findSessionForPty)
+  // because findSessionForPty returns null for PTYs that haven't been
+  // created yet (no ptyToSessionMap entry).
+  createEffect(() => {
+    if (!isActive()) return;
+    if (!previewMode()) return;
+    if (sessionState.switching) return;
+
+    const ptyId = selectedPtyId();
+    if (!ptyId) return;
+
+    // Look up pane info from aggregate view's data (populated by refreshPtys)
+    const ptyIndex = aggregate.state.allPtysIndex.get(ptyId);
+    if (ptyIndex === undefined) return;
+    const ptyInfo = aggregate.state.allPtys[ptyIndex];
+    if (!ptyInfo?.paneId) return;
+
+    // Only focus for same-session selections — cross-session is handled by AUTOSWITCH
+    if (ptyInfo.sessionId !== sessionState.activeSessionId) return;
+
+    // Only focus if the pane doesn't already have focus
+    const ws = layoutState.workspaces[layoutState.activeWorkspaceId];
+    if (ws && ws.focusedPaneId === ptyInfo.paneId) return;
+
+    focusPane(ptyInfo.paneId);
+  });
+
   // PTY MRU DEBOUNCE: When the selected PTY changes (via picker, sidebar click,
   // or j/k navigation), push it to the MRU stack after the user settles.
   // This prevents rapid j/k flips from flooding the MRU — only the PTY the

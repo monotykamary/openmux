@@ -1,8 +1,14 @@
 /**
  * PTY creation and retry logic extracted from App.
+ *
+ * Lazy loading: PTYs are only created for the focused pane. When the user
+ * focuses a different pane (click, keyboard navigation, aggregate view
+ * selection), the effect re-runs and creates that pane's PTY. Background
+ * panes show a "waiting" indicator until they receive focus.
  */
 
 import { createEffect, createMemo, createSignal, on } from 'solid-js';
+import { deferNextTick } from '../../core/scheduling';
 import {
   getSessionCwd as getSessionCwdFromCoordinator,
   getSessionCommand as getSessionCommandFromCoordinator,
@@ -10,7 +16,6 @@ import {
   isPtyCreated,
   markPtyCreated,
 } from '../../effect/bridge';
-import { deferMacrotask } from '../../core/scheduling';
 
 type PaneRectangle = { width: number; height: number };
 
@@ -110,11 +115,13 @@ export function usePtyCreation(params: {
     params.layout.panes.filter((p) => !p.ptyId).map((p) => ({ id: p.id, rectangle: p.rectangle }))
   );
 
-  // Create PTYs for panes that don't have one
-  // IMPORTANT: Wait for BOTH terminal AND session to be initialized
-  // This prevents creating PTYs before session has a chance to restore workspaces
-  // Also skip while session is switching to avoid creating PTYs for stale panes
-  // Using on() for explicit dependency tracking - only re-runs when these specific values change
+  // Track focused pane ID reactively so the effect re-runs when focus changes
+  // to a pane that still needs a PTY.
+  const focusedPaneId = createMemo(() => params.layout.getFocusedPaneId?.() ?? null);
+
+  // Create PTYs for panes that don't have one — lazy: only for the focused pane.
+  // When the user focuses a different pane, focusedPaneId changes and the
+  // effect re-runs to create that pane's PTY.
   createEffect(
     on(
       [
@@ -123,11 +130,19 @@ export function usePtyCreation(params: {
         () => params.sessionState.switching,
         ptyRetryCounter,
         panesNeedingPtys,
+        focusedPaneId,
       ],
-      ([isTerminalInit, isSessionInit, isSwitching, _retry, panes]) => {
+      ([isTerminalInit, isSessionInit, isSwitching, _retry, panes, focusedId]) => {
         if (!isTerminalInit) return;
         if (!isSessionInit) return;
         if (isSwitching) return;
+
+        // Only create a PTY for the focused pane. Background panes stay
+        // empty until the user focuses them, at which point this effect
+        // re-runs (focusedPaneId is a dependency).
+        const focusedPane = panes.find((p) => p.id === focusedId);
+        if (!focusedPane) return;
+        if (pendingPtyCreation.has(focusedPane.id)) return;
 
         // Capture the active session ID SYNCHRONOUSLY before deferring any
         // macrotasks. This prevents the session-switch race where:
@@ -140,85 +155,79 @@ export function usePtyCreation(params: {
         //    instead of session B.
         const capturedSessionId = getActiveSessionIdForShim();
 
-        const createPtyForPane = async (pane: (typeof panes)[number], sessionId: string | null) => {
+        pendingPtyCreation.add(focusedPane.id);
+
+        const createPtyForFocusedPane = async () => {
           try {
             // SYNC check: verify PTY wasn't created in a previous session/effect run
-            const alreadyCreated = isPtyCreated(pane.id);
+            const alreadyCreated = isPtyCreated(focusedPane.id);
             if (alreadyCreated) {
-              return true; // Already has a PTY
+              return true;
             }
 
             // Calculate pane dimensions (account for border)
-            const rect = pane.rectangle ?? { width: 80, height: 24 };
+            const rect = focusedPane.rectangle ?? { width: 80, height: 24 };
             const cols = Math.max(1, rect.width - 2);
             const rows = Math.max(1, rect.height - 2);
 
             // Check for session-restored CWD first, then pending CWD from new pane handler,
             // then OPENMUX_ORIGINAL_CWD (set by wrapper to preserve user's cwd)
-            const focusedPaneId = params.layout.getFocusedPaneId?.();
+            const currentFocusedPaneId = params.layout.getFocusedPaneId?.();
             const { cwd, clearPending } = await resolvePaneCwd({
-              paneId: pane.id,
-              focusedPaneId,
-              sessionCwd: getSessionCwdFromCoordinator(pane.id),
+              paneId: focusedPane.id,
+              focusedPaneId: currentFocusedPaneId,
+              sessionCwd: getSessionCwdFromCoordinator(focusedPane.id),
               pendingCwdRef,
               pendingCwdPromise,
               fallbackCwd: process.env.OPENMUX_ORIGINAL_CWD ?? process.cwd(),
             });
 
             if (clearPending) {
-              pendingCwdRef = null; // Clear after we reach the focused pane
+              pendingCwdRef = null;
               pendingCwdPromise = null;
             }
 
             // Mark as created BEFORE calling createPTY (persistent marker)
-            markPtyCreated(pane.id);
+            markPtyCreated(focusedPane.id);
 
             // Fire-and-forget PTY creation - don't await to avoid blocking
             params.terminal
-              .createPTY(pane.id, cols, rows, cwd, sessionId ?? undefined)
+              .createPTY(focusedPane.id, cols, rows, cwd, capturedSessionId ?? undefined)
               .then((result) => {
                 if (result instanceof Error) {
-                  console.error(`PTY creation failed for ${pane.id}:`, result.message);
+                  console.error(`PTY creation failed for ${focusedPane.id}:`, result.message);
                   return false;
                 }
                 const ptyId = result;
-                const command = getSessionCommandFromCoordinator(pane.id);
+                const command = getSessionCommandFromCoordinator(focusedPane.id);
                 if (command) {
                   params.terminal.writeToPTY(ptyId, `${command}\n`);
                 }
                 return true;
               })
               .catch((err) => {
-                console.error(`PTY creation failed for ${pane.id}:`, err);
+                console.error(`PTY creation failed for ${focusedPane.id}:`, err);
                 return false;
               });
 
             return true;
           } catch (err) {
-            console.error(`Failed to create PTY for pane ${pane.id}:`, err);
+            console.error(`Failed to create PTY for pane ${focusedPane.id}:`, err);
             return false;
           } finally {
-            pendingPtyCreation.delete(pane.id);
+            pendingPtyCreation.delete(focusedPane.id);
           }
         };
 
-        // Process each pane in a separate macrotask to avoid blocking animations
-        for (const pane of panes) {
-          // SYNCHRONOUS guard: check and add to pendingPtyCreation Set IMMEDIATELY
-          if (pendingPtyCreation.has(pane.id)) {
-            continue;
-          }
-          pendingPtyCreation.add(pane.id);
-
-          // Defer to next macrotask - allows animations to continue
-          deferMacrotask(() => {
-            createPtyForPane(pane, capturedSessionId).then((success) => {
-              if (!success) {
-                setTimeout(() => setPtyRetryCounter((c) => c + 1), 100);
-              }
-            });
+        // Create PTY on next tick — fast (setImmediate-priority), avoids
+        // blocking the current render cycle.
+        deferNextTick(() => {
+          createPtyForFocusedPane().then((success) => {
+            if (!success) {
+              setTimeout(() => setPtyRetryCounter((c) => c + 1), 100);
+            }
           });
-        }
+        });
       }
     )
   );
